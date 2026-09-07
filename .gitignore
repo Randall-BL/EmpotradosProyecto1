@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────
+#  Artefactos de Yocto / BitBake
+# ─────────────────────────────────────────────
+build/
+tmp/
+tmp-glibc/
+sstate-cache/
+downloads/
+cache/
+bitbake-cookerdaemon.log
+*.lock
+conf/bblayers.conf
+conf/local.conf
+conf/templateconf.cfg
+
+# Imágenes y SDK generados
+*.wic
+*.wic.bz2
+*.wic.gz
+*.rootfs.*
+*.manifest
+*.sdk.sh
+*.tar.bz2
+*.tar.xz
+
+# ─────────────────────────────────────────────
+#  Compilación C / CMake
+# ─────────────────────────────────────────────
+*.o
+*.a
+*.so
+*.so.*
+*.d
+*.gch
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# ─────────────────────────────────────────────
+#  Medios: la música NO se versiona (peso + derechos de autor).
+#  Los sonidos de evento notify_*.mp3 sí, ver audio/README.md
+# ─────────────────────────────────────────────
+audio/music/*
+!audio/music/.gitkeep
+
+# ─────────────────────────────────────────────
+#  Credenciales — nunca commitear la red real del grupo
+# ─────────────────────────────────────────────
+meta-robot/recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf
+
+# ─────────────────────────────────────────────
+#  Sistema operativo y editores
+# ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
