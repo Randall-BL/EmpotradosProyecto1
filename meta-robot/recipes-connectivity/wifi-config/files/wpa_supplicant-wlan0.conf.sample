@@ -1,0 +1,17 @@
+# Plantilla de credenciales WiFi del robot.
+#
+# Copie este archivo a wpa_supplicant-wlan0.conf en este mismo directorio y ponga
+# la red real. El archivo sin extension .sample esta en .gitignore: NO se sube al
+# repositorio.
+#
+# Tras cambiarlo:  bitbake -c cleansstate wifi-config && bitbake robot-image
+
+ctrl_interface=/run/wpa_supplicant
+update_config=1
+country=CR
+
+network={
+    ssid="NOMBRE_DE_LA_RED"
+    psk="CONTRASENA_DE_LA_RED"
+    scan_ssid=1
+}
