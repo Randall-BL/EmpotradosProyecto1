@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<!--
+  Proyecto I - Robot Aspiradora Autonomo
+  CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
+
+  Archivo derivado del proyecto Proyecto1_RobotYocto---Sistemas-Empotrados,
+  MIT License - Copyright (c) 2026 Javier Tenorio Cervantes. Ver NOTICE.md.
+-->
+
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>Dashboard Robot Yocto</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet"/>
+  <style>
+
+    /* Definicion de Colores */
+    :root {
+      --bg:     #07090d;
+      --sf:     #0d1219;
+      --sf2:    #0a1018;
+      --bd:     #1c2c3e;
+      --bd2:    #243344;
+      --amber:  #ffffff;
+      --cyan:   #2b93f5;
+      --green:  #00e87a;
+      --danger: #ff3344;
+      --warn:   #ffaa00;
+      --text:   #ffffff;
+      --hi:     #ffffff;
+      --mono:   'Share Tech Mono', monospace;
+      --sans:   'Rajdhani', sans-serif;
+      --top-h:  50px;
+      --sb-h:   20px;
+      --tab-h:  62px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 13px; }
+
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background: repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(0,0,0,0.05) 3px, rgba(0,0,0,0.05) 4px);
+    }
+
+    /* Estructura de la barra superior */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--top-h);
+      background: var(--sf); border-bottom: 1px solid var(--bd);
+      display: flex; align-items: center; padding: 0 14px; gap: 10px; z-index: 100;
+    }
+    .logo { font-family: var(--sans); font-weight: 700; font-size: 15px; color: var(--hi); letter-spacing: .08em; display: flex; align-items: center; gap: 7px; }
+    .logo em { color: var(--amber); font-style: normal; }
+    .spacer { flex: 1; }
+    .clock { font-size: 11px; color: var(--text); border: 1px solid var(--bd); padding: 3px 8px; }
+    .conn { display: flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: .12em; }
+    .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); transition: background .3s; }
+    .conn-dot.on { background: var(--green); box-shadow: 0 0 4px var(--green); animation: blink 2s ease infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.45} }
+    .btn-out {
+      padding: 4px 11px; background: transparent; border: 1px solid var(--bd2);
+      color: var(--text); font-family: var(--mono); font-size: 9px; letter-spacing: .14em;
+      cursor: pointer; text-transform: uppercase; transition: border-color .15s, color .15s;
+    }
+    .btn-out:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Estructura de la zona con scroll */
+    .main {
+      position: fixed;
+      top: var(--top-h); left: 0; right: 0;
+      bottom: calc(var(--tab-h) + var(--sb-h));
+      overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Vistas */
+    .view { display: none; flex-direction: column; padding: 10px; gap: 8px; min-height: 100%; }
+    .view.active { display: flex; }
+
+    /* Estructura para canvas de cada funcionalidad */
+    .card { background: var(--sf); border: 1px solid var(--bd); border-radius: 2px; overflow: hidden; }
+    .card-hdr {
+      padding: 7px 12px; background: var(--sf2); border-bottom: 1px solid var(--bd);
+      font-size: 9px; letter-spacing: .22em; text-transform: uppercase; color: var(--amber);
+      display: flex; align-items: center; gap: 7px;
+    }
+    .card-hdr .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .card-body { padding: 14px; }
+
+    /* Barra de status */
+    .statusbar {
+      position: fixed; bottom: var(--tab-h); left: 0; right: 0; height: var(--sb-h);
+      background: var(--sf2); border-top: 1px solid var(--bd);
+      display: flex; align-items: center; padding: 0 12px; gap: 16px; z-index: 99;
+    }
+    .statusbar span { font-size: 9px; letter-spacing: .1em; color: rgba(138,168,192,.4); }
+    .statusbar .hi  { color: var(--amber); }
+
+    /* Barra de funcionalidad */
+    .tabbar {
+      position: fixed; bottom: 0; left: 0; right: 0; height: var(--tab-h);
+      background: var(--sf); border-top: 1px solid var(--bd);
+      display: grid; grid-template-columns: repeat(3, 1fr); z-index: 100;
+    }
+    .tab {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 4px; cursor: pointer; border: none; background: transparent;
+      color: var(--text); font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+      text-transform: uppercase; padding: 0; position: relative;
+      transition: color .15s;
+    }
+    .tab::before {
+      content: ''; position: absolute; top: 0; left: 20%; right: 20%; height: 2px;
+      background: var(--amber); transform: scaleX(0); transition: transform .2s ease;
+    }
+    .tab.active { color: var(--amber); }
+    .tab.active::before { transform: scaleX(1); }
+    .tab-icon { font-size: 22px; line-height: 1; }
+
+    /* ════════════════════════════════════════════════════════════
+       Funcionalidad de Control
+    ════════════════════════════════════════════════════════════ */
+
+    .mode-row { display: flex; gap: 6px; }
+    .mode-btn {
+      flex: 1; padding: 13px 8px; background: var(--sf2); border: 1px solid var(--bd2);
+      color: var(--text); font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+      text-transform: uppercase; cursor: pointer; text-align: center;
+      transition: background .2s, border-color .2s, color .2s;
+    }
+    .mode-btn.act-auto   { background: rgba(0,207,255,.1);  border-color: var(--cyan);  color: var(--cyan); }
+    .mode-btn.act-manual { background: rgba(240,160,32,.1); border-color: var(--amber); color: var(--amber); }
+
+    /* Estructura del PAD de controles */
+    .dpad-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .mode-lbl { font-size: 9px; letter-spacing: .18em; text-transform: uppercase; }
+    .mode-lbl.on { color: var(--amber); }
+
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 76px);
+      grid-template-rows: repeat(3, 76px);
+      gap: 6px;
+    }
+    .db {
+      background: var(--sf2); border: 1px solid var(--bd2); border-radius: 3px;
+      color: var(--text); font-size: 26px; cursor: pointer;
+      display: grid; place-items: center; user-select: none;
+      transition: background .1s, border-color .1s, color .1s, transform .06s;
+      touch-action: manipulation;
+    }
+    .db:not(.db-mt):not(.db-ctr):active, .db.pressed {
+      background: rgba(240,160,32,.2); border-color: var(--amber);
+      color: var(--amber); transform: scale(.92);
+    }
+    .db.db-mt  { visibility: hidden; }
+    .db.db-ctr { background: transparent; border-color: var(--bd); color: var(--bd2); cursor: default; font-size: 14px; }
+    .dpad.locked .db:not(.db-mt):not(.db-ctr) { opacity: .25; pointer-events: none; }
+
+    /* Controlador de la velocidad */
+    .speed-row { display: flex; align-items: center; gap: 10px; width: 100%; }
+    .sp-lbl { font-size: 9px; letter-spacing: .14em; }
+    input[type=range] {
+      flex: 1; -webkit-appearance: none; height: 4px;
+      background: var(--bd2); border-radius: 2px; outline: none; cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 20px; height: 20px;
+      border-radius: 50%; background: var(--amber); cursor: pointer;
+    }
+    .sp-val { font-size: 11px; color: var(--amber); min-width: 34px; text-align: right; }
+
+    /* Estructura de los LEDS */
+    .led-list { display: flex; flex-direction: column; gap: 14px; }
+    .led-row  { display: flex; align-items: center; gap: 12px; }
+    .led {
+      width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+      background: #151f2e; position: relative; transition: background .3s, box-shadow .3s;
+    }
+    .led::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: rgba(255,255,255,.15); }
+    .led.on-power  { background: var(--cyan);  box-shadow: 0 0 6px var(--cyan); }
+    .led.on-auto   { background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 2s ease infinite; }
+    .led.on-manual { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: blink 1.5s ease infinite; }
+    .led.on-danger { background: var(--danger); box-shadow: 0 0 6px var(--danger); animation: blink .7s ease infinite; }
+    .led-lbl  { flex: 1; font-size: 11px; letter-spacing: .08em; }
+    .led-stat { font-size: 10px; color: var(--text); min-width: 56px; text-align: right; }
+
+    /* ════════════════════════════════════════════════════════════
+       Funcionalidad del Mapa
+    ════════════════════════════════════════════════════════════ */
+
+    .map-wrap {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 10px; padding: 4px 0;
+    }
+    #map-canvas { border: 1px solid var(--bd2); background: #050709; image-rendering: pixelated; max-width: 100%; }
+    .map-info { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .map-stat { border: 1px solid var(--bd); padding: 4px 12px; font-size: 9px; letter-spacing: .1em; text-align: center; }
+    .map-stat span { color: var(--cyan); font-size: 14px; display: block; margin-top: 2px; }
+    .map-legend { display: flex; gap: 12px; font-size: 9px; letter-spacing: .12em; flex-wrap: wrap; justify-content: center; }
+    .leg { display: flex; align-items: center; gap: 4px; }
+    .leg-sw { width: 9px; height: 9px; border-radius: 1px; }
+    .map-note { font-size: 10px; color: var(--bd2); letter-spacing: .1em; text-align: center; line-height: 1.6; }
+
+    /* Estructura de los sensores */
+    .sensors { display: flex; flex-direction: column; gap: 12px; }
+    .s-row { display: grid; grid-template-columns: 88px 1fr 62px; align-items: center; gap: 8px; }
+    .s-name { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }
+    .s-bar  { height: 4px; background: var(--bd); border-radius: 2px; overflow: hidden; }
+    .s-fill { height: 100%; background: var(--cyan); border-radius: 2px; width: 0%; transition: width .4s; }
+    .s-val  { font-size: 11px; color: var(--cyan); text-align: right; }
+    .s-val.warn   { color: var(--warn); }
+    .s-val.danger { color: var(--danger); }
+
+    /* ════════════════════════════════════════════════════════════
+       Funcionalidad del Audio
+    ════════════════════════════════════════════════════════════*/
+
+    .np-box {
+      border: 1px solid var(--bd); padding: 10px 12px;
+      font-size: 9px; letter-spacing: .14em; color: var(--amber); text-transform: uppercase;
+    }
+    .np-title {
+      font-size: 13px; color: var(--hi); letter-spacing: .04em;
+      text-transform: none; margin-top: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .prog-row { display: flex; align-items: center; gap: 8px; }
+    .prog-t   { font-size: 9px; color: var(--text); min-width: 30px; }
+    .prog-bar { flex: 1; height: 4px; background: var(--bd); border-radius: 2px; cursor: pointer; }
+    .prog-fill { height: 100%; background: var(--amber); border-radius: 2px; width: 0%; }
+
+    .transport { display: flex; justify-content: center; align-items: center; gap: 10px; }
+    .tbn {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: var(--sf2); border: 1px solid var(--bd2);
+      color: var(--text); font-size: 16px; cursor: pointer;
+      display: grid; place-items: center;
+      transition: background .15s, border-color .15s, color .15s;
+      touch-action: manipulation;
+    }
+
+    /* Botones para el manejo del audio y volumen */
+    .tbn:active { border-color: var(--amber); color: var(--amber); }
+    .tbn.play { width: 60px; height: 60px; font-size: 22px; }
+    .tbn.play.playing { border-color: var(--amber); background: rgba(240,160,32,.12); color: var(--amber); }
+
+    .vol-row { display: flex; align-items: center; gap: 10px; }
+    .vol-icon { font-size: 14px; }
+    .vol-val  { font-size: 11px; color: var(--amber); min-width: 32px; text-align: right; }
+
+    .track-list { display: flex; flex-direction: column; gap: 2px; }
+    .track {
+      display: flex; align-items: center; gap: 8px;
+      padding: 11px 8px; cursor: pointer; border-left: 2px solid transparent;
+      transition: background .12s, border-color .12s;
+    }
+
+    /* Parametros de cada track */
+    .track:active { background: rgba(255,255,255,.03); }
+    .track.active { border-left-color: var(--amber); background: rgba(240,160,32,.07); }
+    .t-num  { font-size: 9px; color: var(--bd2); width: 16px; text-align: right; flex-shrink: 0; }
+    .t-name { flex: 1; font-size: 11px; letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .t-dur  { font-size: 9px; color: var(--text); flex-shrink: 0; }
+    .no-tracks { font-size: 10px; color: var(--bd2); letter-spacing: .1em; padding: 8px 0; }
+  </style>
+</head>
+<body>
+
+<!-- ═════════════════════════════════════════════ HTML ════════════════════════════════════════════════════════ -->
+
+<!-- Barra Superior -->
+<header class="topbar">
+  <div class="logo">
+    <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+      <rect x="9" y="12" width="14" height="12" rx="2" stroke="#2b93f5" stroke-width="1.5"/>
+      <circle cx="13" cy="17" r="1.5" fill="#2b93f5"/>
+      <circle cx="19" cy="17" r="1.5" fill="#2b93f5"/>
+      <rect x="14" y="7" width="4" height="5" rx="1" stroke="#2b93f5" stroke-width="1.5"/>
+      <line x1="6"  y1="16" x2="9"  y2="16" stroke="#2b93f5" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="23" y1="16" x2="26" y2="16" stroke="#2b93f5" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="12" y1="24" x2="12" y2="27" stroke="#2b93f5" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="20" y1="24" x2="20" y2="27" stroke="#2b93f5" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <em>CONTROL</em> ROBOT YOCTO
+  </div>
+  <div class="spacer"></div>
+  <div class="clock" id="top-clock">--:--:--</div>
+  <div class="conn">
+    <div class="conn-dot" id="conn-dot"></div>
+    <span id="conn-lbl">OFFLINE</span>
+  </div>
+  <button class="btn-out" onclick="logout()">⏻ SALIR</button>
+</header>
+
+<!-- ── MAIN ── -->
+<main class="main" id="main">
+
+  <!-- ════════════════ Funcionalidad de Control ════════════════ -->
+  <div class="view active" id="view-control">
+
+    <!-- Modo de Operacion -->
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>MODO DE OPERACIÓN</div>
+      <div class="card-body">
+        <div class="mode-row">
+          <button class="mode-btn act-auto" id="btn-auto"   onclick="setMode('autonomous')">◉ AUTÓNOMO</button>
+          <button class="mode-btn"          id="btn-manual" onclick="setMode('manual')">◈ MANUAL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control D-PAD -->
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>CONTROL DIRECCIONAL</div>
+      <div class="card-body">
+        <div class="dpad-wrap">
+          <span class="mode-lbl" id="dpad-lbl">MODO AUTÓNOMO — INACTIVO</span>
+          <div class="dpad locked" id="dpad">
+            <div class="db db-mt"></div>
+            <div class="db" data-dir="forward">▲</div>
+            <div class="db db-mt"></div>
+            <div class="db" data-dir="left">◀</div>
+            <div class="db db-ctr">■</div>
+            <div class="db" data-dir="right">▶</div>
+            <div class="db db-mt"></div>
+            <div class="db" data-dir="backward">▼</div>
+            <div class="db db-mt"></div>
+          </div>
+          <div class="speed-row">
+            <span class="sp-lbl">VEL</span>
+            <input type="range" id="speed" min="0" max="100" value="50" step="1" oninput="onSpeed(this.value)"/>
+            <span class="sp-val" id="sp-val">50%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEDs de Estado -->
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--green)"></div>INDICADORES DE ESTADO</div>
+      <div class="card-body">
+        <div class="led-list">
+          <div class="led-row">
+            <div class="led on-power" id="led-power"></div>
+            <span class="led-lbl">Sistema encendido</span>
+            <span class="led-stat" id="lt-power">ON</span>
+          </div>
+          <div class="led-row">
+            <div class="led" id="led-auto"></div>
+            <span class="led-lbl">Modo autónomo</span>
+            <span class="led-stat" id="lt-auto">—</span>
+          </div>
+          <div class="led-row">
+            <div class="led" id="led-manual"></div>
+            <span class="led-lbl">Modo manual</span>
+            <span class="led-stat" id="lt-manual">—</span>
+          </div>
+          <div class="led-row">
+            <div class="led" id="led-obstacle"></div>
+            <span class="led-lbl">Alerta obstáculo</span>
+            <span class="led-stat" id="lt-obstacle">OK</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ════════════════ Funcionalidad del Mapa ════════════════  -->
+  <div class="view" id="view-map">
+
+    <!-- Canvas -->
+    <div class="card">
+      <div class="card-hdr">
+        <div class="dot" style="color:var(--green)"></div>MAPA DE RECORRIDO
+        <span style="margin-left:auto;font-size:9px;color:var(--bd2)"></span>
+      </div>
+      <div class="card-body">
+        <div class="map-wrap">
+          <div class="map-info">
+            <div class="map-stat">Visitadas<span id="stat-visited">0</span></div>
+            <div class="map-stat">Obstáculos<span id="stat-obs">0</span></div>
+            <div class="map-stat">Posición<span id="stat-pos">15,15</span></div>
+          </div>
+          <canvas id="map-canvas"></canvas>
+          <div class="map-legend">
+            <div class="leg"><div class="leg-sw" style="background:#0a1820"></div>Desconocido</div>
+            <div class="leg"><div class="leg-sw" style="background:#104c8b"></div>Visitado</div>
+            <div class="leg"><div class="leg-sw" style="background:#ff3344"></div>Obstáculo</div>
+            <div class="leg"><div class="leg-sw" style="background:#45ee69;border-radius:50%"></div>Robot</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sensores -->
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--cyan)"></div>SENSORES DE PROXIMIDAD</div>
+      <div class="card-body">
+        <div class="sensors">
+          <div class="s-row">
+            <span class="s-name">Frontal</span>
+            <div class="s-bar"><div class="s-fill" id="sf-front"></div></div>
+            <span class="s-val" id="sv-front">— cm</span>
+          </div>
+          <div class="s-row">
+            <span class="s-name">Posterior</span>
+            <div class="s-bar"><div class="s-fill" id="sf-back"></div></div>
+            <span class="s-val" id="sv-back">— cm</span>
+          </div>
+          <div class="s-row">
+            <span class="s-name">Izquierdo</span>
+            <div class="s-bar"><div class="s-fill" id="sf-left"></div></div>
+            <span class="s-val" id="sv-left">— cm</span>
+          </div>
+          <div class="s-row">
+            <span class="s-name">Derecho</span>
+            <div class="s-bar"><div class="s-fill" id="sf-right"></div></div>
+            <span class="s-val" id="sv-right">— cm</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ════════════════ Funcionalidad del Audio ════════════════ -->
+  <div class="view" id="view-audio">
+
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>REPRODUCIENDO</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="np-box">
+          ▸ PISTA ACTIVA
+          <div class="np-title" id="np-title">— Sin cancion seleccionada —</div>
+        </div>
+        <div class="prog-row">
+          <span class="prog-t" id="prog-cur">0:00</span>
+          <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+          <span class="prog-t" id="prog-dur">0:00</span>
+        </div>
+        <div class="transport">
+          <button class="tbn" onclick="stopAudio()" title="Detener">⏹</button>
+          <button class="tbn play" id="play-btn" onclick="togglePlay()" title="Reproducir / Pausar">▶</button>
+        </div>
+        <div class="vol-row">
+          <span class="vol-icon">VOL</span>
+          <input type="range" id="vol" min="0" max="100" value="70" step="1" oninput="onVolume(this.value)" style="flex:1"/>
+          <span class="vol-val" id="vol-val">70%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>LISTA DE CANCIONES</div>
+      <div class="card-body">
+        <div class="track-list" id="track-list">
+          <p class="no-tracks" id="no-tracks">Sin canciones disponibles.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- Barra de status -->
+<div class="statusbar">
+  <span>MODO: <span class="hi" id="sb-mode">—</span></span>
+  <span>UP: <span class="hi" id="sb-uptime">—</span></span>
+</div>
+
+<!-- Barra Inferior de las funcionalidades -->
+<nav class="tabbar">
+  <button class="tab active" id="tab-control" onclick="switchTab('control')">
+    CONTROL
+  </button>
+
+  <button class="tab" id="tab-map" onclick="switchTab('map')">
+    MAPA
+  </button>
+
+  <button class="tab" id="tab-audio" onclick="switchTab('audio')">
+    AUDIO
+  </button>
+</nav>
+
+<script>
+"use strict";
+
+const S = {
+  mode: 'autonomous', speed: 50, volume: 70,
+  tracks: [], curTrack: null, playing: false, connected: false,
+};
+
+/*═════════════════════════════════════════════ FUNCIONALIDADES ═══════════════════════════════════════════════════*/
+
+/* Ventanas */
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('view-' + name).classList.add('active');
+  document.getElementById('main').scrollTop = 0;
+  if (name === 'map') setTimeout(initCanvas, 60);
+}
+
+/* Mapa */
+const MAP_COLS = 31, MAP_ROWS = 31;
+const canvas = document.getElementById('map-canvas');
+const ctx    = canvas.getContext('2d');
+const CELL_UNKNOWN  = 0;
+const CELL_VISITED  = 1;
+const CELL_OBSTACLE = 2;
+
+function initCanvas() {
+  const wrap = canvas.parentElement;
+  const avW  = wrap.clientWidth - 28;
+  const avH  = Math.round(window.innerHeight * 0.4);
+  const cell = Math.max(4, Math.floor(Math.min(avW / MAP_COLS, avH / MAP_ROWS)));
+  canvas.width  = cell * MAP_COLS;
+  canvas.height = cell * MAP_ROWS;
+  drawEmptyMap();
+}
+
+/* Dibujar Mapa Vacio */
+function drawEmptyMap() {
+  const cell = canvas.width / MAP_COLS;
+  ctx.fillStyle = '#050709';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = 'rgba(28,44,62,0.6)';
+  ctx.lineWidth = 0.5;
+  for (let c = 0; c <= MAP_COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c * cell, 0); ctx.lineTo(c * cell, canvas.height); ctx.stroke();
+  }
+  for (let r = 0; r <= MAP_ROWS; r++) {
+    ctx.beginPath(); ctx.moveTo(0, r * cell); ctx.lineTo(canvas.width, r * cell); ctx.stroke();
+  }
+  const cx = Math.floor(MAP_COLS / 2) * cell + cell / 2;
+  const cy = Math.floor(MAP_ROWS / 2) * cell + cell / 2;
+  ctx.fillStyle = 'rgba(0,232,122,0.18)';
+  ctx.beginPath(); ctx.arc(cx, cy, cell * 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#00e87a';
+  ctx.beginPath(); ctx.arc(cx, cy, cell * 0.4, 0, Math.PI * 2); ctx.fill();
+}
+
+/* Dibujar Mapa Completo */
+function drawMap(mapData) {
+    if (!mapData || !mapData.grid) { drawEmptyMap(); return; }
+
+    const grid = mapData.grid;
+    const cell = canvas.width / MAP_COLS;
+
+    // Fondo
+    ctx.fillStyle = '#050709';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Dibujar celdas
+    for (let r = 0; r < MAP_ROWS; r++) {
+        for (let c = 0; c < MAP_COLS; c++) {
+            const val = grid[r][c];
+            if (val === CELL_UNKNOWN) {
+                ctx.fillStyle = '#0a1820';
+            } else if (val === CELL_VISITED) {
+                ctx.fillStyle = '#104c8b';
+            } else if (val === CELL_OBSTACLE) {
+                ctx.fillStyle = '#ff3344';
+            }
+            ctx.fillRect(c * cell + 0.5, r * cell + 0.5,
+                         cell - 1, cell - 1);
+        }
+    }
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(28,44,62,0.4)';
+    ctx.lineWidth = 0.5;
+    for (let c = 0; c <= MAP_COLS; c++) {
+        ctx.beginPath();
+        ctx.moveTo(c * cell, 0);
+        ctx.lineTo(c * cell, canvas.height);
+        ctx.stroke();
+    }
+    for (let r = 0; r <= MAP_ROWS; r++) {
+        ctx.beginPath();
+        ctx.moveTo(0, r * cell);
+        ctx.lineTo(canvas.width, r * cell);
+        ctx.stroke();
+    }
+
+    // Robot — circulo verde
+    const rx = mapData.robot_x;
+    const ry = mapData.robot_y;
+    const cx = rx * cell + cell / 2;
+    const cy = ry * cell + cell / 2;
+
+    // Halo
+    ctx.fillStyle = 'rgba(69,238,105,0.2)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, cell * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Robot
+    ctx.fillStyle = '#45ee69';
+    ctx.beginPath();
+    ctx.arc(cx, cy, cell * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Flecha de heading
+    const h = mapData.robot_heading || 0;
+    const rad = (h - 90) * Math.PI / 180;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(rad) * cell * 0.7,
+               cy + Math.sin(rad) * cell * 0.7);
+    ctx.stroke();
+
+    // Actualizar estadisticas
+    document.getElementById('stat-visited').textContent = mapData.visited  || 0;
+    document.getElementById('stat-obs').textContent     = mapData.obstacles || 0;
+    document.getElementById('stat-pos').textContent =
+        rx + ',' + ry;
+}
+
+/* Funcionalidad modo de Operacion */
+function applyModeUI(mode) {
+    S.mode = mode;
+    document.getElementById('btn-auto').className   = 'mode-btn' + (mode === 'autonomous' ? ' act-auto'   : '');
+    document.getElementById('btn-manual').className = 'mode-btn' + (mode === 'manual'     ? ' act-manual' : '');
+    const dpad = document.getElementById('dpad');
+    const lbl  = document.getElementById('dpad-lbl');
+    if (mode === 'manual') {
+        dpad.classList.remove('locked');
+        lbl.textContent = 'MODO MANUAL — ACTIVO';
+        lbl.classList.add('on');
+    } else {
+        dpad.classList.add('locked');
+        lbl.textContent = 'MODO AUTÓNOMO — INACTIVO';
+        lbl.classList.remove('on');
+    }
+    document.getElementById('sb-mode').textContent = mode === 'autonomous' ? 'AUTÓNOMO' : 'MANUAL';
+}
+
+// Actualiza UI + notifica al servidor — solo cuando el usuario presiona un botón
+function setMode(mode) {
+    applyModeUI(mode);
+    apiFetch('/api/mode', 'POST', { mode });
+}
+
+/* Funcionalidad control de tipo D-PAD */
+document.querySelectorAll('.db[data-dir]').forEach(btn => {
+  const dir = btn.dataset.dir;
+  btn.addEventListener('mousedown',  () => { if (S.mode !== 'manual') return; btn.classList.add('pressed'); sendMove(dir); });
+  btn.addEventListener('mouseup',    () => btn.classList.remove('pressed'));
+  btn.addEventListener('mouseleave', () => btn.classList.remove('pressed'));
+  btn.addEventListener('touchstart', e => { e.preventDefault(); if (S.mode !== 'manual') return; btn.classList.add('pressed'); sendMove(dir); }, { passive: false });
+  btn.addEventListener('touchend',   e => { e.preventDefault(); btn.classList.remove('pressed'); if (S.mode === 'manual') sendMove('stop'); }, { passive: false });
+});
+
+const KEY_MAP = {
+  ArrowUp:'forward', ArrowDown:'backward', ArrowLeft:'left', ArrowRight:'right',
+  w:'forward', s:'backward', a:'left', d:'right', ' ':'stop'
+};
+const held = new Set();
+document.addEventListener('keydown', e => {
+  const dir = KEY_MAP[e.key];
+  if (!dir || held.has(e.key) || S.mode !== 'manual') return;
+  held.add(e.key); e.preventDefault();
+  const b = document.querySelector(`.db[data-dir="${dir}"]`);
+  if (b) b.classList.add('pressed');
+  sendMove(dir);
+});
+document.addEventListener('keyup', e => {
+  const dir = KEY_MAP[e.key]; held.delete(e.key);
+  const b = document.querySelector(`.db[data-dir="${dir}"]`);
+  if (b) b.classList.remove('pressed');
+  if (dir && S.mode === 'manual') sendMove('stop');
+});
+
+function sendMove(dir) { apiFetch('/api/move', 'POST', { direction: dir, speed: S.speed }); }
+function onSpeed(v)    { S.speed = parseInt(v); document.getElementById('sp-val').textContent = v + '%'; }
+
+/* Funcionalidad estado de los LEDs */
+function updateLEDs(leds) {
+  function set(id, cls, txt) {
+    document.getElementById('led-' + id).className = 'led ' + (cls || '');
+    document.getElementById('lt-'  + id).textContent = txt;
+  }
+  set('power',    leds.power      ? 'on-power'  : '', leds.power      ? 'ON'        : 'OFF');
+  set('auto',     leds.autonomous ? 'on-auto'   : '', leds.autonomous ? 'ON'        : 'OFF');
+  set('manual',   leds.manual     ? 'on-manual' : '', leds.manual     ? 'ON'        : 'OFF');
+  set('obstacle', leds.obstacle   ? 'on-danger' : '', leds.obstacle   ? '⚠ ALERTA'  : 'OK');
+}
+
+/* Funcionalidad de Sensores */
+const SMAX = 200;
+function updateSensors(s) {
+  ['front','back','left','right'].forEach(id => {
+    const val = s[id] || 0;
+    const pct = Math.min(100, Math.round(val / SMAX * 100));
+    const cls = pct < 15 ? 'danger' : pct < 35 ? 'warn' : '';
+    const ve = document.getElementById('sv-' + id);
+    const fe = document.getElementById('sf-' + id);
+    if (ve) { ve.textContent = val > 0 ? val.toFixed(1) + ' cm' : '— cm'; ve.className = 's-val ' + cls; }
+    if (fe) { fe.style.width = pct + '%'; fe.style.background = cls === 'danger' ? 'var(--danger)' : cls === 'warn' ? 'var(--warn)' : 'var(--cyan)'; }
+  });
+}
+
+/* Funcionalidad del Audio */
+function renderTracks() {
+  const list = document.getElementById('track-list');
+  const none = document.getElementById('no-tracks');
+  if (!S.tracks.length) { if (none) none.style.display = ''; list.querySelectorAll('.track').forEach(e => e.remove()); return; }
+  if (none) none.style.display = 'none';
+  if (list.querySelectorAll('.track').length === S.tracks.length) return;
+  list.querySelectorAll('.track').forEach(e => e.remove());
+  S.tracks.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'track' + (S.curTrack && S.curTrack.id === t.id ? ' active' : '');
+    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${(t.nombre || t.name || '').replace(/\.[^.]+$/, '')}</span><span class="t-dur">${t.duracion || t.duration || ""}</span>`;
+    div.onclick = () => selectTrack(t);
+    list.appendChild(div);
+  });
+}
+
+function highlightTrack() {
+  document.querySelectorAll('.track').forEach(el => el.classList.remove('active'));
+  if (!S.curTrack) return;
+  const idx = S.tracks.findIndex(t => t.id === S.curTrack.id);
+  const items = document.querySelectorAll('.track');
+  if (items[idx]) items[idx].classList.add('active');
+}
+
+function selectTrack(t) {
+  S.curTrack = t; S.playing = true;
+  document.getElementById('np-title').textContent = t.nombre || t.name || '';
+  document.getElementById('prog-dur').textContent = t.duracion || t.duration || '';
+  updatePlayBtn(); highlightTrack();
+  apiFetch('/api/audio/control', 'POST', { action: 'play', track_id: t.id });
+}
+
+function togglePlay() {
+  if (!S.tracks.length) return;
+  if (!S.curTrack) { selectTrack(S.tracks[0]); return; }
+  S.playing = !S.playing; updatePlayBtn();
+  apiFetch('/api/audio/control', 'POST', { action: S.playing ? 'resume' : 'pause' });
+}
+
+function stopAudio() {
+  S.playing = false; updatePlayBtn();
+  document.getElementById('prog-fill').style.width = '0%';
+  document.getElementById('prog-cur').textContent  = '0:00';
+  apiFetch('/api/audio/control', 'POST', { action: 'stop' });
+}
+
+function updatePlayBtn() {
+  const btn = document.getElementById('play-btn');
+  btn.textContent = S.playing ? '⏸' : '▶';
+  btn.classList.toggle('playing', S.playing);
+}
+
+function onVolume(v) {
+  S.volume = parseInt(v);
+  document.getElementById('vol-val').textContent = v + '%';
+  apiFetch('/api/audio/volume', 'POST', { volume: parseInt(v) });
+}
+
+/* ═════════════════════════════════════════════ API ════════════════════════════════════════════════════════════════ */
+
+async function apiFetch(path, method = 'GET', body = null) {
+  try {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    if (res.status === 401) { window.location.href = '/'; return null; }
+    return res.ok ? await res.json().catch(() => null) : null;
+  } catch (_) { return null; }
+}
+
+async function pollStatus() {
+  const data = await apiFetch('/api/status');
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-lbl');
+  const msg = document.getElementById('sb-msg');
+  if (!data) {
+    dot.classList.remove('on'); lbl.textContent = 'OFFLINE'; msg.textContent = '⚠ Sin conexión'; S.connected = false; return;
+  }
+  if (!S.connected) { S.connected = true; dot.classList.add('on'); lbl.textContent = 'ONLINE'; msg.textContent = '● Sistema operativo'; }
+  if (data.mode && data.mode !== S.mode) applyModeUI(data.mode);
+  if (data.leds)    updateLEDs(data.leds);
+  if (data.sensors) updateSensors(data.sensors);
+  if (data.uptime != null) {
+    const h = Math.floor(data.uptime / 3600), m = Math.floor(data.uptime % 3600 / 60), s = data.uptime % 60;
+    document.getElementById('sb-uptime').textContent =
+      `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+  if (data.map) drawMap(data.map);
+  if (data.audio) {
+    // ── Volumen
+    const vol = data.audio.volumen ?? data.audio.volume ?? 70;
+    document.getElementById('vol').value = vol;
+    document.getElementById('vol-val').textContent = vol + '%';
+ 
+    // Estado de reproduccion
+    // status: 0=stopped 1=playing 2=paused
+    const wasPlaying = S.playing;
+    S.playing = (data.audio.status === 1);
+    if (wasPlaying !== S.playing) updatePlayBtn();
+ 
+    //Barra de progreso
+    const posSecs = data.audio.position ?? 0;
+ 
+    // Obtener duración de la pista actual
+    let durSecs = 0;
+    if (S.curTrack) {
+      const durStr = S.curTrack.duracion || S.curTrack.duration || '0:00';
+      const parts  = durStr.split(':');
+      durSecs = parseInt(parts[0] || 0) * 60 + parseInt(parts[1] || 0);
+    }
+ 
+    // Actualizar tiempo actual
+    const curM = Math.floor(posSecs / 60);
+    const curS = Math.floor(posSecs % 60);
+    document.getElementById('prog-cur').textContent =
+      curM + ':' + String(curS).padStart(2, '0');
+ 
+    // Actualizar ancho de la barra
+    if (durSecs > 0) {
+      const pct = Math.min(100, (posSecs / durSecs) * 100).toFixed(1);
+      document.getElementById('prog-fill').style.width = pct + '%';
+    }
+ 
+    // Termino la cancion / track
+    if (data.audio.status === 0 && S.curTrack) {
+      document.getElementById('prog-fill').style.width = '0%';
+      document.getElementById('prog-cur').textContent  = '0:00';
+    }
+  }
+}
+
+async function pollAudioList() {
+  const data = await apiFetch('/api/audio/list');
+  if (data && Array.isArray(data.tracks)) { S.tracks = data.tracks; renderTracks(); }
+}
+
+async function logout() { await apiFetch('/api/logout', 'POST'); window.location.href = '/'; }
+
+function updateClock() {
+  document.getElementById('top-clock').textContent = new Date().toTimeString().slice(0, 8);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  applyModeUI('autonomous');
+  updateClock();
+  setInterval(updateClock, 1000);
+  pollStatus();
+  setInterval(pollStatus, 1000);
+  pollAudioList();
+  setInterval(pollAudioList, 10000);
+});
+</script>
+</body>
+</html>
