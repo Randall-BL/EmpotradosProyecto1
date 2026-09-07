@@ -51,9 +51,49 @@ artefactos de compilación (`*.o`, `*.so`, `CMakeFiles/`) están excluidos vía
 
 | Documento | Contenido |
 |---|---|
+| [`docs/yocto-setup.md`](docs/yocto-setup.md) | Preparación del host, capas, `local.conf`, build de la imagen y grabado de la microSD |
+| [`docs/sdk.md`](docs/sdk.md) | Toolchain-SDK: generación, uso y verificación de la compilación cruzada |
+| [`docs/paquetes.md`](docs/paquetes.md) | Justificación de cada paquete incluido en la imagen |
+| [`docs/arranque-automatico.md`](docs/arranque-automatico.md) | Unidades systemd, arranque automático y recuperación ante fallos |
+| [`meta-robot/README.md`](meta-robot/README.md) | Contenido de la capa Yocto y cómo agregarla al build |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Ramas, Conventional Commits, Pull Requests y estilo de código |
-| [`docs/`](docs/) | Guías de Yocto, SDK, justificación de paquetes y evidencias |
 | [`NOTICE.md`](NOTICE.md) | Software de terceros y sus licencias |
+
+---
+
+## Construcción rápida
+
+```bash
+# 1. Poky y capas, todas en rama scarthgap
+mkdir -p ~/yocto && cd ~/yocto
+git clone -b scarthgap https://git.yoctoproject.org/poky.git
+cd poky
+git clone -b scarthgap https://github.com/agherzan/meta-raspberrypi.git
+git clone -b scarthgap https://github.com/openembedded/meta-openembedded.git
+cd .. && git clone https://github.com/Randall-BL/EmpotradosProyecto1.git
+
+# 2. Entorno de build
+cd poky && source oe-init-build-env
+
+# 3. Capas
+bitbake-layers add-layer ../meta-raspberrypi
+bitbake-layers add-layer ../meta-openembedded/meta-oe
+bitbake-layers add-layer ../meta-openembedded/meta-python
+bitbake-layers add-layer ../meta-openembedded/meta-multimedia
+bitbake-layers add-layer ../meta-openembedded/meta-networking
+bitbake-layers add-layer ~/yocto/EmpotradosProyecto1/meta-robot
+
+# 4. Configuración y credenciales de WiFi
+cat ~/yocto/EmpotradosProyecto1/meta-robot/conf/local.conf.sample >> conf/local.conf
+cp ~/yocto/EmpotradosProyecto1/meta-robot/recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf{.sample,}
+# ... editar con la red real ...
+
+# 5. Imagen
+bitbake robot-image
+```
+
+El detalle completo, incluido el grabado de la microSD y la verificación del rootfs,
+está en [`docs/yocto-setup.md`](docs/yocto-setup.md).
 
 ---
 
