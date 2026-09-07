@@ -55,6 +55,11 @@ artefactos de compilación (`*.o`, `*.so`, `CMakeFiles/`) están excluidos vía
 | [`docs/sdk.md`](docs/sdk.md) | Toolchain-SDK: generación, uso y verificación de la compilación cruzada |
 | [`docs/paquetes.md`](docs/paquetes.md) | Justificación de cada paquete incluido en la imagen |
 | [`docs/arranque-automatico.md`](docs/arranque-automatico.md) | Unidades systemd, arranque automático y recuperación ante fallos |
+| [`docs/hardware-pinout.md`](docs/hardware-pinout.md) | Mapa de pines GPIO — referencia única del cableado |
+| [`docs/hardware-aislamiento.md`](docs/hardware-aislamiento.md) | Etapa de potencia, optoacopladores y separación de tierras |
+| [`docs/hardware-alimentacion.md`](docs/hardware-alimentacion.md) | Batería, BMS y los dos rieles regulados |
+| [`docs/hardware-sensores.md`](docs/hardware-sensores.md) | Sensores, LEDs, audio y diagrama del dominio lógico |
+| [`docs/hardware-chasis.md`](docs/hardware-chasis.md) | Diseño del modelo físico, tracción y montaje |
 | [`meta-robot/README.md`](meta-robot/README.md) | Contenido de la capa Yocto y cómo agregarla al build |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Ramas, Conventional Commits, Pull Requests y estilo de código |
 | [`NOTICE.md`](NOTICE.md) | Software de terceros y sus licencias |
