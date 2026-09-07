@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  local.conf — Proyecto I: Robot Aspiradora Autonomo
+#  CE-1113 Sistemas Empotrados — Raspberry Pi 4 Model B
+#
+#  Copie el bloque de este archivo al final de build/conf/local.conf, que Yocto
+#  genera la primera vez que se ejecuta `source oe-init-build-env`.
+#  build/conf/local.conf NO se versiona: depende de rutas locales de cada host.
+# ─────────────────────────────────────────────────────────────────────────────
+
+CONF_VERSION = "2"
+
+# ── Maquina y distribucion ───────────────────────────────────────────────────
+# raspberrypi4-64 selecciona el BSP aarch64 de meta-raspberrypi. Se usa la
+# variante de 64 bits porque el kernel 6.6 de la RPi4 la trae por defecto y
+# permite usar los paquetes kernel-module-* precompilados sin recompilar.
+MACHINE = "raspberrypi4-64"
+DISTRO  = "poky"
+
+# ── Gestor de arranque: systemd ──────────────────────────────────────────────
+# El enunciado exige una unidad systemd propia con arranque automatico, asi que
+# se reemplaza sysvinit (init manager por defecto de poky) por systemd.
+# usrmerge unifica /bin y /usr/bin, requisito de systemd en Yocto.
+DISTRO_FEATURES:append = " systemd usrmerge wifi"
+DISTRO_FEATURES_BACKFILL_CONSIDERED += "sysvinit"
+VIRTUAL-RUNTIME_init_manager = "systemd"
+VIRTUAL-RUNTIME_initscripts  = "systemd-compat-units"
+
+# ── Capacidades de la maquina ────────────────────────────────────────────────
+# wifi habilita el firmware y los drivers del chip Broadcom integrado.
+# alsa habilita el subsistema de audio del kernel.
+MACHINE_FEATURES:append = " wifi alsa"
+
+# ── Licencias ────────────────────────────────────────────────────────────────
+# El firmware WiFi de la RPi4 esta marcado con este flag; sin aceptarlo
+# bitbake excluye linux-firmware-rpidistro-bcm43455 de la imagen.
+LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
+
+# ── WiFi, audio y video ──────────────────────────────────────────────────────
+ENABLE_WIFI  = "1"
+ENABLE_UART  = "1"   # consola serie: imprescindible para depurar sin HDMI
+ENABLE_AUDIO = "1"
+
+# El robot no lleva pantalla: se desactiva el driver grafico VC4 para no
+# arrastrar Mesa ni el stack de DRM a la imagen (ahorro importante de rootfs).
+DISABLE_VC4GRAPHICS = "1"
+
+# ── Modulos de kernel a cargar en el arranque ────────────────────────────────
+# brcmfmac + brcmutil: WiFi. snd-bcm2835: salida de audio por el jack 3.5 mm.
+KERNEL_MODULE_AUTOLOAD += "cfg80211 brcmfmac brcmfmac-wcc brcmutil rfkill snd-bcm2835"
+
+MACHINE_EXTRA_RRECOMMENDS += " \
+    linux-firmware-rpidistro-bcm43455 \
+    linux-firmware-rpidistro-bcm43456 \
+"
+
+# ── config.txt del bootloader ────────────────────────────────────────────────
+# audio_pwm_mode=2 activa el modo PWM de mayor calidad del jack analogico.
+RPI_EXTRA_CONFIG:append = "\ndtparam=audio=on\naudio_pwm_mode=2\n"
+
+# ── Desarrollo ───────────────────────────────────────────────────────────────
+# debug-tweaks deja root sin contrasena para poder entrar por SSH durante el
+# desarrollo. QUITAR de la imagen de entrega final.
+EXTRA_IMAGE_FEATURES += "debug-tweaks"
+
+# rm_work borra tmp/work/ de cada receta al terminarla: sin esto el build
+# supera facilmente los 100 GB. Se excluye robot-image para conservar el
+# rootfs desempaquetado y poder inspeccionarlo.
+INHERIT += "rm_work"
+RM_WORK_EXCLUDE += "robot-image librobot robot-server"
+
+# ── Paralelismo (ajustar al host de cada quien) ──────────────────────────────
+# BB_NUMBER_THREADS = "8"
+# PARALLEL_MAKE     = "-j 8"
