@@ -22,14 +22,14 @@
 
 ## 1. Repositorio y flujo de trabajo Git — 10%
 
-- [ ] Inicializar repositorio Git y estructura de directorios del proyecto
-- [ ] Configurar ramas `main` / `develop` / `feature/*` (Git Flow o GitHub Flow)
-- [ ] Proteger `main` (merge solo vía Pull Request)
-- [ ] Adoptar **Conventional Commits** en todo el historial (`feat:`, `fix:`, `docs:`, `chore:`…)
-- [ ] Crear **issues** para planeamiento y seguimiento de tareas y bugs
-- [ ] Vincular commits y PRs a sus issues correspondientes
-- [ ] Agregar `.gitignore` (build/, tmp/, sstate-cache/, *.o, *.so, artefactos de Yocto)
-- [ ] Verificar que el historial tenga commits descriptivos y distribuidos en el tiempo (no un único commit final)
+- [x] Inicializar repositorio Git y estructura de directorios del proyecto
+- [x] Configurar ramas `main` / `develop` / `feature/*` (Git Flow o GitHub Flow)
+- [x] Proteger `main` (merge solo vía Pull Request)
+- [x] Adoptar **Conventional Commits** en todo el historial (`feat:`, `fix:`, `docs:`, `chore:`…) — ver `CONTRIBUTING.md`
+- [x] Crear **issues** para planeamiento y seguimiento de tareas y bugs
+- [x] Vincular commits y PRs a sus issues correspondientes
+- [x] Agregar `.gitignore` (build/, tmp/, sstate-cache/, *.o, *.so, artefactos de Yocto)
+- [~] Verificar que el historial tenga commits descriptivos y distribuidos en el tiempo (no un único commit final)
 
 ---
 
@@ -63,25 +63,25 @@
 
 ## 3. Sistema operativo mínimo con Yocto — (OBL)
 
-- [ ] Preparar el host de desarrollo (Ubuntu/Debian) con las dependencias de Yocto
-- [ ] Clonar Poky + `meta-raspberrypi` + `meta-openembedded` (rama compatible entre sí)
-- [ ] Configurar `local.conf` con `MACHINE = "raspberrypi4"` (o `raspberrypi4-64`)
-- [ ] Construir la imagen base y arrancarla exitosamente en la Raspberry Pi 4
-- [ ] Generar el **Toolchain-SDK** para desarrollo cruzado ARM (`bitbake -c populate_sdk`)
-- [ ] Verificar que **todo** el software se compila en el host y se ejecuta en el target (desarrollo cruzado)
-- [ ] Incluir **únicamente** los paquetes estrictamente necesarios (servidor web, bibliotecas de audio, decodificador MP3, GPIO)
-- [ ] Documentar y **justificar cada paquete** agregado más allá de la imagen mínima base
+- [~] Preparar el host de desarrollo (Ubuntu/Debian) con las dependencias de Yocto — documentado en `docs/yocto-setup.md`, falta ejecutarlo
+- [~] Clonar Poky + `meta-raspberrypi` + `meta-openembedded` (rama `scarthgap`) — procedimiento documentado
+- [x] Configurar `local.conf` con `MACHINE = "raspberrypi4-64"` — versionado como `meta-robot/conf/local.conf.sample`
+- [ ] Construir la imagen base y arrancarla exitosamente en la Raspberry Pi 4 — **requiere el kit**
+- [~] Generar el **Toolchain-SDK** para desarrollo cruzado ARM (`bitbake -c populate_sdk`) — documentado en `docs/sdk.md`
+- [~] Verificar que **todo** el software se compila en el host y se ejecuta en el target — método de verificación documentado
+- [x] Incluir **únicamente** los paquetes estrictamente necesarios (servidor web, bibliotecas de audio, decodificador MP3, GPIO)
+- [x] Documentar y **justificar cada paquete** agregado más allá de la imagen mínima base — `docs/paquetes.md`
 
 ### 3.1 Capa y receta propia — (OBL) (EVID)
-- [ ] Crear la capa **`meta-robot/`** con su `conf/layer.conf`
-- [ ] Escribir al menos **una receta BitBake `.bb`** que integre la biblioteca dinámica y/o el servidor web
-  - [ ] `SRC_URI` que descargue o copie las fuentes
-  - [ ] Invocar CMake/Autotools con la toolchain de Yocto (`inherit cmake` / `autotools`)
-  - [ ] Instalar los artefactos en la imagen (`do_install`)
-  - [ ] Declarar **todas** las dependencias (`DEPENDS` / `RDEPENDS`)
-  - [ ] Instalar y habilitar la unidad systemd (`inherit systemd`, `SYSTEMD_SERVICE`)
+- [x] Crear la capa **`meta-robot/`** con su `conf/layer.conf`
+- [x] Escribir al menos **una receta BitBake `.bb`** que integre la biblioteca dinámica y/o el servidor web
+  - [x] `SRC_URI` que descargue o copie las fuentes
+  - [x] Invocar CMake/Autotools con la toolchain de Yocto (`inherit cmake` / `autotools`)
+  - [x] Instalar los artefactos en la imagen (`do_install`)
+  - [x] Declarar **todas** las dependencias (`DEPENDS` / `RDEPENDS`)
+  - [x] Instalar y habilitar la unidad systemd (`inherit systemd`, `SYSTEMD_SERVICE`)
 - [ ] **Validar la reproducibilidad desde cero**: `bitbake <imagen>` produce la imagen final sin pasos manuales adicionales
-- [ ] **(EVID)** Commitear el directorio `meta-robot/` con la receta y el `layer.conf`
+- [x] **(EVID)** Commitear el directorio `meta-robot/` con la receta y el `layer.conf`
 - [ ] **(EVID)** Guardar el fragmento de `log.do_compile` que confirme la compilación cruzada exitosa
 - [ ] **(EVID)** Capturas de pantalla o salida de terminal del binario ejecutándose en el target
 
@@ -155,11 +155,11 @@
 - [ ] Renderizar el mapa en la interfaz web/móvil
 
 ### 7.2 Ejecución automática — (OBL)
-- [ ] Crear la unidad **systemd propia** (`.service`) para la aplicación del servidor
-- [ ] Arranque automático al energizar el sistema
-- [ ] `Restart=on-failure` configurado y probado (matar el proceso y verificar el reinicio)
-- [ ] **Sin interfaz gráfica local** en el sistema embebido
-- [ ] Habilitar el servicio desde la receta Yocto (no manualmente en el target)
+- [x] Crear la unidad **systemd propia** (`.service`) para la aplicación del servidor
+- [~] Arranque automático al energizar el sistema — configurado, falta probarlo en el target
+- [~] `Restart=on-failure` configurado y probado — configurado; procedimiento de prueba en `docs/arranque-automatico.md`
+- [x] **Sin interfaz gráfica local** en el sistema embebido
+- [x] Habilitar el servicio desde la receta Yocto (no manualmente en el target)
 
 ---
 
