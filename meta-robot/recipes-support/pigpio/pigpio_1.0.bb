@@ -60,7 +60,15 @@ FILES:lib${PN}_if2 = "${libdir}/lib${PN}_if2.so.*"
 FILES:${PN}-dev += "${libdir}/lib${PN}*.so"
 FILES:${PN}-doc  = "${mandir}"
 
-inherit lib_package
+inherit lib_package systemd
+
+# El servicio se asocia al paquete que contiene el binario, no al paquete vacio
+# ${PN}: asi la unidad viaja siempre junto al demonio que arranca.
+SYSTEMD_PACKAGES = "${PN}-bin-pigpiod"
+SYSTEMD_SERVICE:${PN}-bin-pigpiod = "pigpiod.service"
+SYSTEMD_AUTO_ENABLE = "enable"
+
+FILES:${PN}-bin-pigpiod += "${systemd_system_unitdir}/pigpiod.service"
 
 do_install() {
     oe_runmake install DESTDIR=${D} prefix=${prefix} mandir=${mandir}
@@ -68,4 +76,9 @@ do_install() {
     # El Makefile de pigpio instala los bindings de Python bajo /usr/local.
     # No se usan y solo agregan peso al rootfs.
     rm -rf ${D}/usr/local
+
+    # Unidad systemd del demonio.
+    install -d ${D}${systemd_system_unitdir}
+    install -m 0644 ${WORKDIR}/pigpiod.service \
+                    ${D}${systemd_system_unitdir}/pigpiod.service
 }

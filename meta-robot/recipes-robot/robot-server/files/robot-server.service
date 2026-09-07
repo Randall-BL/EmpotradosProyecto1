@@ -1,0 +1,48 @@
+# Unidad systemd del servidor de control del robot.
+#
+# Arranca sola al energizar el sistema, sin login ni interfaz grafica local, y se
+# reinicia sola si el proceso muere. Es el unico servicio que el usuario ve: si
+# no esta corriendo, el robot no responde.
+
+[Unit]
+Description=Servidor de control del robot aspiradora
+Documentation=https://github.com/Randall-BL/EmpotradosProyecto1
+
+# El servidor abre el socket HTTP al arrancar, asi que la red debe estar lista.
+After=network-online.target sound.target pigpiod.service
+Wants=network-online.target sound.target
+
+# pigpiod es un requisito duro, no una preferencia: librobot habla con el por
+# socket, y sin el demonio toda llamada a GPIO falla. Requires hace que systemd
+# lo arranque antes y que detenga el servidor si pigpiod se cae.
+Requires=pigpiod.service
+
+[Service]
+Type=simple
+
+# Acceso directo a /dev/mem y a los perifericos de GPIO.
+User=root
+
+ExecStart=/usr/bin/robot-server
+
+# Los recursos se resuelven relativos a este directorio: www/ y audio/.
+WorkingDirectory=/opt/robot
+
+# Requerimiento del enunciado: el servicio debe recuperarse solo ante un fallo.
+# Se prueba matando el proceso y verificando que vuelve.
+Restart=on-failure
+RestartSec=5
+
+# Si falla 5 veces en 60 s systemd deja de reintentar: evita un ciclo de
+# reinicios que consuma CPU cuando el fallo es permanente (por ejemplo, un
+# sensor desconectado).
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Todo a journalctl: es la unica forma de depurar sin pantalla.
+#   journalctl -u robot-server -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+# Demonio pigpio: da acceso al GPIO y al PWM por hardware.
+#
+# Tiene que estar arriba antes que robot-server, porque librobot se conecta a el
+# por socket para cualquier operacion de hardware.
+
+[Unit]
+Description=Demonio pigpio de acceso a GPIO
+Documentation=https://abyz.me.uk/rpi/pigpio/pigpiod.html
+Before=robot-server.service
+
+[Service]
+# pigpiod se demoniza solo: se va a segundo plano tras inicializarse.
+Type=forking
+
+# -l  no escuchar en interfaces de red: solo por socket local. Sin esto el GPIO
+#     del robot quedaria expuesto a cualquiera en la red WiFi.
+ExecStart=/usr/bin/pigpiod -l
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

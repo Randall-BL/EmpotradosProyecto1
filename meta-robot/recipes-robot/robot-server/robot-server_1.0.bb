@@ -38,6 +38,7 @@ SRC_URI = " \
     file://src/CMakeLists.txt    \
     file://www                   \
     file://audio                 \
+    file://robot-server.service  \
     file://LICENSE               \
 "
 
@@ -56,7 +57,13 @@ RDEPENDS:${PN} = " \
     pigpio-bin-pigpiod \
 "
 
-inherit cmake
+inherit cmake systemd
+
+# Arranque automatico al energizar el sistema, habilitado desde la receta y no a
+# mano en el target: el enunciado exige que la imagen se reproduzca sin pasos
+# manuales posteriores.
+SYSTEMD_SERVICE:${PN} = "robot-server.service"
+SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install:append() {
     # Interfaz web estatica.
@@ -67,6 +74,11 @@ do_install:append() {
     # imagen se construye igual, solo que sin playlist inicial.
     install -d ${D}/opt/robot/audio
     cp -r ${WORKDIR}/audio/* ${D}/opt/robot/audio/ || true
+
+    # Unidad systemd. La clase systemd se encarga de habilitarla en el arranque.
+    install -d ${D}${systemd_system_unitdir}
+    install -m 0644 ${WORKDIR}/robot-server.service \
+                    ${D}${systemd_system_unitdir}/robot-server.service
 }
 
 FILES:${PN} += "/opt/robot"
