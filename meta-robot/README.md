@@ -50,3 +50,7 @@ en `.gitignore` y nunca se sube al repositorio:
 cp recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf.sample \
    recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf
 ```
+
+Si se omite, la receta cae a la plantilla y la imagen se construye de todas formas, con
+un `WARNING` de bitbake: el robot arranca pero no se conecta al WiFi. Es deliberado, para
+que un clon limpio reproduzca la imagen sin pasos manuales previos.
