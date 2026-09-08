@@ -159,6 +159,63 @@ Los valores son microsegundos de bloqueo por segundo: mientras la presión los s
 bitbake **no lanza tareas nuevas**. Limitar los hilos acota el caso promedio; esto acota
 el pico, que es lo que en la práctica tumba la máquina.
 
+### `do_fetch` del kernel falla con "Unable to find revision"
+
+Síntoma:
+
+```
+ERROR: linux-raspberrypi-1_6.6.63+git-r0 do_fetch: Fetcher failure:
+  Unable to find revision e442e5c1ab6bff5b5460b4fc949beb72aaf77970
+  in branch rpi-6.6.y even from upstream
+```
+
+El mensaje miente: la revisión **sí está** en el mirror local y **sí es alcanzable**
+desde la rama. Compruébelo:
+
+```bash
+M=build/downloads/git2/github.com.raspberrypi.linux.git
+git --git-dir=$M cat-file -e <SRCREV>                              # existe
+git --git-dir=$M merge-base --is-ancestor <SRCREV> refs/heads/rpi-6.6.y  # alcanzable
+```
+
+**Causa real.** BitBake comprueba la alcanzabilidad así:
+
+```bash
+git branch --contains <SRCREV> --list rpi-6.6.y 2> /dev/null | wc -l
+```
+
+Manda el `stderr` a `/dev/null` y cuenta líneas. En el mirror bare, BitBake deja
+`HEAD` apuntando a `refs/heads/.invalid` a propósito, para que nadie haga un checkout
+accidental. **Git 2.4x aborta `git branch` cuando `HEAD` no resuelve**:
+
+```
+fatal: failed to resolve HEAD as a valid ref
+```
+
+Las versiones de git con las que se validó `scarthgap` lo toleraban. Como BitBake
+descarta el `stderr`, el fallo real queda oculto y `wc -l` devuelve 0, que BitBake
+interpreta como "la revisión no existe". De ahí el mensaje engañoso.
+
+Es un choque entre `scarthgap` y el git de las distribuciones nuevas — el mismo motivo
+del aviso `Host distribution "ubuntu-25.04" has not been validated`.
+
+**Solución.** Apuntar `HEAD` del mirror a una rama real:
+
+```bash
+M=build/downloads/git2/github.com.raspberrypi.linux.git
+git --git-dir=$M symbolic-ref HEAD refs/heads/rpi-6.6.y
+
+# Verificar que la comprobación de BitBake ya pasa: debe imprimir 1
+git --git-dir=$M branch --contains <SRCREV> --list rpi-6.6.y | wc -l
+```
+
+Y relanzar `bitbake robot-image`.
+
+> Diagnóstico general: cuando BitBake diga que una revisión no existe, **ejecute a mano
+> el comando que aparece en `temp/log.do_fetch.*` sin el `2> /dev/null`**. El log de
+> depuración trae la línea exacta, y el error verdadero suele estar en ese `stderr`
+> descartado.
+
 ### Si el build se cuelga
 
 No se pierde nada. Yocto guarda el trabajo terminado en `sstate-cache/`, así que al
