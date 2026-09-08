@@ -18,7 +18,10 @@ SECTION = "net"
 HOMEPAGE = "https://github.com/Randall-BL/EmpotradosProyecto1"
 
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
+# S apunta a ${WORKDIR}/src (ahi esta el CMakeLists), pero el fetcher desempaqueta
+# LICENSE en la raiz del WORKDIR. Sin la ruta explicita, do_populate_lic lo busca
+# en ${WORKDIR}/src/LICENSE y falla con "LIC_FILES_CHKSUM points to an invalid file".
+LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
 
 # server/, audio/ y LICENSE estan en la raiz del repositorio, tres niveles arriba.
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../server:${THISDIR}/../../..:"
