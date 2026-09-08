@@ -137,6 +137,13 @@ Después de cambiar las credenciales hay que invalidar el estado en caché de es
 bitbake -c cleansstate wifi-config && bitbake robot-image
 ```
 
+> **Si se omite este paso la imagen se construye igual.** La receta `wifi-config` cae a
+> la plantilla cuando no encuentra el archivo real, para que un clon limpio del
+> repositorio produzca la imagen sin pasos manuales previos —que es el requisito de
+> reproducibilidad del enunciado. En ese caso bitbake emite un `WARNING` explícito y el
+> robot arranca pero **no se conecta a la red**, así que hay que revisar el log del
+> build antes de dar por buena la imagen.
+
 ---
 
 ## 7. Construir

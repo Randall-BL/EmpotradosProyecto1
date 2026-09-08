@@ -17,6 +17,14 @@ Wants=network-online.target sound.target
 # lo arranque antes y que detenga el servidor si pigpiod se cae.
 Requires=pigpiod.service
 
+# Si falla 5 veces en 60 s systemd deja de reintentar: evita un ciclo de
+# reinicios que consuma CPU cuando el fallo es permanente (por ejemplo, un
+# sensor desconectado). Van en [Unit] y no en [Service]: desde systemd 229 el
+# limitador de arranques es propiedad de la unidad, y puesto en [Service]
+# systemd lo ignora en silencio.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
 [Service]
 Type=simple
 
@@ -32,12 +40,6 @@ WorkingDirectory=/opt/robot
 # Se prueba matando el proceso y verificando que vuelve.
 Restart=on-failure
 RestartSec=5
-
-# Si falla 5 veces en 60 s systemd deja de reintentar: evita un ciclo de
-# reinicios que consuma CPU cuando el fallo es permanente (por ejemplo, un
-# sensor desconectado).
-StartLimitBurst=5
-StartLimitIntervalSec=60
 
 # Todo a journalctl: es la unica forma de depurar sin pantalla.
 #   journalctl -u robot-server -f

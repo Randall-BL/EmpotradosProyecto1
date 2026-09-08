@@ -72,8 +72,10 @@ do_install:append() {
 
     # Recursos de audio. audio/music/ puede venir vacio del repositorio: la
     # imagen se construye igual, solo que sin playlist inicial.
+    # Se copian solo los .mp3: el README y el .gitkeep del repositorio no
+    # tienen nada que hacer en el rootfs.
     install -d ${D}/opt/robot/audio
-    cp -r ${WORKDIR}/audio/* ${D}/opt/robot/audio/ || true
+    find ${WORKDIR}/audio -name '*.mp3' -exec install -m 0644 {} ${D}/opt/robot/audio/ \;
 
     # Unidad systemd. La clase systemd se encarga de habilitarla en el arranque.
     install -d ${D}${systemd_system_unitdir}
