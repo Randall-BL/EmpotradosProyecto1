@@ -37,8 +37,13 @@ LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 
 # ── WiFi, audio y video ──────────────────────────────────────────────────────
 ENABLE_WIFI  = "1"
-ENABLE_UART  = "1"   # consola serie: imprescindible para depurar sin HDMI
 ENABLE_AUDIO = "1"
+
+# Consola serie: imprescindible para depurar sin HDMI.
+# El parser de bitbake NO acepta comentarios al final de una linea de
+# asignacion, solo en lineas propias. Un '#' despues de un valor produce
+# "ParseError: unparsed line".
+ENABLE_UART  = "1"
 
 # El robot no lleva pantalla: se desactiva el driver grafico VC4 para no
 # arrastrar Mesa ni el stack de DRM a la imagen (ahorro importante de rootfs).
