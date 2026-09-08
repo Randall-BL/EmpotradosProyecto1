@@ -74,5 +74,29 @@ INHERIT += "rm_work"
 RM_WORK_EXCLUDE += "robot-image librobot robot-server"
 
 # ── Paralelismo (ajustar al host de cada quien) ──────────────────────────────
+# Regla practica: un hilo por nucleo, pero limitado por la RAM. Cada tarea de
+# compilacion pesada (gcc-cross, binutils, glibc, el kernel) puede pedir 2 GB.
+#
+#   >= 16 GB RAM  ->  BB_NUMBER_THREADS = un hilo por nucleo
+#      8-16 GB    ->  la mitad de los nucleos
+#      <= 8 GB    ->  2 hilos, y activar la regulacion por presion de abajo
+#
 # BB_NUMBER_THREADS = "8"
 # PARALLEL_MAKE     = "-j 8"
+
+# ── Regulacion por presion de recursos ───────────────────────────────────────
+# Requiere PSI en el kernel; verificar con: ls /proc/pressure/
+#
+# bitbake deja de lanzar tareas nuevas mientras la presion supere el umbral,
+# expresado en microsegundos de bloqueo por segundo. Limitar los hilos acota el
+# caso promedio; esto acota el pico, que es lo que realmente tumba la maquina.
+#
+# En el host de desarrollo del grupo (4 nucleos, 7 GB RAM) un build con
+# BB_NUMBER_THREADS = "3" agoto los 4 GB de swap y colgo la maquina al 67% del
+# progreso, con tres tareas pesadas coincidiendo: el do_fetch del kernel de la
+# RPi, el do_compile de binutils y un do_configure. Con 2 hilos mas estos dos
+# limites el build completa.
+#
+# Descomentar en hosts con 8 GB de RAM o menos:
+# BB_PRESSURE_MAX_MEMORY = "5000"
+# BB_PRESSURE_MAX_IO     = "15000"

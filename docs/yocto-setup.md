@@ -29,6 +29,14 @@ Requisitos de recursos, medidos en el build de referencia:
 | RAM | 8 GB | 16 GB |
 | Tiempo del primer build | ~3 h | menos con más núcleos |
 
+> **La RAM es el límite real, no el disco.** En el host del grupo (4 núcleos, 7 GB) un
+> build con `BB_NUMBER_THREADS = "3"` agotó los 4 GB de swap y colgó la máquina al 67 %
+> del progreso: coincidieron el `do_fetch` del kernel de la Raspberry Pi, el
+> `do_compile` de `binutils` y un `do_configure`. No hubo ningún error de receta.
+>
+> En máquinas de 8 GB o menos hay que bajar a 2 hilos **y** activar la regulación por
+> presión de recursos. Ver la sección [Hosts con poca memoria](#hosts-con-poca-memoria).
+
 > El build **no** debe hacerse sobre un sistema de archivos NTFS, exFAT ni sobre un
 > directorio de red: BitBake necesita permisos POSIX y enlaces simbólicos.
 
@@ -115,7 +123,47 @@ LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 DISABLE_VC4GRAPHICS = "1"
 ```
 
-Ajuste `BB_NUMBER_THREADS` y `PARALLEL_MAKE` al número de núcleos del host.
+Ajuste `BB_NUMBER_THREADS` y `PARALLEL_MAKE` al host — pero al número de núcleos **y** a
+la RAM, no solo a los núcleos:
+
+| RAM del host | `BB_NUMBER_THREADS` |
+|---|---|
+| ≥ 16 GB | un hilo por núcleo |
+| 8–16 GB | la mitad de los núcleos |
+| ≤ 8 GB | 2, más la regulación por presión |
+
+### Hosts con poca memoria
+
+Cada tarea de compilación pesada —`gcc-cross`, `binutils`, `glibc`, el kernel— puede
+pedir cerca de 2 GB. Con tres corriendo a la vez en una máquina de 7 GB, el sistema entra
+en *thrashing* de swap y se cuelga sin emitir un solo error: bitbake reporta
+`Bitbake still alive (no events for 3000s)` y termina perdiendo contacto con su servidor.
+
+La defensa es la regulación por presión de recursos, que necesita PSI en el kernel:
+
+```bash
+ls /proc/pressure/          # deben aparecer cpu, io y memory
+```
+
+Y en `build/conf/local.conf`:
+
+```
+BB_NUMBER_THREADS = "2"
+PARALLEL_MAKE = "-j 2"
+
+BB_PRESSURE_MAX_MEMORY = "5000"
+BB_PRESSURE_MAX_IO     = "15000"
+```
+
+Los valores son microsegundos de bloqueo por segundo: mientras la presión los supere,
+bitbake **no lanza tareas nuevas**. Limitar los hilos acota el caso promedio; esto acota
+el pico, que es lo que en la práctica tumba la máquina.
+
+### Si el build se cuelga
+
+No se pierde nada. Yocto guarda el trabajo terminado en `sstate-cache/`, así que al
+relanzar `bitbake robot-image` retoma desde donde quedó en vez de empezar de cero. Basta
+con bajar el paralelismo y volver a lanzarlo.
 
 ---
 
