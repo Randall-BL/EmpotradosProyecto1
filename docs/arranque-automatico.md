@@ -64,6 +64,23 @@ La única interfaz es la web, servida por `robot-server`.
 
 ---
 
+## Validación de las unidades en el host
+
+Antes de construir la imagen, `systemd-analyze verify` revisa la sintaxis y las
+dependencias de una unidad sin instalarla ni arrancarla. Detecta claves mal ubicadas,
+secciones inválidas y dependencias inexistentes:
+
+```bash
+cd meta-robot/recipes-robot/robot-server/files
+systemd-analyze verify ./robot-server.service
+```
+
+Reporta que `/usr/bin/robot-server` no existe —es normal en el host, el binario vive en
+el target— pero cualquier otro mensaje es un defecto real. Ambas unidades del proyecto
+pasan esta verificación sin advertencias de sintaxis.
+
+---
+
 ## Verificación en el target
 
 ### 1. Arranca solo al energizar
@@ -100,7 +117,14 @@ comportamiento correcto.
 
 `StartLimitBurst=5` / `StartLimitIntervalSec=60` cortan el ciclo si el servicio falla
 cinco veces en un minuto, para no quemar CPU cuando el fallo es permanente — un sensor
-desconectado, por ejemplo. Para sacarlo de ese estado:
+desconectado, por ejemplo.
+
+> Ambas van en la sección **`[Unit]`**, no en `[Service]`. Desde systemd 229 el limitador
+> de arranques es propiedad de la unidad; puesto en `[Service]`, systemd lo **ignora en
+> silencio** y el límite no existe. Se detectó con `systemd-analyze verify`, que reporta
+> `Unknown key 'StartLimitIntervalSec' in section [Service], ignoring`.
+
+Para sacar el servicio de ese estado:
 
 ```bash
 systemctl reset-failed robot-server
@@ -137,6 +161,7 @@ journalctl -b -p err                # solo errores del arranque
 - [x] Unidad `.service` propia del servidor, escrita y documentada
 - [x] Arranque automático habilitado desde la receta, no en el target
 - [x] `Restart=on-failure` configurado con `RestartSec` y límite de reintentos
+- [x] Ambas unidades validadas con `systemd-analyze verify`, sin advertencias
 - [x] Sin interfaz gráfica local en la imagen
 - [ ] Probado en el target: matar el proceso y verificar el reinicio — **pendiente: requiere la RPi 4**
 - [ ] Tiempo de arranque medido — **pendiente**
