@@ -54,8 +54,13 @@ RDEPENDS:${PN}-bin         = "${PN}-bin-pigpiod ${PN}-bin-pigs ${PN}-bin-pig2vcd
 
 FILES:lib${PN}     = "${libdir}/lib${PN}.so.*"
 FILES:lib${PN}    =+ "/opt/${PN}/cgi"
-FILES:lib${PN}_if  = "${libdir}/lib${PN}_if.so.*"
-FILES:lib${PN}_if2 = "${libdir}/lib${PN}_if2.so.*"
+
+# OJO con la 'd': el Makefile de pigpio construye libpigpiod_if.so y
+# libpigpiod_if2.so (daemon interface), no libpigpio_if*.so. Con el nombre sin
+# 'd' el glob no encuentra nada, los paquetes salen vacios y no se genera el
+# RPM, asi que do_rootfs falla con "Unable to find a match: libpigpio_if2".
+FILES:lib${PN}_if  = "${libdir}/lib${PN}d_if.so.*"
+FILES:lib${PN}_if2 = "${libdir}/lib${PN}d_if2.so.*"
 
 FILES:${PN}-dev += "${libdir}/lib${PN}*.so"
 FILES:${PN}-doc  = "${mandir}"
