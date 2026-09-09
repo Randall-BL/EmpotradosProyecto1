@@ -11,7 +11,6 @@
 #include "robot_state.h"
 #include "lib_audio.h"
 #include "lib_leds.h"
-#include "robot_hardware.h"
 #include "lib_motors.h"
 
 #include <stdio.h>
