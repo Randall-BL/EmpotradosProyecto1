@@ -18,6 +18,7 @@ SECTION = "net"
 HOMEPAGE = "https://github.com/Randall-BL/EmpotradosProyecto1"
 
 LICENSE = "MIT"
+
 # La ruta de LIC_FILES_CHKSUM se resuelve relativa a S, y aqui S es
 # ${WORKDIR}/src porque el CMakeLists del servidor vive en src/. El LICENSE que
 # trae el SRC_URI, en cambio, se desempaqueta en ${WORKDIR}. Sin la ruta
