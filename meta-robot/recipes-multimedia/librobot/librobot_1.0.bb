@@ -32,6 +32,10 @@ SRC_URI = " \
     file://lib_leds.h     \
     file://lib_audio.c    \
     file://lib_audio.h    \
+    file://lib_odom.c     \
+    file://lib_odom.h     \
+    file://lib_robot.c    \
+    file://lib_robot.h    \
     file://robot_state.h  \
     file://CMakeLists.txt \
     file://LICENSE        \
