@@ -61,3 +61,6 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Binario del simulador (se compila con sim/construir.sh)
+sim/prueba_librobot
