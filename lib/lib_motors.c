@@ -24,6 +24,10 @@
 
 static int g_pi = -1;
 
+/* Ultima orden dada a cada motor, con signo. La lee la odometria. */
+static int g_vel_izq = 0;
+static int g_vel_der = 0;
+
 void motores_init(int pi) {
     g_pi = pi;
 
@@ -36,52 +40,61 @@ void motores_init(int pi) {
 
     set_PWM_frequency(g_pi, ENA, PWM_FREQ);
     set_PWM_frequency(g_pi, ENB, PWM_FREQ);
-    set_PWM_range(g_pi, ENA, 255);
-    set_PWM_range(g_pi, ENB, 255);
+    set_PWM_range(g_pi, ENA, MOTOR_PWM_MAX);
+    set_PWM_range(g_pi, ENB, MOTOR_PWM_MAX);
 
     motores_detener();
 
 }
 
+static int saturar(int v) {
+    if (v >  MOTOR_PWM_MAX) return  MOTOR_PWM_MAX;
+    if (v < -MOTOR_PWM_MAX) return -MOTOR_PWM_MAX;
+    return v;
+}
+
+void motores_set(int vel_izq, int vel_der) {
+    if (g_pi < 0) return;
+
+    vel_izq = saturar(vel_izq);
+    vel_der = saturar(vel_der);
+
+    /* Los pines IN definen el sentido; el PWM sobre EN define la magnitud.
+       Con ambos IN en 0 el L298N deja el motor libre, que es como se frena. */
+    gpio_write(g_pi, IN1, vel_izq > 0);
+    gpio_write(g_pi, IN2, vel_izq < 0);
+    gpio_write(g_pi, IN3, vel_der > 0);
+    gpio_write(g_pi, IN4, vel_der < 0);
+
+    set_PWM_dutycycle(g_pi, ENA, vel_izq < 0 ? -vel_izq : vel_izq);
+    set_PWM_dutycycle(g_pi, ENB, vel_der < 0 ? -vel_der : vel_der);
+
+    g_vel_izq = vel_izq;
+    g_vel_der = vel_der;
+}
+
+void motores_get(int *vel_izq, int *vel_der) {
+    if (vel_izq) *vel_izq = g_vel_izq;
+    if (vel_der) *vel_der = g_vel_der;
+}
+
 void motores_detener(void) {
-    if (g_pi < 0) return;
-    
-    set_PWM_dutycycle(g_pi, ENA, 0);
-    set_PWM_dutycycle(g_pi, ENB, 0);
-    gpio_write(g_pi, IN1, 0);
-    gpio_write(g_pi, IN2, 0);
-    gpio_write(g_pi, IN3, 0);
-    gpio_write(g_pi, IN4, 0);
+    motores_set(0, 0);
 }
 
-void motores_avanzar(int velocidad) {
-    if (g_pi < 0) return;
-    gpio_write(g_pi, IN1, 1); gpio_write(g_pi, IN2, 0);
-    gpio_write(g_pi, IN3, 1); gpio_write(g_pi, IN4, 0);
-    set_PWM_dutycycle(g_pi, ENA, velocidad);
-    set_PWM_dutycycle(g_pi, ENB, velocidad);
-}
+void motores_avanzar(int velocidad)         { motores_set( velocidad,  velocidad); }
+void motores_retroceder(int velocidad)      { motores_set(-velocidad, -velocidad); }
+void motores_girar_izquierda(int velocidad) { motores_set(-velocidad,  velocidad); }
+void motores_girar_derecha(int velocidad)   { motores_set( velocidad, -velocidad); }
 
-void motores_retroceder(int velocidad) {
-    if (g_pi < 0) return;
-    gpio_write(g_pi, IN1, 0); gpio_write(g_pi, IN2, 1);
-    gpio_write(g_pi, IN3, 0); gpio_write(g_pi, IN4, 1);
-    set_PWM_dutycycle(g_pi, ENA, velocidad);
-    set_PWM_dutycycle(g_pi, ENB, velocidad);
-}
+void motores_curva(int velocidad, int giro) {
+    if (giro >  100) giro =  100;
+    if (giro < -100) giro = -100;
 
-void motores_girar_izquierda(int velocidad) {
-    if (g_pi < 0) return;
-    gpio_write(g_pi, IN1, 0); gpio_write(g_pi, IN2, 1);
-    gpio_write(g_pi, IN3, 1); gpio_write(g_pi, IN4, 0);
-    set_PWM_dutycycle(g_pi, ENA, velocidad);
-    set_PWM_dutycycle(g_pi, ENB, velocidad);
-}
+    /* El motor del lado hacia el que se gira baja de velocidad; el otro
+       mantiene la del parametro. Con giro = 100 el interior queda detenido. */
+    int interior = velocidad - (velocidad * (giro < 0 ? -giro : giro)) / 100;
 
-void motores_girar_derecha(int velocidad) {
-    if (g_pi < 0) return;
-    gpio_write(g_pi, IN1, 1); gpio_write(g_pi, IN2, 0);
-    gpio_write(g_pi, IN3, 0); gpio_write(g_pi, IN4, 1);
-    set_PWM_dutycycle(g_pi, ENA, velocidad);
-    set_PWM_dutycycle(g_pi, ENB, velocidad);
+    if (giro >= 0) motores_set(velocidad, interior);
+    else           motores_set(interior,  velocidad);
 }

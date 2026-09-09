@@ -29,6 +29,14 @@ Requisitos de recursos, medidos en el build de referencia:
 | RAM | 8 GB | 16 GB |
 | Tiempo del primer build | ~3 h | menos con más núcleos |
 
+> **La RAM es el límite real, no el disco.** En el host del grupo (4 núcleos, 7 GB) un
+> build con `BB_NUMBER_THREADS = "3"` agotó los 4 GB de swap y colgó la máquina al 67 %
+> del progreso: coincidieron el `do_fetch` del kernel de la Raspberry Pi, el
+> `do_compile` de `binutils` y un `do_configure`. No hubo ningún error de receta.
+>
+> En máquinas de 8 GB o menos hay que bajar a 2 hilos **y** activar la regulación por
+> presión de recursos. Ver la sección [Hosts con poca memoria](#hosts-con-poca-memoria).
+
 > El build **no** debe hacerse sobre un sistema de archivos NTFS, exFAT ni sobre un
 > directorio de red: BitBake necesita permisos POSIX y enlaces simbólicos.
 
@@ -115,7 +123,104 @@ LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 DISABLE_VC4GRAPHICS = "1"
 ```
 
-Ajuste `BB_NUMBER_THREADS` y `PARALLEL_MAKE` al número de núcleos del host.
+Ajuste `BB_NUMBER_THREADS` y `PARALLEL_MAKE` al host — pero al número de núcleos **y** a
+la RAM, no solo a los núcleos:
+
+| RAM del host | `BB_NUMBER_THREADS` |
+|---|---|
+| ≥ 16 GB | un hilo por núcleo |
+| 8–16 GB | la mitad de los núcleos |
+| ≤ 8 GB | 2, más la regulación por presión |
+
+### Hosts con poca memoria
+
+Cada tarea de compilación pesada —`gcc-cross`, `binutils`, `glibc`, el kernel— puede
+pedir cerca de 2 GB. Con tres corriendo a la vez en una máquina de 7 GB, el sistema entra
+en *thrashing* de swap y se cuelga sin emitir un solo error: bitbake reporta
+`Bitbake still alive (no events for 3000s)` y termina perdiendo contacto con su servidor.
+
+La defensa es la regulación por presión de recursos, que necesita PSI en el kernel:
+
+```bash
+ls /proc/pressure/          # deben aparecer cpu, io y memory
+```
+
+Y en `build/conf/local.conf`:
+
+```
+BB_NUMBER_THREADS = "2"
+PARALLEL_MAKE = "-j 2"
+
+BB_PRESSURE_MAX_MEMORY = "5000"
+BB_PRESSURE_MAX_IO     = "15000"
+```
+
+Los valores son microsegundos de bloqueo por segundo: mientras la presión los supere,
+bitbake **no lanza tareas nuevas**. Limitar los hilos acota el caso promedio; esto acota
+el pico, que es lo que en la práctica tumba la máquina.
+
+### `do_fetch` del kernel falla con "Unable to find revision"
+
+Síntoma:
+
+```
+ERROR: linux-raspberrypi-1_6.6.63+git-r0 do_fetch: Fetcher failure:
+  Unable to find revision e442e5c1ab6bff5b5460b4fc949beb72aaf77970
+  in branch rpi-6.6.y even from upstream
+```
+
+El mensaje miente: la revisión **sí está** en el mirror local y **sí es alcanzable**
+desde la rama. Compruébelo:
+
+```bash
+M=build/downloads/git2/github.com.raspberrypi.linux.git
+git --git-dir=$M cat-file -e <SRCREV>                              # existe
+git --git-dir=$M merge-base --is-ancestor <SRCREV> refs/heads/rpi-6.6.y  # alcanzable
+```
+
+**Causa real.** BitBake comprueba la alcanzabilidad así:
+
+```bash
+git branch --contains <SRCREV> --list rpi-6.6.y 2> /dev/null | wc -l
+```
+
+Manda el `stderr` a `/dev/null` y cuenta líneas. En el mirror bare, BitBake deja
+`HEAD` apuntando a `refs/heads/.invalid` a propósito, para que nadie haga un checkout
+accidental. **Git 2.4x aborta `git branch` cuando `HEAD` no resuelve**:
+
+```
+fatal: failed to resolve HEAD as a valid ref
+```
+
+Las versiones de git con las que se validó `scarthgap` lo toleraban. Como BitBake
+descarta el `stderr`, el fallo real queda oculto y `wc -l` devuelve 0, que BitBake
+interpreta como "la revisión no existe". De ahí el mensaje engañoso.
+
+Es un choque entre `scarthgap` y el git de las distribuciones nuevas — el mismo motivo
+del aviso `Host distribution "ubuntu-25.04" has not been validated`.
+
+**Solución.** Apuntar `HEAD` del mirror a una rama real:
+
+```bash
+M=build/downloads/git2/github.com.raspberrypi.linux.git
+git --git-dir=$M symbolic-ref HEAD refs/heads/rpi-6.6.y
+
+# Verificar que la comprobación de BitBake ya pasa: debe imprimir 1
+git --git-dir=$M branch --contains <SRCREV> --list rpi-6.6.y | wc -l
+```
+
+Y relanzar `bitbake robot-image`.
+
+> Diagnóstico general: cuando BitBake diga que una revisión no existe, **ejecute a mano
+> el comando que aparece en `temp/log.do_fetch.*` sin el `2> /dev/null`**. El log de
+> depuración trae la línea exacta, y el error verdadero suele estar en ese `stderr`
+> descartado.
+
+### Si el build se cuelga
+
+No se pierde nada. Yocto guarda el trabajo terminado en `sstate-cache/`, así que al
+relanzar `bitbake robot-image` retoma desde donde quedó en vez de empezar de cero. Basta
+con bajar el paralelismo y volver a lanzarlo.
 
 ---
 
