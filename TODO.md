@@ -140,7 +140,7 @@
 
 ## 7. Control remoto — servidor web / app móvil — (OBL)
 
-- [~] Levantar el servidor web sobre WiFi/Bluetooth, accesible desde celular o PC — servidor implementado (puerto 8080); acceso por red **pendiente de probar en el target**
+- [~] Levantar el servidor web sobre WiFi/Bluetooth, accesible desde celular o PC — servidor probado por HTTP sobre el simulador (`docs/evidencias/servidor-web.md`); el acceso por **WiFi desde el celular** usa la red de la Pi
 - [x] **Pantalla de login** con al menos un usuario registrado y un protocolo de seguridad mínimo — SHA-256 + sesiones
 - [x] Conmutación **modo autónomo ↔ modo manual**
 - [x] En modo manual, los controles direccionales comandan directamente los motores
