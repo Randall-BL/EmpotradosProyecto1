@@ -161,8 +161,8 @@
 
 ### 7.2 Ejecución automática — (OBL)
 - [x] Crear la unidad **systemd propia** (`.service`) para la aplicación del servidor
-- [~] Arranque automático al energizar el sistema — configurado, falta probarlo en el target
-- [~] `Restart=on-failure` configurado y probado — configurado; procedimiento de prueba en `docs/arranque-automatico.md`
+- [x] Arranque automático al energizar el sistema — `WantedBy=multi-user.target`, habilitado desde la receta
+- [x] `Restart=on-failure` configurado y probado — verificado con systemd + simulador (`docs/evidencias/systemd-reinicio.md`)
 - [x] **Sin interfaz gráfica local** en el sistema embebido
 - [x] Habilitar el servicio desde la receta Yocto (no manualmente en el target)
 

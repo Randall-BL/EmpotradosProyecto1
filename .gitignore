@@ -64,3 +64,5 @@ Thumbs.db
 
 # Binario del simulador (se compila con sim/construir.sh)
 sim/prueba_librobot
+sim/robot-server-sim
+sim/run/
