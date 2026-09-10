@@ -54,6 +54,7 @@ artefactos de compilación (`*.o`, `*.so`, `CMakeFiles/`) están excluidos vía
 | [`docs/yocto-setup.md`](docs/yocto-setup.md) | Preparación del host, capas, `local.conf`, build de la imagen y grabado de la microSD |
 | [`docs/sdk.md`](docs/sdk.md) | Toolchain-SDK: generación, uso y verificación de la compilación cruzada |
 | [`docs/paquetes.md`](docs/paquetes.md) | Justificación de cada paquete incluido en la imagen |
+| [`docs/api-librobot.md`](docs/api-librobot.md) | Referencia de la API pública de la biblioteca de control |
 | [`docs/arranque-automatico.md`](docs/arranque-automatico.md) | Unidades systemd, arranque automático y recuperación ante fallos |
 | [`docs/hardware-pinout.md`](docs/hardware-pinout.md) | Mapa de pines GPIO — referencia única del cableado |
 | [`docs/hardware-aislamiento.md`](docs/hardware-aislamiento.md) | Etapa de potencia, optoacopladores y separación de tierras |

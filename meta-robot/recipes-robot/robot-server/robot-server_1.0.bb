@@ -39,8 +39,6 @@ SRC_URI = " \
     file://src/sha256.h          \
     file://src/robot_state.c     \
     file://src/robot_state.h     \
-    file://src/robot_hardware.c  \
-    file://src/robot_hardware.h  \
     file://src/CMakeLists.txt    \
     file://www                   \
     file://audio                 \

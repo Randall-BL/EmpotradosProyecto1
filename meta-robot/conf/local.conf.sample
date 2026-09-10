@@ -100,3 +100,39 @@ RM_WORK_EXCLUDE += "robot-image librobot robot-server"
 # Descomentar en hosts con 8 GB de RAM o menos:
 # BB_PRESSURE_MAX_MEMORY = "5000"
 # BB_PRESSURE_MAX_IO     = "15000"
+
+# ── Recortes para hosts que no aguantan el build completo ────────────────────
+# En el host del grupo (Surface Pro 7: 4 nucleos, 7 GB de RAM, 4 GB de swap) la
+# maquina se congelo por completo tres veces —sin log, sin OOM killer, con
+# apagado forzado— durante tareas pesadas de compilacion. Los dos recortes de
+# abajo quitan trabajo que la imagen no necesita; el tercero baja la prioridad
+# de las tareas para que el escritorio siga respondiendo.
+
+# 1. SPDX. poky.conf hereda create-spdx, que agrega tres tareas de python por
+#    receta (do_create_spdx, do_create_runtime_spdx, do_create_package_spdx)
+#    hasheando cada archivo empaquetado. Es el SBOM del build; el enunciado no
+#    lo pide. Quitarlo bajo el total de tareas de 6014 a 4950.
+INHERIT:remove = "create-spdx"
+
+# 2. El gcc del target. Nadie lo instala en la imagen, pero entraba al grafo
+#    por dos paquetes de pruebas que ni se empaquetan:
+#
+#      elfutils-ptest  RDEPENDS  gcc-symlinks
+#      python3-ptest   RDEPENDS  gcc g++
+#
+#    bitbake necesita el packagedata de esos RDEPENDS para escribir los RPM, y
+#    para tenerlo compila el gcc entero para ARM: la tarea mas pesada del build
+#    y justo donde se congelo la maquina. Cortar las dos referencias la saca del
+#    grafo (345 -> 342 recetas) sin tocar la imagen resultante.
+RDEPENDS:elfutils-ptest:remove = "gcc-symlinks"
+RDEPENDS:python3-ptest:remove = "gcc g++"
+
+# 3. Prioridad de las tareas: la mas baja de CPU y clase idle de E/S, para que
+#    el build no le gane el disco ni el procesador al escritorio.
+#    OJO con el formato de ionice: es "clase.prioridad", con punto.
+BB_TASK_NICE_LEVEL = "19"
+BB_TASK_IONICE_LEVEL = "3.0"
+
+# Ademas conviene lanzar bitbake en su propia unidad de systemd con un tope de
+# memoria, para que el kernel recorte el cgroup del build en vez de congelar la
+# maquina entera. Ver docs/yocto-setup.md.
