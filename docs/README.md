@@ -7,6 +7,7 @@
 | `yocto-setup.md` | Preparación del host, layers, `local.conf` y construcción de la imagen |
 | `sdk.md` | Generación, instalación y uso del Toolchain-SDK para ARM |
 | `api-librobot.md` | Referencia de la API pública de `librobot` (motores, sensores, LEDs, odometría, audio) |
+| `odometria.md` | Procedimiento de calibración en campo (motores, sensores, odometría) |
 | `paquetes.md` | Todo paquete agregado sobre la imagen mínima, con su justificación |
 | `arranque-automatico.md` | Unidades systemd, arranque automático y recuperación ante fallos |
 

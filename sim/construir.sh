@@ -22,11 +22,12 @@ $CC -Wall -Wextra -O1 -g -I. -I"$LIB" \
     "$LIB"/lib_sensors.c \
     "$LIB"/lib_leds.c \
     "$LIB"/lib_odom.c \
+    "$LIB"/lib_audio.c \
     "$LIB"/lib_robot.c \
     "$SRV"/robot_state.c \
     mundo.c \
     pigpio_sim.c \
     prueba_librobot.c \
-    -o prueba_librobot -lm -lpthread
+    -o prueba_librobot -lmpg123 -lasound -lm -lpthread
 
 echo "listo: ./prueba_librobot"

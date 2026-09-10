@@ -19,9 +19,9 @@ unset LD_LIBRARY_PATH
 
 $CC -Wall -O1 -I"$SIM" -I"$SIM/../lib" -I"$SIM/../server/src" \
     "$SIM"/../lib/lib_motors.c "$SIM"/../lib/lib_sensors.c "$SIM"/../lib/lib_leds.c \
-    "$SIM"/../lib/lib_odom.c "$SIM"/../lib/lib_robot.c "$SIM"/../server/src/robot_state.c \
+    "$SIM"/../lib/lib_odom.c "$SIM"/../lib/lib_audio.c "$SIM"/../lib/lib_robot.c "$SIM"/../server/src/robot_state.c \
     "$SIM"/mundo.c "$SIM"/pigpio_sim.c "$SIM"/prueba_librobot.c \
-    -o "$SIM/prueba_librobot_arm" -lm -lpthread
+    -o "$SIM/prueba_librobot_arm" -lmpg123 -lasound -lm -lpthread
 
 echo "binario: $(file "$SIM/prueba_librobot_arm" | cut -d, -f1-2)"
 echo "ejecutando bajo qemu-aarch64 ..."
