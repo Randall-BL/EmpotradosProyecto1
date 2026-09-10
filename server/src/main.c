@@ -15,14 +15,16 @@
 #include <pthread.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <math.h>
 
 #include "robot_state.h"
 #include "lib_audio.h"
 #include "lib_leds.h"
 #include "auth.h"
 #include "api.h"
-#include "robot_hardware.h"
+#include "lib_robot.h"
 #include "lib_motors.h"
+#include "lib_odom.h"
 
 // Configuraciones del servidor iniciales
 #define SERVER_PORT      8080
@@ -265,75 +267,83 @@ static void *watchdog_thread(void *arg) {
    Actualizar el mapa de posicion del Robot
 ══════════════════════════════════════════════════════════ */
 
-/* Actualiza posicion y grilla segun movimiento y sensores */
-static void map_update(RobotState *rs, double d_front,
-                        double d_left, double d_right,
-                        int moving_forward)
+/* Lado de una celda de la grilla, en cm. Con 31x31 celdas de 20 cm el mapa
+   cubre un cuadrado de 6.2 m de lado, suficiente para la sala de la demo. */
+#define MAP_CELDA_CM 20.0
+
+/* Mas alla de esta distancia la lectura del HC-SR04 no se usa para mapear: el
+   eco rebotado de lejos es poco confiable y ensucia la grilla. */
+#define MAP_ALCANCE_CM 60.0
+
+/* Proyecta una lectura de distancia sobre la grilla y marca la celda donde
+   estaria el obstaculo. Se llama con rs->lock ya tomado. */
+static void map_marcar_obstaculo(RobotState *rs, int x, int y,
+                                 double rumbo_grados, double dist_cm)
 {
+    if (dist_cm <= 0.0 || dist_cm > MAP_ALCANCE_CM) return;
+
+    double rad = rumbo_grados * M_PI / 180.0;
+    int ox = x + (int)lround(sin(rad) * dist_cm / MAP_CELDA_CM);
+    int oy = y - (int)lround(cos(rad) * dist_cm / MAP_CELDA_CM);
+
+    /* Un obstaculo a menos de media celda cae sobre el propio robot: no se
+       marca, o el robot se encerraria solo. */
+    if (ox == x && oy == y) return;
+
+    if (ox >= 0 && ox < MAP_COLS && oy >= 0 && oy < MAP_ROWS)
+        rs->map.grid[oy][ox] = CELL_OBSTACLE;
+}
+
+/* Actualiza la posicion del robot y la grilla del mapa.
+ *
+ * La posicion ya no se estima contando iteraciones del lazo: la trae la
+ * odometria de la biblioteca (lib_odom), que integra la velocidad ordenada a
+ * cada motor. Asi el mapa refleja cuanto se movio de verdad el robot y no
+ * cuantas vueltas dio este hilo.
+ */
+static void map_update(RobotState *rs, double d_front,
+                       double d_left, double d_right)
+{
+    double x_cm, y_cm, rumbo;
+    odom_get(&x_cm, &y_cm, &rumbo);
+
+    /* Del mundo (cm, este y norte positivos) a la grilla: el origen queda en
+       el centro del mapa y la fila 0 apunta al norte. */
+    int x = MAP_COLS / 2 + (int)lround(x_cm / MAP_CELDA_CM);
+    int y = MAP_ROWS / 2 - (int)lround(y_cm / MAP_CELDA_CM);
+
     pthread_mutex_lock(&rs->lock);
 
-    int x = rs->map.robot_x;
-    int y = rs->map.robot_y;
-    int h = rs->map.robot_heading;
-
-    /* Marcar celda actual como visitada */
-    if (x >= 0 && x < MAP_COLS && y >= 0 && y < MAP_ROWS)
+    if (x >= 0 && x < MAP_COLS && y >= 0 && y < MAP_ROWS) {
+        rs->map.robot_x = x;
+        rs->map.robot_y = y;
         rs->map.grid[y][x] = CELL_VISITED;
-
-    /* Marcar obstaculos detectados por sensores */
-    /* Sensor frontal */
-    if (d_front > 0 && d_front < 20.0) {
-        int ox = x, oy = y;
-        if      (h == 0)   oy -= 1;  // Norte
-        else if (h == 90)  ox += 1;  // Este
-        else if (h == 180) oy += 1;  // Sur
-        else               ox -= 1;  // Oeste
-        if (ox >= 0 && ox < MAP_COLS && oy >= 0 && oy < MAP_ROWS)
-            rs->map.grid[oy][ox] = CELL_OBSTACLE;
     }
+    rs->map.robot_heading = ((int)lround(rumbo)) % 360;
 
-    /* Sensor izquierdo — 90 grados a la izquierda del heading */
-    if (d_left > 0 && d_left < 20.0) {
-        int lh = (h + 270) % 360;
-        int ox = x, oy = y;
-        if      (lh == 0)   oy -= 1;
-        else if (lh == 90)  ox += 1;
-        else if (lh == 180) oy += 1;
-        else                ox -= 1;
-        if (ox >= 0 && ox < MAP_COLS && oy >= 0 && oy < MAP_ROWS)
-            rs->map.grid[oy][ox] = CELL_OBSTACLE;
-    }
-
-    /* Sensor derecho — 90 grados a la derecha del heading */
-    if (d_right > 0 && d_right < 20.0) {
-        int rh = (h + 90) % 360;
-        int ox = x, oy = y;
-        if      (rh == 0)   oy -= 1;
-        else if (rh == 90)  ox += 1;
-        else if (rh == 180) oy += 1;
-        else                ox -= 1;
-        if (ox >= 0 && ox < MAP_COLS && oy >= 0 && oy < MAP_ROWS)
-            rs->map.grid[oy][ox] = CELL_OBSTACLE;
-    }
-
-    /* Avanzar posicion si el robot se mueve hacia adelante */
-    if (moving_forward) {
-        int nx = x, ny = y;
-        if      (h == 0)   ny -= 1;
-        else if (h == 90)  nx += 1;
-        else if (h == 180) ny += 1;
-        else               nx -= 1;
-
-        if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS &&
-            rs->map.grid[ny][nx] != CELL_OBSTACLE) {
-            rs->map.robot_x = nx;
-            rs->map.robot_y = ny;
-        }
-    }
+    map_marcar_obstaculo(rs, x, y, rumbo,        d_front);
+    map_marcar_obstaculo(rs, x, y, rumbo - 90.0, d_left);
+    map_marcar_obstaculo(rs, x, y, rumbo + 90.0, d_right);
 
     pthread_mutex_unlock(&rs->lock);
 }
 
+
+/* Espera troceada que mantiene viva la odometria.
+ *
+ * Las maniobras de evasion duran cientos de milisegundos con los motores
+ * andando. Si el hilo se bloqueara de un solo usleep(), la odometria recibiria
+ * un unico paso de integracion gigante al final —y lo descartaria por pasarse
+ * del limite— perdiendo justo el retroceso y el giro. Troceando la espera,
+ * cada tramo de la maniobra queda integrado.
+ */
+static void mover_durante(int ms) {
+    const int paso_ms = 50;
+    for (int t = 0; t < ms && g_running; t += paso_ms) {
+        usleep(paso_ms * 1000);
+        odom_update();
+    }
+}
 
 /* ══════════════════════════════════════════════════════════
    Hilo de Navegación Autónoma y Lectura de Sensores
@@ -354,9 +364,9 @@ static void *autonomous_thread(void *arg) {
         }
 
         // 1. Leer los 3 sensores ultrasónicos en tiempo real
-        double d_front = robot_get_distancia_frontal();
-        double d_left  = robot_get_distancia_izq();
-        double d_right = robot_get_distancia_der();
+        double d_front = robot_distancia_frontal();
+        double d_left  = robot_distancia_izquierda();
+        double d_right = robot_distancia_derecha();
 
         // Si la lectura falla (timeout o fuera de rango), asumimos distancia segura
         if (d_front < 0) d_front = 999.0;
@@ -379,9 +389,15 @@ static void *autonomous_thread(void *arg) {
 
         // 4. Actualizar el LED físico usando la librería lib_leds (solo si cambió)
         if (prev_obstaculo != obstaculo) {
-            motores_detener();
             lib_leds_set(LED_OBSTACLE, obstaculo);
-            lib_audio_notify(NOTIFY_OBSTACLE);
+
+            /* El sonido y la detencion son de la APARICION del obstaculo. Al
+               despejarse el camino solo se apaga el LED: avisar de nuevo seria
+               anunciar un obstaculo que ya no esta. */
+            if (obstaculo) {
+                motores_detener();
+                lib_audio_notify(NOTIFY_OBSTACLE);
+            }
         }
 
         /* ── Detener motores inmediatamente al cambiar de modo ── */
@@ -393,33 +409,26 @@ static void *autonomous_thread(void *arg) {
             modo_anterior = modo_actual;
         }
 
-        //  Actualizar mapa solo en Autonomo
-        int moving_forward = (modo_actual == MODE_AUTONOMOUS && !obstaculo);
-        map_update(rs, d_front, d_left, d_right, moving_forward);
+        // Integrar el movimiento y volcarlo al mapa
+        odom_update();
+        map_update(rs, d_front, d_left, d_right);
 
         // 5. LÓGICA REACTIVA (Solo si estamos en MODO AUTÓNOMO)
         if (modo_actual == MODE_AUTONOMOUS) {
             if (obstaculo) {
-                // Rutina de evasión
+                /* Rutina de evasion: detenerse, retroceder y cambiar de
+                   direccion. El rumbo ya no se ajusta a mano: lo lleva la
+                   odometria a partir de lo que giraron las llantas. */
                 motores_retroceder(180);
-                usleep(500000); // Retroceder 500ms
+                mover_durante(500);
                 motores_detener();
-                usleep(100000);
+                mover_durante(100);
 
                 // Evaluar cuál lado tiene más espacio usando los sensores laterales
-                if (d_left > d_right) {
-                    motores_girar_izquierda(vel_giro);
-                    /* Actualizar heading — giro izquierda = -90 grados */
-                    pthread_mutex_lock(&rs->lock);
-                    rs->map.robot_heading = (rs->map.robot_heading + 270) % 360;
-                    pthread_mutex_unlock(&rs->lock);
-                } else {
-                    motores_girar_derecha(vel_giro);
-                    pthread_mutex_lock(&rs->lock);
-                    rs->map.robot_heading = (rs->map.robot_heading + 90) % 360;
-                    pthread_mutex_unlock(&rs->lock);    
-                }
-                usleep(600000); // Girar por 600ms
+                if (d_left > d_right) motores_girar_izquierda(vel_giro);
+                else                  motores_girar_derecha(vel_giro);
+
+                mover_durante(600);
                 motores_detener();
             } else {
                 // Camino libre: avanzar continuamente
@@ -454,16 +463,17 @@ int main(void) {
 
     if (robot_state_init() < 0)  { fprintf(stderr, "[main] estado inicial fallo\n");}
 
-    // --- INICIALIZAR HARDWARE DE MOTORES Y SENSORES ---
-    if (robot_hw_init() < 0) { 
-        fprintf(stderr, "[main] hardware init failed (Requiere ejecutar con sudo)\n"); 
-        robot_state_destroy(); 
-        return 1; 
-    }  
+    /* --- INICIALIZAR EL HARDWARE ---
+       robot_init() abre la sesion con pigpiod y deja listos motores, sensores,
+       LEDs y odometria. El servidor no toca GPIO: todo pasa por librobot. */
+    if (robot_init() < 0) {
+        fprintf(stderr, "[main] hardware init failed (requiere pigpiod corriendo)\n");
+        robot_state_destroy();
+        return 1;
+    }
 
     if (lib_audio_init(NULL) < 0)  { fprintf(stderr, "[main] audio init failed\n");}
     if (auth_init()        < 0)  { fprintf(stderr, "[main] autorizacion inicial fallo\n");}
-    if (lib_leds_init(robot_hw_get_pi()) < 0) { /* solo warning */ }
 
     // Notificacion de encendido
     lib_audio_notify(NOTIFY_STARTUP); 
@@ -511,7 +521,7 @@ int main(void) {
         pthread_join(auto_tid, NULL);
         auth_destroy();
         lib_audio_destroy();
-        robot_hw_cleanup();
+        robot_shutdown();
         robot_state_destroy();
         lib_leds_destroy();
         return 1;
@@ -531,7 +541,7 @@ int main(void) {
     
     auth_destroy();
     lib_audio_destroy();
-    robot_hw_cleanup(); // Detener motores y apagar triggers de sensores
+    robot_shutdown(); // Detener motores, apagar LEDs y cerrar la sesion de pigpiod
     robot_state_destroy();
     lib_leds_destroy(); // Apagar LEDs físicos
     

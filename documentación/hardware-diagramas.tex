@@ -1,0 +1,502 @@
+% ---------------------------------------------------------------------------
+% Proyecto I - Robot Aspiradora Autonomo (Yocto)
+% CE-1113 Sistemas Empotrados - TEC
+%
+% Diagramas de hardware. El detalle (calculos, listas de materiales y
+% procedimientos de verificacion) vive en docs/hardware-*.md; aqui solo
+% estan los diagramas.
+%
+% Compilar:  pdflatex hardware-diagramas.tex   (dos veces)
+% ---------------------------------------------------------------------------
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-noshorthands,es-noquoting]{babel}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{tikz}
+\usepackage[siunitx,RPvoltages]{circuitikz}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{caption}
+
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc,shapes.geometric}
+
+\captionsetup{font=small,labelfont=bf,width=.92\linewidth}
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+
+% --- paleta -----------------------------------------------------------------
+\definecolor{cLog}{RGB}{31,102,168}
+\definecolor{cPot}{RGB}{193,84,26}
+\definecolor{cLed}{RGB}{34,120,64}
+\definecolor{cGris}{RGB}{120,120,120}
+\definecolor{cFondo}{RGB}{245,247,250}
+
+% --- estilos comunes --------------------------------------------------------
+\tikzset{
+  blk/.style   ={draw,rounded corners=2pt,align=center,inner sep=4pt,
+                 minimum height=8mm,font=\small},
+  blkl/.style  ={blk,draw=cLog,fill=cLog!8},
+  blkp/.style  ={blk,draw=cPot,fill=cPot!8},
+  blkn/.style  ={blk,draw=cGris,fill=black!3},
+  rot/.style   ={font=\scriptsize\bfseries},
+  ln/.style    ={-{Latex[length=2mm]},thick},
+}
+
+% --- caja de nota -----------------------------------------------------------
+\newsavebox{\notabox}
+\newenvironment{nota}
+  {\par\medskip\begin{lrbox}{\notabox}%
+   \begin{minipage}{\dimexpr0.95\linewidth-14pt\relax}\small}
+  {\end{minipage}\end{lrbox}%
+   \begin{center}\setlength{\fboxsep}{7pt}\colorbox{cFondo}{\usebox{\notabox}}\end{center}\medskip}
+
+% ---------------------------------------------------------------------------
+\title{\vspace{-1.4cm}\textbf{Diagramas de hardware}\\[2pt]
+       \large Proyecto I --- Robot Aspiradora Autónomo}
+\author{\small CE-1113 Sistemas Empotrados --- Tecnológico de Costa Rica}
+\date{\small\today}
+
+\begin{document}
+\maketitle
+\vspace{-0.8cm}
+
+{\small Los cálculos, las listas de materiales y los procedimientos de
+verificación están en \texttt{docs/hardware-*.md}. Este documento reúne
+únicamente los diagramas.}
+
+\vspace{0.2cm}
+\hrule
+\vspace{0.4cm}
+
+% ===========================================================================
+\section{Arquitectura general}
+
+Un pack 2S alimenta dos rieles regulados por separado. Las seis señales de
+control del puente H cruzan hacia el dominio de potencia a través de
+optoacopladores.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[font=\small]
+
+  % --- fuente ---
+  \node[blkn] (bat) at (0,5.4) {Pack 2S 18650\\[-1pt]\scriptsize 7{,}4\,V nom. (6{,}0--8{,}4\,V)};
+  \node[blkn,right=8mm of bat] (bms) {BMS 2S\\[-1pt]\scriptsize $\ge$\,10\,A, con balanceo};
+  \draw[ln] (bat) -- (bms);
+
+  % --- nodo de reparto ---
+  \draw[thick] (bms.south) -- (bms.south |- 0,3.3);
+  \draw[thick] (-3.1,3.3) -- (5.1,3.3);
+  \coordinate (spL) at (-3.1,3.3);
+  \coordinate (spR) at (5.1,3.3);
+
+  % --- reguladores ---
+  \node[blkl] (buck) at (-3.1,2.35) {Buck 5\,V\\[-1pt]\scriptsize MP2307, 3\,A};
+  \node[blkp] (dir)  at (5.1,2.35)  {Directo\\[-1pt]\scriptsize 7{,}4\,V};
+  \draw[ln] (spL) -- (buck);
+  \draw[ln] (spR) -- (dir);
+
+  % --- etiquetas de riel ---
+  \node[rot,text=cLog,below=2mm of buck] (rl) {RIEL LÓGICO\ \ 5\,V / GND\_LOG};
+  \node[rot,text=cPot,below=2mm of dir]  (rp) {RIEL POTENCIA\ \ 7{,}4\,V / GND\_POT};
+
+  % --- consumidores ---
+  \node[blkl,below=3mm of rl,text width=3.5cm] (pi)
+    {\textbf{Raspberry Pi 4 B}\\[-1pt]\scriptsize GPIO (BCM) $\cdot$ jack 3{,}5\,mm};
+  \node[blkl,below=2.5mm of pi,text width=3.5cm] (per)
+    {\scriptsize 3 $\times$ HC-SR04\\[-1pt]\scriptsize 4 $\times$ LED indicador\\[-1pt]\scriptsize LM386 + altavoz 8\,$\Omega$};
+  \draw[thick,cLog] (pi) -- (per);
+
+  \node[blkp,below=3mm of rp,text width=3.3cm] (l298)
+    {\textbf{Driver L298N}\\[-1pt]\scriptsize doble puente H};
+  \node[blkp,below=2.5mm of l298,text width=3.3cm] (mot)
+    {\scriptsize Motor izq. \quad Motor der.\\[-1pt]\scriptsize DC con reductora};
+  \draw[ln,cPot] (l298) -- (mot);
+
+  % --- barrera ---
+  \node[blk,draw=cLed,fill=cLed!8,text=cLed] (opto) at (1.0,-0.15)
+    {6 $\times$ PC817\\[-1pt]\scriptsize ENA, IN1, IN2,\\[-2pt]\scriptsize ENB, IN3, IN4};
+  \draw[ln] (pi.east)   -- (opto.west);
+  \draw[ln] (opto.east) -- (l298.west);
+
+  \draw[dashed,thick,cLed] (1.0,1.5) -- (1.0,-2.0);
+  \node[rot,text=cLed,fill=white,inner sep=2pt] at (1.0,1.05) {AISLAMIENTO ÓPTICO};
+
+  % --- retorno comun ---
+  \draw[dotted,thick,cGris] (buck.west) -- ++(-0.75,0) |- (-3.85,-2.55) -- (5.85,-2.55) |- (dir.east);
+  \node[font=\scriptsize\itshape,text=cGris] at (1.0,-2.8)
+    {retorno común del pack --- ver nota};
+
+\end{tikzpicture}
+\caption{Arquitectura de hardware: fuente única, dos rieles regulados por
+separado y barrera óptica en las seis señales de control.}
+\end{figure}
+
+\begin{nota}
+\textbf{Sobre la separación de tierras.} El MP2307 es un reductor
+\emph{no aislado}: su tierra de salida es la misma de entrada. Con los dos
+rieles colgando del mismo pack, \texttt{GND\_LOG} y \texttt{GND\_POT} quedan
+unidos en el negativo de la batería (trazo punteado), y la prueba de
+«circuito abierto» del Paso 4 de \texttt{docs/hardware-alimentacion.md} no
+puede pasar tal cual. Para separación real hacen falta \emph{dos fuentes}:
+un convertidor DC-DC aislado (p.\,ej.\ B0505S-1W) para el riel lógico, o un
+pack aparte para los motores. Los optoacopladores siguen valiendo la pena
+—cortan el lazo de ruido por la señal—, pero conviene decidir esto antes de
+armar la placa.
+\end{nota}
+
+\clearpage
+% ===========================================================================
+\section{Aislamiento de las señales de control}
+
+Un canal, replicado seis veces (\texttt{ENA}, \texttt{IN1}, \texttt{IN2},
+\texttt{ENB}, \texttt{IN3}, \texttt{IN4}).
+
+\begin{figure}[h]
+\centering
+\begin{circuitikz}[scale=1.0,transform shape,font=\small]
+
+  % --- rotulos de dominio ---
+  \node[font=\scriptsize\bfseries,text=cLog,anchor=east] at (3.0,4.6)
+        {DOMINIO LÓGICO (3{,}3\,V)};
+  \node[font=\scriptsize\bfseries,text=cPot,anchor=west] at (3.3,4.6)
+        {DOMINIO DE POTENCIA (7{,}4\,V)};
+
+  % --- lado logico: GPIO -> R -> LED del opto ---
+  \draw (-0.5,1.6) node[left]{GPIO} to[R=$390\,\Omega$] (2.2,1.6);
+  \draw (2.2,1.6) to[full led] (2.2,0.2);
+  \draw (2.2,0.2) -- (2.2,-0.15) node[ground]{};
+  \node[font=\scriptsize,anchor=east] at (2.95,-0.85) {GND\_LOG};
+
+  % --- encapsulado del opto ---
+  \draw[dashed,rounded corners=2pt,cLed,thick] (1.7,-0.05) rectangle (4.9,2.2);
+  \node[font=\scriptsize\bfseries,text=cLed] at (3.15,2.45) {PC817};
+
+  % --- lado potencia: fototransistor + pull-up ---
+  \draw (4.3,0.9) node[npn,anchor=B,scale=0.9] (Q) {};
+  \draw (Q.C) -- ++(0,1.0) coordinate (ct);
+  \draw (ct) to[R=$4{,}7\,\mathrm{k}\Omega$] ($(ct)+(0,1.3)$)
+        node[above,font=\scriptsize]{$+5\,\mathrm{V}\_\mathrm{POT}$};
+  \draw (Q.E) -- (Q.E |- 0,-0.15) node[ground]{};
+  \node[font=\scriptsize,anchor=west] at (3.35,-0.85) {GND\_POT};
+  \draw (Q.C) -- ++(2.0,0) node[right,align=left,font=\scriptsize]
+        {entrada del\\ L298N};
+
+  % --- barrera ---
+  \draw[dashed,thick,cLed] (3.15,-1.15) -- (3.15,4.3);
+
+\end{circuitikz}
+\caption{Canal de aislamiento con PC817 (1 de 6). Emisor común: el
+fototransistor conduce cuando el LED enciende, de modo que \textbf{la señal
+sale invertida}. Se compensa en \texttt{lib/lib\_motors.c}.}
+\end{figure}
+
+\begin{center}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{GPIO} & \textbf{LED del opto} & \textbf{Fototransistor} & \textbf{Entrada L298N}\\
+\midrule
+Alto (3{,}3\,V) & encendido & conduce & \textbf{Bajo}\\
+Bajo (0\,V)     & apagado   & en corte & \textbf{Alto} (por el \emph{pull-up})\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{nota}
+\textbf{Consecuencia crítica.} Sin compensar la inversión,
+\texttt{motores\_detener()} escribe ciclo 0 y entrega \textbf{velocidad
+máxima}. La corrección va en software (\texttt{PWM\_DUTY(d) = 255 - d} y
+\texttt{GPIO\_NIVEL(v) = !v}) y debe estar verificada antes de la primera
+prueba con motores montados.
+\end{nota}
+
+\clearpage
+% ===========================================================================
+\section{Acondicionamiento de señal}
+
+\begin{figure}[h]
+\centering
+\begin{minipage}[t]{0.46\linewidth}
+\centering
+\begin{circuitikz}[scale=0.92,transform shape,font=\small]
+  \draw (0,3.4) node[above,font=\scriptsize,align=center]{HC-SR04 \texttt{ECHO}\\ (5\,V)}
+        -- (0,3.0)
+        to[R=$1\,\mathrm{k}\Omega$] (0,1.6);
+  \draw (0,1.6) -- (1.6,1.6) node[right,font=\scriptsize,align=left]
+        {GPIO\\ (3{,}3\,V máx.)};
+  \draw (0,1.6) to[R=$2\,\mathrm{k}\Omega$] (0,0.1);
+  \draw (0,0.1) node[ground]{};
+  \node[font=\scriptsize,anchor=west] at (0.35,-0.5) {GND\_LOG};
+\end{circuitikz}
+\\[4pt]
+{\footnotesize $V_{out}=5\,\mathrm{V}\cdot\dfrac{2\,\mathrm{k}}{1\,\mathrm{k}+2\,\mathrm{k}}=3{,}33\,\mathrm{V}$}
+\\[2pt]
+{\scriptsize \textbf{(a)} Divisor en \texttt{ECHO} --- 3 unidades, una por sensor.}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.46\linewidth}
+\centering
+\begin{circuitikz}[scale=0.92,transform shape,font=\small]
+  \draw (0,1.6) node[left,font=\scriptsize]{GPIO}
+        to[R=$R$] (2.4,1.6)
+        to[full led] (2.4,0.3);
+  \draw (2.4,0.3) -- (2.4,0.1) node[ground]{};
+  \node[font=\scriptsize,anchor=west] at (2.75,-0.5) {GND\_LOG};
+\end{circuitikz}
+\\[4pt]
+{\footnotesize $R=(3{,}3\,\mathrm{V}-V_f)/I_f$, \ con $I_f{=}5\,\mathrm{mA}$}
+\\[2pt]
+{\scriptsize \textbf{(b)} LED indicador --- 4 unidades.}
+\end{minipage}
+\caption{Acondicionamiento entre el GPIO y el mundo exterior. El divisor
+\textbf{no es opcional}: los GPIO toleran 3{,}3\,V como máximo absoluto y no
+tienen protección de entrada.}
+\end{figure}
+
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{LED} & \textbf{Color} & \textbf{$V_f$} & \textbf{$R$ comercial} & \textbf{GPIO (BCM)}\\
+\midrule
+Encendido & verde    & 2{,}2\,V & $220\,\Omega$ & 16\\
+Autónomo  & azul     & 3{,}0\,V & $68\,\Omega$  & 20\\
+Manual    & amarillo & 2{,}1\,V & $270\,\Omega$ & 21\\
+Obstáculo & rojo     & 2{,}0\,V & $270\,\Omega$ & 26\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ===========================================================================
+\section{Salida de audio}
+
+Jack analógico de 3{,}5\,mm más un LM386. No consume GPIO, que están al
+límite del presupuesto de corriente.
+
+\begin{figure}[h]
+\centering
+\begin{circuitikz}[scale=0.9,transform shape,font=\small]
+
+  % --- encapsulado ---
+  \draw[rounded corners=2pt,fill=black!4,draw=black!55] (3.0,0.5) rectangle (5.7,3.1);
+  \node[font=\small\bfseries] at (4.35,2.72) {LM386};
+  \node[font=\scriptsize,anchor=west] at (3.08,2.15) {2\ \ $+$in};
+  \node[font=\scriptsize,anchor=west] at (3.08,1.45) {3\ \ $-$in};
+  \node[font=\scriptsize,anchor=west] at (3.08,0.85) {4\ \ GND};
+  \node[font=\scriptsize,anchor=east] at (5.62,2.15) {6\ \ $V_s$};
+  \node[font=\scriptsize,anchor=east] at (5.62,1.45) {5\ \ out};
+  \node[font=\scriptsize,anchor=east] at (5.62,0.85) {1--8\ gain};
+
+  % --- entrada y volumen ---
+  \draw (-0.7,2.15) node[left,align=right,font=\scriptsize]{jack 3{,}5\,mm\\(canal L)}
+        to[C=$10\,\mu\mathrm{F}$] (1.5,2.15) -- (3.0,2.15);
+  \draw (1.5,2.15) to[pR,l_=$10\,\mathrm{k}\Omega$] (1.5,0.35) node[ground]{};
+  \node[font=\tiny,anchor=west] at (1.72,0.62) {volumen};
+  \draw (3.0,1.45) -- (2.45,1.45) -- (2.45,0.75) node[ground]{};
+  \draw (4.35,0.5) -- (4.35,0.05) node[ground]{};
+  \node[font=\scriptsize] at (4.35,-0.8) {GND\_LOG};
+
+  % --- alimentacion y desacople ---
+  \draw (5.7,2.15) -- (6.4,2.15) -- (6.4,3.9)
+        node[above,font=\scriptsize]{$+5\,\mathrm{V}\_\mathrm{LOG}$};
+  \draw (6.4,2.85) to[C=$100\,\mu\mathrm{F}$,*-] (8.5,2.85) -- (8.5,2.45) node[ground]{};
+
+  % --- salida ---
+  \draw (5.7,1.45) -- (6.3,1.45) to[C=$220\,\mu\mathrm{F}$] (7.9,1.45);
+  \draw (7.9,1.45) to[loudspeaker] (7.9,0.15);
+  \node[font=\scriptsize,anchor=east] at (7.45,0.8) {8\,$\Omega$};
+  \draw (7.9,0.15) -- (7.9,-0.1) node[ground]{};
+
+  % --- red de Zobel ---
+  \draw (7.9,1.45) -- (9.5,1.45) to[R=$10\,\Omega$] (9.5,0.7)
+        to[C=$47\,\mathrm{nF}$] (9.5,-0.1) node[ground]{};
+  \node[font=\scriptsize,anchor=west,align=left] at (9.8,2.0) {red de\\Zobel};
+
+\end{circuitikz}
+\caption{Amplificador de audio. Se alimenta del \textbf{riel lógico}, no del
+de potencia, para que el ruido de conmutación de los motores no entre al
+audio. El potenciómetro fija el nivel máximo; el volumen del enunciado se
+controla por software con \texttt{amixer}.}
+\end{figure}
+
+\clearpage
+% ===========================================================================
+\section{Mapa del conector de 40 pines}
+
+Numeración BCM entre paréntesis. Los pines sin etiqueta quedan libres.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[font=\scriptsize,y=-0.435cm]
+
+  \def\dx{1.05}
+
+  % --- cuerpo del conector ---
+  \draw[rounded corners=3pt,fill=black!4,draw=black!35]
+        (-\dx-0.42,-0.55) rectangle (\dx+0.42,19.55);
+
+  % --- pines libres / alimentacion, columna impar (izquierda) ---
+  \foreach \p/\lbl/\c in {%
+      1/3V3/cGris, 9/GND/cGris, 11/{TRIG frontal (17)}/cLog,
+      13/{ECHO frontal (27)}/cLog, 15/{TRIG lat. izq. (22)}/cLog,
+      17/3V3/cGris, 19/{ECHO lat. izq. (10)}/cLog,
+      21/{TRIG lat. der. (9)}/cLog, 23/{ECHO lat. der. (11)}/cLog,
+      25/GND/cGris, 29/{IN1 motor izq. (5)}/cPot,
+      31/{IN2 motor izq. (6)}/cPot, 33/{ENB PWM der. (13)}/cPot,
+      37/{LED obstáculo (26)}/cLed, 39/GND/cGris}
+  {
+    \pgfmathtruncatemacro{\r}{(\p-1)/2}
+    \fill[\c] (-\dx,\r) circle (2.1pt);
+    \node[anchor=east,text=\c] at (-\dx-0.55,\r) {\lbl};
+  }
+
+  % --- columna par (derecha) ---
+  \foreach \p/\lbl/\c in {%
+      2/5V/cGris, 4/5V/cGris, 6/GND/cGris, 14/GND/cGris,
+      16/{IN3 motor der. (23)}/cPot, 18/{IN4 motor der. (24)}/cPot,
+      20/GND/cGris, 30/GND/cGris, 32/{ENA PWM izq. (12)}/cPot,
+      34/GND/cGris, 36/{LED encendido (16)}/cLed,
+      38/{LED autónomo (20)}/cLed, 40/{LED manual (21)}/cLed}
+  {
+    \pgfmathtruncatemacro{\r}{(\p-2)/2}
+    \fill[\c] (\dx,\r) circle (2.1pt);
+    \node[anchor=west,text=\c] at (\dx+0.55,\r) {\lbl};
+  }
+
+  % --- pines libres ---
+  \foreach \p in {3,5,7,27,35}
+    { \pgfmathtruncatemacro{\r}{(\p-1)/2}
+      \draw[black!30] (-\dx,\r) circle (2.1pt); }
+  \foreach \p in {8,10,12,22,24,26,28}
+    { \pgfmathtruncatemacro{\r}{(\p-2)/2}
+      \draw[black!30] (\dx,\r) circle (2.1pt); }
+
+  % --- numeros de pin ---
+  \foreach \r in {0,...,19} {
+    \pgfmathtruncatemacro{\a}{2*\r+1}
+    \pgfmathtruncatemacro{\b}{2*\r+2}
+    \node[text=black!45,font=\tiny,anchor=east] at (-0.18,\r) {\a};
+    \node[text=black!45,font=\tiny,anchor=west] at (0.18,\r) {\b};
+  }
+
+  % --- leyenda ---
+  \node[anchor=west,text=cLog,font=\scriptsize\bfseries]  at (-5.6,20.9) {$\bullet$\ \ sensores};
+  \node[anchor=west,text=cPot,font=\scriptsize\bfseries]  at (-3.1,20.9) {$\bullet$\ \ motores (vía opto)};
+  \node[anchor=west,text=cLed,font=\scriptsize\bfseries]  at (0.6,20.9) {$\bullet$\ \ LEDs};
+  \node[anchor=west,text=cGris,font=\scriptsize\bfseries] at (2.9,20.9) {$\bullet$\ \ alimentación};
+
+\end{tikzpicture}
+\caption{Conector de 40 pines. GPIO 12 y 13 son los canales PWM0/PWM1 del
+SoC: permiten migrar a PWM por hardware sin recablear. GPIO 14/15 (UART)
+quedan libres para la consola serie de depuración.}
+\end{figure}
+
+\clearpage
+% ===========================================================================
+\section{Modelo físico}
+
+Chasis circular de dos niveles. La forma circular permite girar sobre el
+propio eje sin barrer área adicional: cualquier rincón del que el robot pueda
+entrar es un rincón del que puede salir.
+
+\begin{figure}[h]
+\centering
+\begin{minipage}[b]{0.47\linewidth}
+\centering
+\begin{tikzpicture}[font=\scriptsize,scale=1.0]
+
+  \draw[fill=black!3,draw=black!45,thick] (0,0) circle (2.5);
+
+  % --- sensores ---
+  \foreach \a/\lbl in {90/frontal, 135/{lat. izq.}, 45/{lat. der.}} {
+    \draw[fill=cLog!22,draw=cLog,thick]
+      ([shift={(\a:2.32)}]0,0) ++(\a:0) circle (0.2);
+    \draw[cLog,thick,-{Latex[length=1.6mm]}]
+      (\a:2.55) -- (\a:3.25);
+  }
+  \node[text=cLog,anchor=south] at (90:3.35) {frontal 0$^\circ$};
+  \node[text=cLog,anchor=east]  at (135:3.35) {lat. 45$^\circ$};
+  \node[text=cLog,anchor=west]  at (45:3.35)  {lat. 45$^\circ$};
+
+  % --- eje de traccion, ligeramente adelante del centro ---
+  \draw[cPot,thick,dashed] (-2.5,0.45) -- (2.5,0.45);
+  \draw[fill=cPot!25,draw=cPot,thick] (-2.62,0.05) rectangle (-1.85,0.85);
+  \draw[fill=cPot!25,draw=cPot,thick] ( 1.85,0.05) rectangle ( 2.62,0.85);
+  \node[text=cPot,anchor=east,align=right] at (-2.75,0.45) {motor\\ izq.};
+  \node[text=cPot,anchor=west,align=left] at (2.75,0.45) {motor\\ der.};
+
+  % --- centro geometrico ---
+  \fill[black!55] (0,0) circle (1.4pt);
+  \node[anchor=north west,text=black!55,font=\tiny] at (0.08,-0.05) {centro};
+
+  % --- rueda loca ---
+  \draw[fill=black!12,draw=black!50] (0,-1.75) circle (0.28);
+  \node[anchor=south,font=\tiny] at (0,-1.42) {rueda loca};
+
+  % --- diametro ---
+  \draw[{Latex[length=1.6mm]}-{Latex[length=1.6mm]},black!55]
+       (-2.5,-2.95) -- (2.5,-2.95);
+  \node[anchor=north,text=black!55] at (0,-3.0) {$\varnothing$ 22--25\,cm};
+
+\end{tikzpicture}
+\\[3pt]
+{\scriptsize \textbf{(a)} Vista superior. El eje va algo adelante del centro
+para cargar peso sobre las ruedas motrices.}
+\end{minipage}
+\hfill
+\begin{minipage}[b]{0.47\linewidth}
+\centering
+\begin{tikzpicture}[font=\scriptsize,scale=0.86,transform shape]
+
+  % --- piso ---
+  \draw[thick,black!55] (-3.0,0) -- (3.2,0);
+  \foreach \x in {-2.85,-2.45,...,3.05}
+    \draw[black!35] (\x,0) -- ++(-0.16,-0.16);
+
+  % --- placas ---
+  \draw[fill=black!8,draw=black!55,thick] (-2.5,0.95) rectangle (2.5,1.10);
+  \draw[fill=black!8,draw=black!55,thick] (-2.5,2.90) rectangle (2.5,3.05);
+
+  % --- separadores M3 x 40 mm ---
+  \foreach \x in {-2.25,2.25}
+    \draw[black!50,thick] (\x,1.10) -- (\x,2.90);
+
+  % --- contenido de cada nivel ---
+  \node[font=\tiny,anchor=south,align=center] at (0,3.18)
+    {\textbf{nivel superior:} Pi 4, LEDs,\\ altavoz, interruptor};
+  \node[font=\tiny,align=center] at (0,2.00)
+    {\textbf{nivel inferior:} pack 2S + BMS,\\ buck 5\,V, optos + L298N, LM386};
+
+  % --- rueda motriz ---
+  \draw[fill=cPot!20,draw=cPot,thick] (-1.35,0.48) circle (0.48);
+  \node[text=cPot,anchor=east,font=\tiny] at (-2.10,0.48) {$\varnothing$\,6{,}5\,cm};
+
+  % --- sensor en el borde ---
+  \draw[fill=cLog!22,draw=cLog,thick] (2.5,1.25) rectangle (2.78,1.70);
+  \draw[cLog,-{Latex[length=1.5mm]}] (2.88,1.48) -- (3.30,1.48);
+
+  % --- cotas ---
+  \draw[{Latex[length=1.5mm]}-{Latex[length=1.5mm]},black!55] (-3.30,0) -- (-3.30,3.05);
+  \node[anchor=east,text=black!55,font=\tiny,align=right] at (-3.37,1.90) {10--12\\cm};
+
+  \draw[{Latex[length=1.5mm]}-{Latex[length=1.5mm]},cLog] (3.45,0) -- (3.45,1.48);
+  \node[anchor=west,text=cLog,font=\tiny,align=left] at (3.52,0.74) {5--8\\cm};
+
+  \draw[{Latex[length=1.5mm]}-{Latex[length=1.5mm]},black!55] (0.35,0) -- (0.35,0.95);
+  \node[anchor=west,text=black!55,font=\tiny] at (0.45,0.48) {1{,}5--2\,cm};
+
+\end{tikzpicture}
+\\[3pt]
+{\scriptsize \textbf{(b)} Vista lateral. La batería va al centro y lo más
+bajo posible: baja el centro de gravedad y evita el cabeceo.}
+\end{minipage}
+\caption{Modelo físico. Masa objetivo bajo 1{,}5\,kg; por encima, los motores
+DC pequeños pierden par para arrancar.}
+\end{figure}
+
+\end{document}

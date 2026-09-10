@@ -18,7 +18,13 @@ SECTION = "net"
 HOMEPAGE = "https://github.com/Randall-BL/EmpotradosProyecto1"
 
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
+
+# La ruta de LIC_FILES_CHKSUM se resuelve relativa a S, y aqui S es
+# ${WORKDIR}/src porque el CMakeLists del servidor vive en src/. El LICENSE que
+# trae el SRC_URI, en cambio, se desempaqueta en ${WORKDIR}. Sin la ruta
+# absoluta, do_populate_lic falla con "LIC_FILES_CHKSUM points to an invalid
+# file". librobot no tiene el problema porque alli S es ${WORKDIR}.
+LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
 
 # server/, audio/ y LICENSE estan en la raiz del repositorio, tres niveles arriba.
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../server:${THISDIR}/../../..:"
@@ -33,8 +39,6 @@ SRC_URI = " \
     file://src/sha256.h          \
     file://src/robot_state.c     \
     file://src/robot_state.h     \
-    file://src/robot_hardware.c  \
-    file://src/robot_hardware.h  \
     file://src/CMakeLists.txt    \
     file://www                   \
     file://audio                 \
