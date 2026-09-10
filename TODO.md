@@ -103,7 +103,7 @@
 - [x] Implementar el módulo de **reproducción de audio**
 - [x] Manejo de errores y liberación segura de los recursos GPIO (init/cleanup)
 - [x] **Verificar que el servidor web use exclusivamente esta biblioteca** para tocar hardware — se eliminó `robot_hardware.c`; `readelf` confirma que el servidor ya no enlaza pigpio
-- [ ] Documentar la API completa (para el README)
+- [x] Documentar la API completa (para el README) — `docs/api-librobot.md`
 - [x] Programa de prueba independiente que ejercite cada función de la biblioteca — `sim/prueba_librobot`, 18/18 comprobaciones
 
 ---
