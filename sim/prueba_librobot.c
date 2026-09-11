@@ -21,6 +21,7 @@
 #include "lib_motors.h"
 #include "lib_leds.h"
 #include "lib_odom.h"
+#include "lib_audio.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -162,6 +163,23 @@ int main(void) {
     verificar("la odometria acumulo camino recorrido", recorrido > 10.0);
     verificar("el error de la navegacion a la estima se mantiene bajo el 20%",
               recorrido > 0 && error / recorrido < 0.20);
+
+    titulo("Audio (API, sin reproduccion real)");
+    /* La reproduccion necesita tarjeta de sonido; aqui se prueba solo la API:
+       init, escaneo, listado, volumen y estado. Si no hay dispositivo de audio
+       el init puede fallar — se reporta como aviso, no como prueba fallida. */
+    if (lib_audio_init("../audio") == 0) {
+        int vol_ok = (lib_audio_set_volume(70), lib_audio_get_volume() == 70);
+        verificar("el volumen se fija y se lee (roundtrip)", vol_ok);
+        verificar("el estado inicial es DETENIDO", lib_audio_get_status() == LIB_AUDIO_STOPPED);
+        LibAudioTrack tr[8];
+        int n = lib_audio_get_tracks(tr, 8);
+        printf("  pistas encontradas en ../audio: %d\n", n);
+        verificar("el listado de pistas no es negativo", n >= 0);
+        lib_audio_destroy();
+    } else {
+        printf("  [aviso] audio no disponible en este host (sin tarjeta de sonido); API no ejercitada\n");
+    }
 
     titulo("Cierre");
     robot_shutdown();

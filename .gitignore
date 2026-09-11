@@ -64,3 +64,13 @@ Thumbs.db
 
 # Binario del simulador (se compila con sim/construir.sh)
 sim/prueba_librobot
+sim/robot-server-sim
+sim/run/
+sim/prueba_librobot_arm
+
+# LaTeX (documentación/)
+documentación/*.aux
+documentación/*.log
+documentación/*.out
+documentación/*.toc
+documentación/*.synctex.gz
