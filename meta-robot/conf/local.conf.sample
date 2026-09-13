@@ -13,7 +13,11 @@ CONF_VERSION = "2"
 # raspberrypi4-64 selecciona el BSP aarch64 de meta-raspberrypi. Se usa la
 # variante de 64 bits porque el kernel 6.6 de la RPi4 la trae por defecto y
 # permite usar los paquetes kernel-module-* precompilados sin recompilar.
-MACHINE = "raspberrypi4-64"
+#
+# Con ?= la maquina se puede cambiar desde la linea de comandos sin editar este
+# archivo. Para la imagen que corre en QEMU (ver docs/qemu.md):
+#   MACHINE=qemuarm64-robot bitbake robot-image
+MACHINE ?= "raspberrypi4-64"
 DISTRO  = "poky"
 
 # ── Gestor de arranque: systemd ──────────────────────────────────────────────
@@ -51,9 +55,10 @@ DISABLE_VC4GRAPHICS = "1"
 
 # ── Modulos de kernel a cargar en el arranque ────────────────────────────────
 # brcmfmac + brcmutil: WiFi. snd-bcm2835: salida de audio por el jack 3.5 mm.
-KERNEL_MODULE_AUTOLOAD += "cfg80211 brcmfmac brcmfmac-wcc brcmutil rfkill snd-bcm2835"
+# Solo en la Raspberry (override rpi): el kernel de QEMU no trae estos modulos.
+KERNEL_MODULE_AUTOLOAD:append:rpi = " cfg80211 brcmfmac brcmfmac-wcc brcmutil rfkill snd-bcm2835"
 
-MACHINE_EXTRA_RRECOMMENDS += " \
+MACHINE_EXTRA_RRECOMMENDS:append:rpi = " \
     linux-firmware-rpidistro-bcm43455 \
     linux-firmware-rpidistro-bcm43456 \
 "
@@ -72,6 +77,14 @@ EXTRA_IMAGE_FEATURES += "debug-tweaks"
 # rootfs desempaquetado y poder inspeccionarlo.
 INHERIT += "rm_work"
 RM_WORK_EXCLUDE += "robot-image librobot robot-server"
+
+# ── QEMU ─────────────────────────────────────────────────────────────────────
+# qemu-system-native trae por defecto la ventana grafica (sdl, que agrega el
+# local.conf de poky) y la aceleracion 3D (virglrenderer + epoxy, porque poky
+# tiene "opengl" en DISTRO_FEATURES). Eso arrastra Mesa y LLVM nativos, horas
+# de compilacion. La imagen del robot se usa en QEMU solo con "nographic"
+# (consola serie en la terminal), asi que nada de eso hace falta.
+PACKAGECONFIG:remove:pn-qemu-system-native = "sdl virglrenderer epoxy"
 
 # ── Paralelismo (ajustar al host de cada quien) ──────────────────────────────
 # Regla practica: un hilo por nucleo, pero limitado por la RAM. Cada tarea de

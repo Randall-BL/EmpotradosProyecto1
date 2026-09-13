@@ -47,11 +47,29 @@ S = "${WORKDIR}"
 #   pigpio    -> pigpiod_if2.h y libpigpiod_if2, para GPIO y PWM por hardware
 #   mpg123    -> decodificacion de MP3
 #   alsa-lib  -> salida de audio por el jack de 3.5 mm
-DEPENDS = "pigpio mpg123 alsa-lib"
+DEPENDS = "mpg123 alsa-lib"
+DEPENDS:append:rpi = " pigpio"
 
 # En tiempo de ejecucion hace falta el demonio pigpiod, no solo la biblioteca:
 # pigpiod_if2 es un cliente que se conecta a el por socket.
-RDEPENDS:${PN} = "pigpio-bin-pigpiod"
+RDEPENDS:${PN}:rpi = "pigpio-bin-pigpiod"
+
+# ── Variante para QEMU ───────────────────────────────────────────────────────
+# En la maquina qemuarm64-robot no hay GPIO: la biblioteca se enlaza con el
+# simulador de sim/ (ROBOT_SIM), que mueve un robot virtual por una sala de
+# 4x4 m y responde los sensores sobre ese mundo. El codigo de lib/ es el mismo.
+SRC_URI:append:qemuall = " \
+    file://sim/pigpio_sim.c   \
+    file://sim/pigpiod_if2.h  \
+    file://sim/mundo.c        \
+    file://sim/mundo.h        \
+"
+EXTRA_OECMAKE:append:qemuall = " -DROBOT_SIM=ON -DROBOT_SIM_DIR=${WORKDIR}/sim"
+
+# El contenido del .so cambia segun la maquina (pigpiod o simulador) aunque las
+# dos compartan el tune cortexa72: sin esto ambas escribirian el mismo paquete
+# en deploy/rpm/cortexa72 y una imagen podria llevarse la biblioteca de la otra.
+PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit cmake
 

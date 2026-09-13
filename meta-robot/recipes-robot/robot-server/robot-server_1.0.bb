@@ -51,15 +51,20 @@ S = "${WORKDIR}/src"
 
 # libmicrohttpd -> servidor HTTP; librobot -> acceso al hardware;
 # pigpio -> pigpiod_if2, del que librobot arrastra simbolos al enlazar.
-DEPENDS = "libmicrohttpd librobot pigpio"
+DEPENDS = "libmicrohttpd librobot"
+DEPENDS:append:rpi = " pigpio"
 
 RDEPENDS:${PN} = " \
     librobot \
     libmicrohttpd \
     mpg123 \
     alsa-utils \
-    pigpio-bin-pigpiod \
 "
+RDEPENDS:${PN}:append:rpi = " pigpio-bin-pigpiod"
+
+# La unidad systemd cambia en QEMU (ver do_install:append:qemuall), asi que el
+# paquete es propio de cada maquina aunque compartan el tune cortexa72.
+PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit cmake systemd
 
@@ -85,6 +90,14 @@ do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/robot-server.service \
                     ${D}${systemd_system_unitdir}/robot-server.service
+}
+
+# En QEMU no existe pigpiod.service: librobot trae el simulador enlazado. Con el
+# Requires= puesto, systemd se negaria a arrancar el servidor por la dependencia
+# faltante, asi que se quita solo en esta variante.
+do_install:append:qemuall() {
+    sed -i '/^Requires=pigpiod.service/d' \
+        ${D}${systemd_system_unitdir}/robot-server.service
 }
 
 FILES:${PN} += "/opt/robot"

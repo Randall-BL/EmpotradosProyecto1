@@ -24,7 +24,14 @@ IMAGE_INSTALL:append = " \
     mpg123                              \
     alsa-utils                          \
     alsa-config                         \
-    \
+    dhcpcd                              \
+"
+
+# Lo que solo existe o solo sirve en la Raspberry Pi: GPIO real, WiFi Broadcom
+# y los modulos del kernel de la RPi. La override "rpi" la define
+# meta-raspberrypi para todas sus maquinas; la imagen de QEMU
+# (qemuarm64-robot, ver docs/qemu.md) no lleva nada de esto.
+IMAGE_INSTALL:append:rpi = " \
     pigpio                              \
     libpigpio                           \
     libpigpio_if2                       \
@@ -36,7 +43,6 @@ IMAGE_INSTALL:append = " \
     linux-firmware-rpidistro-bcm43455   \
     iw                                  \
     rfkill                              \
-    dhcpcd                              \
     \
     kernel-module-brcmfmac-6.6.63-v8       \
     kernel-module-brcmfmac-wcc-6.6.63-v8   \

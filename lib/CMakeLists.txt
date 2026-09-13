@@ -7,12 +7,21 @@
 cmake_minimum_required(VERSION 3.16)
 project(robot VERSION 1.0 LANGUAGES C)
 
+# ROBOT_SIM enlaza el simulador de sim/ en lugar de pigpiod: el mismo codigo de
+# la biblioteca mueve un robot virtual. Lo usa la imagen de QEMU
+# (MACHINE=qemuarm64-robot), donde no hay GPIO real. Ver docs/qemu.md.
+option(ROBOT_SIM "Enlazar el simulador de hardware en vez de pigpiod" OFF)
+set(ROBOT_SIM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sim" CACHE PATH
+    "Carpeta con pigpio_sim.c, mundo.c y el pigpiod_if2.h de reemplazo")
+
 # Buscar dependencias
-find_library(PIGPIOD_IF2_LIB pigpiod_if2 REQUIRED)
+if(NOT ROBOT_SIM)
+    find_library(PIGPIOD_IF2_LIB pigpiod_if2 REQUIRED)
+    find_path(PIGPIOD_INCLUDE pigpiod_if2.h)
+endif()
 find_library(ASOUND_LIB asound REQUIRED)
 find_library(MPG123_LIB mpg123 REQUIRED)
 
-find_path(PIGPIOD_INCLUDE pigpiod_if2.h)
 find_path(ALSA_INCLUDE alsa/asoundlib.h)
 find_path(MPG123_INCLUDE mpg123.h)
 
@@ -25,6 +34,16 @@ add_library(robot SHARED
     lib_robot.c
     lib_sensors.c
 )
+
+if(ROBOT_SIM)
+    target_sources(robot PRIVATE
+        ${ROBOT_SIM_DIR}/pigpio_sim.c
+        ${ROBOT_SIM_DIR}/mundo.c
+    )
+    # BEFORE: el <pigpiod_if2.h> de los fuentes debe resolver contra el del
+    # simulador, igual que en sim/construir.sh.
+    target_include_directories(robot BEFORE PRIVATE ${ROBOT_SIM_DIR})
+endif()
 
 # Headers propios
 target_include_directories(robot PUBLIC
