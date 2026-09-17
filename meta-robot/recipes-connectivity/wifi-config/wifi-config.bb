@@ -29,6 +29,7 @@ WIFI_CONF = "${@robot_wifi_conf(d)}"
 SRC_URI = " \
     file://${WIFI_CONF} \
     file://25-wlan.network \
+    file://20-wired.network \
 "
 
 S = "${WORKDIR}"
@@ -44,6 +45,11 @@ do_install() {
     install -m 644 ${WORKDIR}/25-wlan.network \
         ${D}${sysconfdir}/systemd/network/
 
+    # eth0 configurada pero no obligatoria para "network-online": ver el
+    # comentario del propio archivo.
+    install -m 644 ${WORKDIR}/20-wired.network \
+        ${D}${sysconfdir}/systemd/network/
+
     # Habilitar wpa_supplicant@wlan0 en el arranque. Se enlaza a mano porque la
     # unidad es plantilla (wpa_supplicant@.service) y SYSTEMD_SERVICE no admite
     # instanciarla desde otra receta.
@@ -55,6 +61,7 @@ do_install() {
 FILES:${PN} += " \
     ${sysconfdir}/wpa_supplicant/wpa_supplicant-wlan0.conf \
     ${sysconfdir}/systemd/network/25-wlan.network \
+    ${sysconfdir}/systemd/network/20-wired.network \
     ${sysconfdir}/systemd/system/multi-user.target.wants/wpa_supplicant@wlan0.service \
 "
 

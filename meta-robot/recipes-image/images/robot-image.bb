@@ -24,8 +24,15 @@ IMAGE_INSTALL:append = " \
     mpg123                              \
     alsa-utils                          \
     alsa-config                         \
-    dhcpcd                              \
 "
+
+# dhcpcd solo en QEMU: alli no hay archivo .network para eth0 y es quien pide la
+# IP. En la Raspberry la red la lleva systemd-networkd (25-wlan.network), y
+# tener los dos clientes DHCP sobre wlan0 hacia que se pelearan por la direccion
+# IPv6: networkd marcaba la interfaz como "failed", systemd-networkd-wait-online
+# agotaba sus 120 s y robot-server no arrancaba hasta los 2 min 10 s, con la
+# interfaz cargando dos IPs a la vez. Ver docs/arranque-automatico.md.
+IMAGE_INSTALL:append:qemuall = " dhcpcd"
 
 # Lo que solo existe o solo sirve en la Raspberry Pi: GPIO real, WiFi Broadcom
 # y los modulos del kernel de la RPi. La override "rpi" la define
