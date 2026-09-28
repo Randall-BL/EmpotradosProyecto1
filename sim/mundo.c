@@ -33,6 +33,12 @@
 #define REAL_ENTRE_EJES_CM  15.5
 #define REAL_PWM_ARRANQUE   60
 
+/* Las llantas no alcanzan de golpe la velocidad ordenada: la masa del robot y
+   la inductancia del motor la hacen subir con esta constante de tiempo. Sin
+   inercia el acelerometro simulado veria saltos de velocidad instantaneos, y
+   el MPU no tendria nada que aportar sobre el modelo de los motores. */
+#define REAL_TAU_MOTOR_S    0.12
+
 typedef struct { double x0, y0, x1, y1; } Caja;
 
 /* Un par de muebles, para que la habitacion no sea una caja vacia. */
@@ -47,7 +53,15 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static double g_x = 0.0, g_y = 0.0, g_rumbo = 0.0;   /* pose verdadera  */
 static int    g_vel_izq = 0, g_vel_der = 0;          /* ordenes de PWM  */
+static double g_v_izq = 0.0, g_v_der = 0.0;          /* llantas, cm/s   */
+static double g_v_cuerpo = 0.0;                      /* avance real     */
+static double g_omega = 0.0;                         /* rad/s, horario  */
 static int    g_choco = 0;
+
+/* Estado del acelerometro simulado: velocidad e instante de la consulta
+   anterior, para entregar la aceleracion media desde entonces. */
+static double          g_imu_v_anterior = 0.0;
+static struct timespec g_imu_t;
 static struct timespec g_t;
 static int    g_listo = 0;
 static int    g_hilo_vivo = 0;
@@ -75,8 +89,15 @@ static void integrar(void) {
     g_t = ahora;
     if (dt <= 0.0 || dt > 1.0) return;
 
-    double v_izq = pwm_a_cm_s(g_vel_izq);
-    double v_der = pwm_a_cm_s(g_vel_der);
+    /* Cada llanta se acerca a la velocidad ordenada como un sistema de primer
+       orden; el tramo se integra con el promedio de su inicio y su final. */
+    double k     = 1.0 - exp(-dt / REAL_TAU_MOTOR_S);
+    double izq0  = g_v_izq, der0 = g_v_der;
+    g_v_izq += (pwm_a_cm_s(g_vel_izq) - g_v_izq) * k;
+    g_v_der += (pwm_a_cm_s(g_vel_der) - g_v_der) * k;
+
+    double v_izq = (izq0 + g_v_izq) / 2.0;
+    double v_der = (der0 + g_v_der) / 2.0;
     double v     = (v_izq + v_der) / 2.0;
     double omega = (v_izq - v_der) / REAL_ENTRE_EJES_CM;
 
@@ -103,6 +124,12 @@ static void integrar(void) {
             break;
         }
     }
+
+    /* Lo que el cuerpo avanzo de verdad: con el robot trabado contra un
+       mueble las llantas giran pero el cuerpo no, y eso es lo que siente el
+       acelerometro. */
+    g_v_cuerpo = ((nx - g_x) * sin(rumbo_med) + (ny - g_y) * cos(rumbo_med)) / dt;
+    g_omega    = omega;
 
     g_x = nx;
     g_y = ny;
@@ -139,9 +166,12 @@ void mundo_init(void) {
     pthread_mutex_lock(&g_lock);
     g_x = g_y = g_rumbo = 0.0;
     g_vel_izq = g_vel_der = 0;
+    g_v_izq = g_v_der = g_v_cuerpo = g_omega = 0.0;
     g_choco = 0;
     g_rastro_n = 0;
     clock_gettime(CLOCK_MONOTONIC, &g_t);
+    g_imu_t = g_t;
+    g_imu_v_anterior = 0.0;
     g_listo = 1;
     pthread_mutex_unlock(&g_lock);
 
@@ -195,12 +225,17 @@ static double rayo_caja(double x, double y, double dx, double dy,
 }
 
 double mundo_distancia(double rumbo_offset) {
+    return mundo_distancia_desde(0.0, rumbo_offset);
+}
+
+double mundo_distancia_desde(double adelante_cm, double rumbo_offset) {
     pthread_mutex_lock(&g_lock);
     integrar();
 
     double rumbo = g_rumbo + rumbo_offset * M_PI / 180.0;
     double dx = sin(rumbo), dy = cos(rumbo);
-    double x = g_x, y = g_y;
+    double x = g_x + adelante_cm * sin(g_rumbo);
+    double y = g_y + adelante_cm * cos(g_rumbo);
 
     pthread_mutex_unlock(&g_lock);
 
@@ -222,6 +257,34 @@ void mundo_pose(double *x_cm, double *y_cm, double *rumbo_grados) {
     if (x_cm)        *x_cm = g_x;
     if (y_cm)        *y_cm = g_y;
     if (rumbo_grados) *rumbo_grados = g_rumbo * 180.0 / M_PI;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void mundo_cinematica(double *v_cm_s, double *giro_dps) {
+    pthread_mutex_lock(&g_lock);
+    integrar();
+    if (v_cm_s)   *v_cm_s   = g_v_cuerpo;
+    if (giro_dps) *giro_dps = g_omega * 180.0 / M_PI;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void mundo_imu(double *avance_cm_s2, double *lateral_cm_s2, double *giro_dps) {
+    pthread_mutex_lock(&g_lock);
+    integrar();
+
+    struct timespec ahora;
+    clock_gettime(CLOCK_MONOTONIC, &ahora);
+    double dt = (ahora.tv_sec - g_imu_t.tv_sec) + (ahora.tv_nsec - g_imu_t.tv_nsec) / 1e9;
+
+    double a = dt > 1e-4 ? (g_v_cuerpo - g_imu_v_anterior) / dt : 0.0;
+    g_imu_v_anterior = g_v_cuerpo;
+    g_imu_t          = ahora;
+
+    /* En una curva a la derecha (omega > 0) el centro de giro queda a la
+       derecha: la centripeta apunta hacia alla, lateral negativa. */
+    if (avance_cm_s2)  *avance_cm_s2  = a;
+    if (lateral_cm_s2) *lateral_cm_s2 = -g_v_cuerpo * g_omega;
+    if (giro_dps)      *giro_dps      = g_omega * 180.0 / M_PI;
     pthread_mutex_unlock(&g_lock);
 }
 
