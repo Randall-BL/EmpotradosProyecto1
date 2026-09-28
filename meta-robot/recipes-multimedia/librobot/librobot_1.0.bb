@@ -9,9 +9,10 @@
 #  Toolchain-SDK que desde BitBake. FILESEXTRAPATHS apunta el fetcher hacia alla.
 # ─────────────────────────────────────────────────────────────────────────────
 
-SUMMARY = "Biblioteca dinamica de control del robot aspiradora (motores, sensores, LEDs, audio)"
-DESCRIPTION = "Abstrae el hardware del robot: PWM de los motores DC, lectura de los \
-sensores HC-SR04, los cuatro LEDs indicadores y la reproduccion de MP3."
+SUMMARY = "Biblioteca dinamica de control del robot aspiradora (motores, radar, MPU-6050, LEDs, audio)"
+DESCRIPTION = "Abstrae el hardware del robot: PWM de los motores DC, el radar \
+ultrasonico (HC-SR04 sobre un servo de 180 grados), el MPU-6050 por I2C, la \
+odometria, los cuatro LEDs indicadores y la reproduccion de MP3."
 SECTION = "libs"
 HOMEPAGE = "https://github.com/Randall-BL/EmpotradosProyecto1"
 
@@ -28,6 +29,12 @@ SRC_URI = " \
     file://lib_motors.h   \
     file://lib_sensors.c  \
     file://lib_sensors.h  \
+    file://lib_servo.c    \
+    file://lib_servo.h    \
+    file://lib_radar.c    \
+    file://lib_radar.h    \
+    file://lib_imu.c      \
+    file://lib_imu.h      \
     file://lib_leds.c     \
     file://lib_leds.h     \
     file://lib_audio.c    \
@@ -44,9 +51,9 @@ SRC_URI = " \
 S = "${WORKDIR}"
 
 # Dependencias de compilacion:
-#   pigpio    -> pigpiod_if2.h y libpigpiod_if2, para GPIO y PWM por hardware
+#   pigpio    -> pigpiod_if2.h y libpigpiod_if2: GPIO, PWM, pulsos del servo e I2C
 #   mpg123    -> decodificacion de MP3
-#   alsa-lib  -> salida de audio por el jack de 3.5 mm
+#   alsa-lib  -> salida de audio PWM (GPIO 18 -> amplificador PAM8403)
 DEPENDS = "mpg123 alsa-lib"
 DEPENDS:append:rpi = " pigpio"
 
@@ -57,7 +64,8 @@ RDEPENDS:${PN}:rpi = "pigpio-bin-pigpiod"
 # ── Variante para QEMU ───────────────────────────────────────────────────────
 # En la maquina qemuarm64-robot no hay GPIO: la biblioteca se enlaza con el
 # simulador de sim/ (ROBOT_SIM), que mueve un robot virtual por una sala de
-# 4x4 m y responde los sensores sobre ese mundo. El codigo de lib/ es el mismo.
+# 4x4 m y responde el radar y el MPU-6050 sobre ese mundo. El codigo de lib/ es
+# el mismo.
 SRC_URI:append:qemuall = " \
     file://sim/pigpio_sim.c   \
     file://sim/pigpiod_if2.h  \
