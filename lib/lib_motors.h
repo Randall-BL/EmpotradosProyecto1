@@ -9,24 +9,34 @@
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H
 
-/** Duty cycle maximo del PWM: el rango que se le configura al pin ENA/ENB. */
+/*
+ * Motores DC sobre un L298N con los jumpers ENA/ENB puestos: el puente queda
+ * siempre habilitado y la velocidad se controla con PWM directamente sobre
+ * las entradas de sentido IN1-IN4. No hay pines de habilitacion en la Pi.
+ */
+
+/** Duty cycle maximo del PWM: el rango que se le configura a IN1-IN4. */
 #define MOTOR_PWM_MAX 255
 
 /**
- * @brief Inicializa los pines del L298N como salidas.
+ * @brief Configura IN1-IN4 como salidas PWM y deja los motores frenados.
  */
 void motores_init(int pi);
 
 /**
- * @brief Detiene ambos motores apagando el PWM y los pines de dirección.
+ * @brief Frena ambos motores: las dos entradas de cada uno en bajo.
+ *
+ * Con el puente habilitado, el L298N cortocircuita el motor: frena en seco
+ * en vez de dejarlo girar libre.
  */
 void motores_detener(void);
 
 /**
  * @brief Control diferencial: fija la velocidad de cada motor por separado.
  *
- * Es la primitiva sobre la que se construyen todas las demás. El signo define
- * el sentido de giro y la magnitud el duty cycle del PWM:
+ * Es la primitiva sobre la que se construyen todas las demás. El signo elige
+ * cuál de las dos entradas del motor lleva la PWM (la otra queda en bajo) y la
+ * magnitud es su duty cycle:
  *
  *   motores_set( 200,  200)  → avanza recto
  *   motores_set(-200, -200)  → retrocede

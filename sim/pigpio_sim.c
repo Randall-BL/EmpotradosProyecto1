@@ -24,13 +24,14 @@
  * justamente el aviso que uno quiere.
  */
 
-/* Motores (L298N) */
-#define ENA 12
+/* Motores: L298N con los jumpers ENA/ENB puestos, PWM sobre IN1-IN4 */
 #define IN1  5
 #define IN2  6
-#define ENB 13
 #define IN3 23
 #define IN4 24
+
+/* Rango de PWM que configura la biblioteca (MOTOR_PWM_MAX). */
+#define PWM_RANGO 255
 
 /* LEDs indicadores */
 #define LED_POWER_PIN      16
@@ -68,8 +69,9 @@
 
 /* ── Estado de los pines ─────────────────────────────────────────────────── */
 
-static int g_in1, g_in2, g_in3, g_in4;
-static int g_duty_a, g_duty_b;
+/* Ciclo de trabajo en cada GPIO de motor, 0..PWM_RANGO: lo que escribe la
+   biblioteca, antes del optoacoplador. En reposo el GPIO esta en bajo. */
+static int g_gpio_in[4];            /* IN1, IN2, IN3, IN4 */
 static int g_leds[4];              /* power, autonomous, manual, obstacle */
 static int g_verboso = 1;          /* imprimir cambios de LED */
 
@@ -137,15 +139,30 @@ static void poner_be16(char *b, double valor) {
 
 /* ── Motores ─────────────────────────────────────────────────────────────── */
 
-static int sentido(int a, int b) {
-    if (a && !b) return  1;
-    if (!a && b) return -1;
-    return 0;                       /* ambos en 0 o en 1: motor libre */
+static int indice_in(unsigned gpio) {
+    switch (gpio) {
+        case IN1: return 0;
+        case IN2: return 1;
+        case IN3: return 2;
+        case IN4: return 3;
+        default:  return -1;
+    }
 }
 
+/* Lo que llega a la entrada del L298N: el PC817 en emisor comun invierte, asi
+   que un GPIO en alto la deja en bajo. Es la placa real, no la biblioteca: si
+   la biblioteca no compensa la inversion, aqui el robot anda al reves. */
+static int entrada_l298n(int i) {
+    return PWM_RANGO - g_gpio_in[i];
+}
+
+/* Con el puente siempre habilitado, cada motor es empujado hacia adelante la
+   fraccion del ciclo en que solo IN1 esta en alto, hacia atras la fraccion en
+   que solo IN2 lo esta, y frenado el resto (las dos iguales). Con una sola
+   entrada modulando por vez, el neto es la diferencia de los dos ciclos. */
 static void empujar_motores(void) {
-    mundo_set_motores(g_duty_a * sentido(g_in1, g_in2),
-                      g_duty_b * sentido(g_in3, g_in4));
+    mundo_set_motores(entrada_l298n(0) - entrada_l298n(1),
+                      entrada_l298n(2) - entrada_l298n(3));
 }
 
 /* ── API de pigpio ───────────────────────────────────────────────────────── */
@@ -154,8 +171,7 @@ int pigpio_start(const char *addrStr, const char *portStr) {
     (void)addrStr; (void)portStr;
     mundo_init();
     memset(g_leds, 0, sizeof(g_leds));
-    g_in1 = g_in2 = g_in3 = g_in4 = 0;
-    g_duty_a = g_duty_b = 0;
+    memset(g_gpio_in, 0, sizeof(g_gpio_in));
     g_sensor.fase = S_IDLE;
 
     pthread_mutex_lock(&g_lock_sim);
@@ -196,9 +212,9 @@ int set_PWM_range(int pi, unsigned user_gpio, unsigned range) {
 
 int set_PWM_dutycycle(int pi, unsigned user_gpio, unsigned dutycycle) {
     (void)pi;
-    if      (user_gpio == ENA) g_duty_a = (int)dutycycle;
-    else if (user_gpio == ENB) g_duty_b = (int)dutycycle;
-    else return -1;
+    int i = indice_in(user_gpio);
+    if (i < 0) return -1;                  /* no hay motor en ese pin */
+    g_gpio_in[i] = dutycycle > PWM_RANGO ? PWM_RANGO : (int)dutycycle;
     empujar_motores();
     return 0;
 }
@@ -208,10 +224,10 @@ int gpio_write(int pi, unsigned gpio, unsigned level) {
     int nivel = level ? 1 : 0;
 
     switch (gpio) {
-        case IN1: g_in1 = nivel; empujar_motores(); return 0;
-        case IN2: g_in2 = nivel; empujar_motores(); return 0;
-        case IN3: g_in3 = nivel; empujar_motores(); return 0;
-        case IN4: g_in4 = nivel; empujar_motores(); return 0;
+        case IN1: case IN2: case IN3: case IN4:
+            g_gpio_in[indice_in(gpio)] = nivel ? PWM_RANGO : 0;
+            empujar_motores();
+            return 0;
 
         case LED_POWER_PIN:      case LED_AUTONOMOUS_PIN:
         case LED_MANUAL_PIN:     case LED_OBSTACLE_PIN: {
