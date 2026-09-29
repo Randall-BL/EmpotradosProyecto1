@@ -23,7 +23,8 @@ LICENSE = "MIT"
 # ${WORKDIR}/src porque el CMakeLists del servidor vive en src/. El LICENSE que
 # trae el SRC_URI, en cambio, se desempaqueta en ${WORKDIR}. Sin la ruta
 # absoluta, do_populate_lic falla con "LIC_FILES_CHKSUM points to an invalid
-# file". librobot no tiene el problema porque alli S es ${WORKDIR}.
+# file". librobot no tiene el problema porque alli el LICENSE se desempaqueta
+# dentro de S (subdir=lib).
 LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
 
 # server/, audio/ y LICENSE estan en la raiz del repositorio, tres niveles arriba.
