@@ -134,7 +134,7 @@ int imu_calibrar(int muestras) {
     pthread_mutex_unlock(&g_lock);
     if (h < 0 || muestras <= 0) return -1;
 
-    double sx = 0.0, sy = 0.0, sgz = 0.0;
+    double sx = 0.0, sy = 0.0, sz = 0.0, sgz = 0.0;
     int validas = 0;
 
     for (int i = 0; i < muestras; i++) {
@@ -142,6 +142,7 @@ int imu_calibrar(int muestras) {
         if (leer_crudo(pi, h, &c) == 0) {
             sx  += c.ax_g;
             sy  += c.ay_g;
+            sz  += c.az_g;
             sgz += c.gz_dps;
             validas++;
         }
@@ -153,8 +154,11 @@ int imu_calibrar(int muestras) {
     g_sesgo_ax = sx  / validas;
     g_sesgo_ay = sy  / validas;
     g_sesgo_gz = sgz / validas;
+    /* El eje vertical no se calibra, pero se informa: +1 g confirma que el
+       modulo quedo con Z hacia arriba; -1 g, que esta dado vuelta. */
     printf("[imu] calibrado con %d muestras: sesgo ax %+.4f g, ay %+.4f g, "
-           "gz %+.2f grados/s\n", validas, g_sesgo_ax, g_sesgo_ay, g_sesgo_gz);
+           "gz %+.2f grados/s; vertical %+.2f g\n",
+           validas, g_sesgo_ax, g_sesgo_ay, g_sesgo_gz, sz / validas);
     pthread_mutex_unlock(&g_lock);
     return 0;
 }
