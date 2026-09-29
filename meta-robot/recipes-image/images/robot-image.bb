@@ -12,8 +12,9 @@
 require recipes-core/images/core-image-minimal.bb
 
 SUMMARY = "Imagen minima de Linux para el robot aspiradora autonomo (Raspberry Pi 4)"
-DESCRIPTION = "Sistema operativo minimo con systemd, WiFi, audio por el jack de 3.5 mm, \
-la biblioteca dinamica de control y el servidor web de control remoto."
+DESCRIPTION = "Sistema operativo minimo con systemd, WiFi, audio PWM por GPIO hacia un \
+amplificador PAM8403, I2C para el MPU-6050, la biblioteca dinamica de control y el \
+servidor web de control remoto."
 
 IMAGE_INSTALL:append = " \
     \
@@ -35,7 +36,8 @@ IMAGE_INSTALL:append = " \
 IMAGE_INSTALL:append:qemuall = " dhcpcd"
 
 # Lo que solo existe o solo sirve en la Raspberry Pi: GPIO real, WiFi Broadcom
-# y los modulos del kernel de la RPi. La override "rpi" la define
+# y los modulos del kernel de la RPi (i2c-dev e i2c-bcm2835: el bus del
+# MPU-6050). La override "rpi" la define
 # meta-raspberrypi para todas sus maquinas; la imagen de QEMU
 # (qemuarm64-robot, ver docs/qemu.md) no lleva nada de esto.
 IMAGE_INSTALL:append:rpi = " \
@@ -57,6 +59,8 @@ IMAGE_INSTALL:append:rpi = " \
     kernel-module-snd-6.6.63-v8            \
     kernel-module-snd-pcm-6.6.63-v8        \
     kernel-module-snd-bcm2835-6.6.63-v8    \
+    kernel-module-i2c-dev-6.6.63-v8        \
+    kernel-module-i2c-bcm2835-6.6.63-v8    \
 "
 
 # SSH: unica via de acceso al sistema para depurar y para recoger las metricas,
@@ -82,5 +86,6 @@ IMAGE_ROOTFS_EXTRA_SPACE ?= "0"
 #
 #   oe-pkgdata-util list-pkgs | grep brcm
 #   oe-pkgdata-util list-pkgs | grep snd
+#   oe-pkgdata-util list-pkgs | grep i2c
 #
 # y actualizarlos aqui. Version usada: 6.6.63-v8.
