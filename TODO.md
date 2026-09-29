@@ -99,7 +99,7 @@
 - [x] Definir la API pública de la biblioteca (header + versionado)
 - [x] Configurar el build con **CMake o Autotools** y compilación cruzada ARM
 - [x] Generar el **paquete estándar de código abierto** correspondiente
-- [x] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`); PWM sobre `IN1`–`IN4` con el L298N siempre habilitado (jumpers `ENA`/`ENB`) y la inversión del PC817 compensada
+- [~] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`); L298N siempre habilitado (jumpers `ENA`/`ENB`) y la inversión del PC817 compensada. **Por ahora a velocidad fija**: la PWM de 1 kHz por el PC817 no movió los motores (`MOTOR_VELOCIDAD_VARIABLE` en `lib_motors.h`)
 - [x] Implementar el módulo de **sensores de proximidad (GPIO)**: lectura en tiempo real — radar con servo en `lib_radar` + `lib_servo`
 - [x] Implementar el módulo del **MPU-6050 (I2C)**: aceleración de avance y giro, con calibración — `lib_imu`
 - [x] Implementar el módulo de **LEDs (GPIO)**: control de los 4 indicadores
@@ -120,7 +120,7 @@
 - [x] Lectura y procesamiento de sensores **en tiempo real** — ~10 lecturas/s, frente cada ~0.6 s; `docs/navegacion-radar.md`
 - [x] **Velocidad con el MPU-6050** y **tiempo antes de chocar**, actualizado en cada lectura frontal y proyectado entre lecturas — probado en el simulador
 - [x] Evasión: retroceder, barrido completo y giro en lazo cerrado hacia el lado más libre — 2 min en el simulador, 14 evasiones y ningún choque
-- [x] **Control diferencial** de los 2 motores DC vía PWM (giros con radio variable) — `motores_set` / `motores_curva`
+- [~] **Control diferencial** de los 2 motores DC vía PWM (giros con radio variable) — `motores_set` / `motores_curva` implementados y probados en el simulador; en el robot, pendiente de recuperar la PWM (probar 100 Hz o pull-up de 1 kΩ). Mientras tanto gira sobre su eje, una llanta adelante y la otra atrás
 - [ ] Calibrar velocidades, umbrales (distancia y tiempo de choque), pulsos del servo y montaje del MPU — `docs/odometria.md`
 - [x] **4 LEDs indicadores**: (1) modo autónomo activo, (2) modo manual activo, (3) alerta de obstáculo detectado, (4) sistema encendido — control en código
 - [x] Implementar la **odometría** (insumo necesario para el mapa) — `lib_odom` con MPU-6050 + modelo de motores: 5 % de error de posición y 0.4° de rumbo en el simulador; **calibrar en campo**

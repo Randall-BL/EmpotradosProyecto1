@@ -130,7 +130,7 @@ cualquiera de dos cosas:
 
 | Vía | Umbral | Cuándo es la que dispara |
 |---|---|---|
-| **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | En movimiento: a 25 cm/s salta a ~30 cm de la pared, antes que la distancia |
+| **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | En movimiento: a 30 cm/s —la velocidad fija de ahora— salta a ~36 cm de la pared, antes que la distancia |
 | **Distancia** | alguna lectura del cono frontal (60°, 90°, 120°) < `DIST_OBSTACULO_CM` (20 cm) | Robot quieto o muy lento, donde no hay tiempo de choque, y obstáculos que el sensor ve en diagonal |
 
 Del cono frontal solo cuentan lecturas de menos de 1.5 s **tomadas mirando hacia donde
@@ -148,7 +148,8 @@ sigue la evasión:
    del algoritmo de rebote, que evita repetir siempre la misma trayectoria. Si ningún
    ángulo tiene 40 cm libres, media vuelta.
 4. **Girar en lazo cerrado** sobre el rumbo de la odometría —el giroscopo— hasta cubrir
-   el ángulo elegido, no durante un tiempo fijo.
+   el ángulo elegido, no durante un tiempo fijo. El giro es sobre el eje: una llanta
+   hacia adelante y la otra hacia atrás.
 
 Durante toda la maniobra el servidor sigue actualizando sensores, mapa y LED: el panel no
 se congela mientras el robot retrocede o gira, y pasar a manual aborta la maniobra.
@@ -185,7 +186,9 @@ Todo lo anterior corre sin la Raspberry sobre el simulador de `sim/`, que modela
 servo (600°/s), el HC-SR04 midiendo hacia donde apunta el servo en el instante del
 disparo, el MPU-6050 con sesgo de fábrica y la inercia de las llantas.
 
-`sim/prueba_librobot` — **47/47**, compilado para ARM y ejecutado con `qemu-aarch64`:
+`sim/prueba_librobot` — **47/47**, compilado para ARM y ejecutado con `qemu-aarch64`.
+Estos números son con PWM (motores a 200/255); con la velocidad fija de ahora la prueba
+también pasa 47/47, con el robot a 28 cm/s:
 
 | Prueba | Resultado |
 |---|---|
@@ -202,7 +205,8 @@ El servidor completo, compilado para ARM y corriendo sobre el simulador:
 
 | Prueba | Resultado |
 |---|---|
-| 2 minutos en modo autónomo | **14 evasiones y ningún choque**; 59 celdas visitadas |
+| 2 minutos en modo autónomo, con PWM a 210/255 | **14 evasiones y ningún choque**; 59 celdas visitadas |
+| 2 minutos en modo autónomo, a velocidad fija (máxima) | **18 evasiones y ningún choque**; 68 celdas visitadas |
 | Modo manual, avance directo contra una pared | el tiempo de choque cae bajo 1.2 s y el robot frena solo a 26 cm |
 
 ---

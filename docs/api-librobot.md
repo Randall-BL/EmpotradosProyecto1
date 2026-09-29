@@ -49,22 +49,29 @@ robot_shutdown();                          // al terminar, siempre
 
 ## 2. Motores — `lib_motors.h`
 
-Tracción diferencial sobre un puente L298N con los jumpers `ENA`/`ENB` puestos: la PWM
-va directo sobre las entradas `IN1`–`IN4`. Para cada motor, el signo elige cuál de sus
-dos entradas lleva la PWM y la otra queda en bajo; con velocidad 0 las dos quedan en bajo
-y el L298N **frena**. La inversión de los optoacopladores está compensada adentro
-(`OPTO_INVERTIDO`). `MOTOR_PWM_MAX` (255) es el tope de duty cycle.
+Tracción diferencial sobre un puente L298N con los jumpers `ENA`/`ENB` puestos, que se
+controla solo con las entradas `IN1`–`IN4`. Para cada motor, el signo elige cuál de sus
+dos entradas se activa y la otra queda en bajo; con velocidad 0 las dos quedan en bajo y
+el L298N **frena**. La inversión de los optoacopladores está compensada adentro
+(`OPTO_INVERTIDO`). `MOTOR_PWM_MAX` (255) es el tope de velocidad.
+
+> **Por ahora la velocidad es fija** (`MOTOR_VELOCIDAD_VARIABLE` en 0, en
+> `lib_motors.h`): cualquier velocidad distinta de cero lleva el motor al máximo,
+> `motores_get()` informa ±255 y `motores_curva()` gira sobre el eje, con una llanta
+> hacia adelante y la otra hacia atrás. Con 1 vuelve la PWM sobre `IN1`–`IN4`; por qué
+> se desactivó y qué cambiar para recuperarla está en
+> [`hardware-aislamiento.md`](hardware-aislamiento.md#por-ahora-velocidad-fija).
 
 | Función | Descripción |
 |---|---|
 | `void motores_set(int izq, int der)` | **Primitiva.** Velocidad de cada motor, −255..255; el signo da el sentido, la magnitud el PWM. Se satura. |
-| `void motores_get(int *izq, int *der)` | Última velocidad ordenada a cada motor (entrada de la odometría). Punteros NULL permitidos. |
+| `void motores_get(int *izq, int *der)` | Velocidad que recibe cada motor: la ordenada ya saturada, o ±255 con velocidad fija (entrada de la odometría). Punteros NULL permitidos. |
 | `void motores_detener(void)` | Frena ambos en seco (equivale a `motores_set(0,0)`). |
 | `void motores_avanzar(int v)` | `motores_set(v, v)`. |
 | `void motores_retroceder(int v)` | `motores_set(-v, -v)`. |
 | `void motores_girar_izquierda(int v)` | Gira sobre su eje a la izquierda: `motores_set(-v, v)`. |
 | `void motores_girar_derecha(int v)` | Gira sobre su eje a la derecha: `motores_set(v, -v)`. |
-| `void motores_curva(int v, int giro)` | Avanza en curva sin detenerse. `giro` −100..100 (0 = recto); reduce el motor interior. |
+| `void motores_curva(int v, int giro)` | Avanza en curva sin detenerse. `giro` −100..100 (0 = recto); reduce el motor interior. Con velocidad fija, gira sobre el eje hacia ese lado. |
 
 ```c
 motores_set(200, 120);      // curva suave a la derecha

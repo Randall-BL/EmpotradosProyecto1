@@ -67,12 +67,37 @@ Con el puente siempre habilitado, cada par de entradas decide el estado del moto
 | Bajo | Bajo | **Frenado** (las dos salidas a tierra: el motor queda en cortocircuito) |
 | Alto | Alto | **Frenado** (las dos salidas al positivo) |
 
-Para avanzar a una velocidad dada, `IN1` lleva la PWM e `IN2` queda en bajo: el motor
-alterna entre avanzar y frenar, y la velocidad sigue al ciclo de trabajo de forma casi
-lineal. Para retroceder, al revés. Detenerse es dejar las dos en bajo: **frena en seco**,
-no queda girando libre. Igual para `IN3`/`IN4` y el motor B.
+Para avanzar, `IN1` en alto e `IN2` en bajo; para retroceder, al revés. Detenerse es
+dejar las dos en bajo: **frena en seco**, no queda girando libre. Igual para `IN3`/`IN4`
+y el motor B. Para girar, un motor hacia adelante y el otro hacia atrás: el robot rota
+sobre su eje.
 
 Los pines `GPIO 12` y `13`, que antes llevaban `ENA`/`ENB`, quedan libres.
+
+### Por ahora, velocidad fija
+
+La entrada activa lleva un **nivel fijo**, no PWM: cualquier velocidad distinta de cero
+es la máxima (`MOTOR_VELOCIDAD_VARIABLE` en 0, en `lib/lib_motors.h`).
+
+Se probó primero con PWM de 1 kHz sobre la entrada activa —el motor alterna entre avanzar
+y frenar, y la velocidad sigue al ciclo de trabajo— y **los motores no se movieron**. La
+causa más probable es la suma de tres pérdidas:
+
+- el PC817 con 4.7 kΩ de pull-up tarda decenas de microsegundos en apagarse, y en cada
+  ciclo se come parte del tiempo en que la entrada debía estar en alto;
+- el L298N cae unos 2 V: de los 7.4 V del pack, al motor le llegan ~5.4 V a fondo;
+- a una velocidad media (el 50 % por defecto del panel), lo que queda en promedio es
+  menos de 2 V, por debajo de la tensión de arranque de un motor de 6 V con reductora.
+
+Sin la PWM se pierde el control de velocidad y los giros de radio variable que pide el
+enunciado: el robot avanza, retrocede y gira sobre su eje, siempre al máximo. Para
+recuperarlos, cualquiera de estas, y después `MOTOR_VELOCIDAD_VARIABLE` en 1:
+
+| Cambio | Dónde | Efecto |
+|---|---|---|
+| Bajar la PWM a **100 Hz** | `PWM_FREQ` en `lib/lib_motors.c` | El apagado del PC817 pasa a ser ~1 % del ciclo |
+| Bajar el pull-up a **1 kΩ** | Placa de optoacopladores | El PC817 se apaga varias veces más rápido; 5 mA por canal del riel de potencia |
+| Velocidad mínima útil | `server/src/main.c`, `api.c` | Llevar el 1–100 % del panel a un ciclo de ~150–255, por encima del arranque |
 
 ### Cálculo de la resistencia de entrada
 
@@ -101,13 +126,12 @@ resistencia de 4.7 kΩ a 5 V eso satura el transistor de sobra: hacen falta apen
 ### Resistencia de salida
 
 `4.7 kΩ` de colector a `+5V_POT`. Con `Cpar ≈ 10 pF` de la entrada del L298N la
-constante de tiempo es de unos 50 ns, despreciable frente al kilohercio del PWM. Lo que
-sí se nota es el apagado del propio PC817, de unas decenas de microsegundos: deforma los
-ciclos de trabajo muy chicos o muy grandes, que el robot de todas formas no usa (por
-debajo de ~60/255 el motor no vence la fricción).
+constante de tiempo es de unos 50 ns, despreciable. Lo que manda es el apagado del
+propio PC817: con la carga de 4.7 kΩ y el transistor saturado tarda decenas de
+microsegundos. Con niveles fijos no importa; con PWM de 1 kHz es parte de por qué los
+motores no se movieron (ver [arriba](#por-ahora-velocidad-fija)).
 
-Bajarla a 1 kΩ acelera el flanco pero consume 5 mA por canal del riel de potencia. No
-hace falta a 1 kHz.
+Bajarla a 1 kΩ acelera el apagado pero consume 5 mA por canal del riel de potencia.
 
 ---
 
@@ -134,13 +158,19 @@ motores:
 ```c
 #define OPTO_INVERTIDO 1
 
-/* Deja en la ENTRADA DEL L298N un ciclo de trabajo de 0 (siempre en bajo) a
-   MOTOR_PWM_MAX (siempre en alto), compensando el optoacoplador. */
 static void entrada_l298n(unsigned gpio, int duty) {
-#if OPTO_INVERTIDO
-    duty = MOTOR_PWM_MAX - duty;
-#endif
+#if MOTOR_VELOCIDAD_VARIABLE
+  #if OPTO_INVERTIDO
+    duty = MOTOR_PWM_MAX - duty;          /* PWM: se complementa el ciclo */
+  #endif
     set_PWM_dutycycle(g_pi, gpio, (unsigned)duty);
+#else
+    int nivel = duty > 0;
+  #if OPTO_INVERTIDO
+    nivel = !nivel;                       /* nivel fijo: se invierte */
+  #endif
+    gpio_write(g_pi, gpio, (unsigned)nivel);
+#endif
 }
 ```
 
@@ -374,7 +404,8 @@ coincide con la placa: revisar `OPTO_INVERTIDO` en `lib/lib_motors.c` y el Paso 
 ## Estado
 
 - [x] Solución de aislamiento definida: 5 × PC817, una por señal de control
-- [x] PWM sobre `IN1`–`IN4` con el L298N siempre habilitado (jumpers `ENA`/`ENB`)
+- [x] L298N siempre habilitado (jumpers `ENA`/`ENB`), control por `IN1`–`IN4`
+- [ ] Velocidad variable: la PWM de 1 kHz a través del PC817 no movió los motores; por ahora niveles fijos (velocidad máxima)
 - [x] Canal del servo en seguidor de emisor, sin inversión, con su cálculo
 - [x] Resistencias calculadas contra el presupuesto de corriente del GPIO
 - [x] Separación de tierras especificada, con el error común documentado

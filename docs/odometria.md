@@ -8,6 +8,13 @@ la imagen del robot. Qué hace cada constante está explicado en
 
 ## 1. Velocidades de los motores (issue #15)
 
+> **Por ahora los motores van a velocidad fija** (`MOTOR_VELOCIDAD_VARIABLE` en 0,
+> en `lib/lib_motors.h`): cualquier velocidad es la máxima y los pasos 1 y 3 no
+> aplican. Lo que sí hay que medir es la velocidad a fondo, que es la
+> `ODOM_VEL_MAX_CM_S` de la sección 5. Si se recupera la PWM, antes de estos
+> pasos probar que el robot arranque con ciclos medios (ver
+> [`hardware-aislamiento.md`](hardware-aislamiento.md#por-ahora-velocidad-fija)).
+
 El PWM es de 0–255, pero la velocidad real depende de la batería, el peso y la
 fricción. Objetivo: elegir una velocidad de crucero estable y una de giro que
 no haga trompos.
@@ -117,8 +124,8 @@ la pose final que reporta `odom_get()` con la real. El error acumulado debería
 quedar por debajo del ~15 % del perímetro; si es mayor, reajustar las constantes.
 
 > Método de medición idéntico al que valida la odometría en el simulador
-> (`sim/prueba_librobot`), donde el error medido es del 5 % en posición y de
-> menos de un grado en el rumbo.
+> (`sim/prueba_librobot`), donde el error medido es de 1–5 % en posición y de
+> uno o dos grados en el rumbo.
 
 ## 6. Mapa
 

@@ -14,11 +14,11 @@ Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 p
 | Función | BCM | Pin físico | Dirección | Definido en |
 |---|---|---|---|---|
 | **Motor izquierdo (A)** — vía optoacoplador; `ENA` con jumper en el L298N ||||
-| `IN1` — PWM de avance | 5 | 29 | Salida | `lib/lib_motors.c` |
-| `IN2` — PWM de retroceso | 6 | 31 | Salida | `lib/lib_motors.c` |
+| `IN1` — avance | 5 | 29 | Salida | `lib/lib_motors.c` |
+| `IN2` — retroceso | 6 | 31 | Salida | `lib/lib_motors.c` |
 | **Motor derecho (B)** — vía optoacoplador; `ENB` con jumper en el L298N ||||
-| `IN3` — PWM de avance | 23 | 16 | Salida | `lib/lib_motors.c` |
-| `IN4` — PWM de retroceso | 24 | 18 | Salida | `lib/lib_motors.c` |
+| `IN3` — avance | 23 | 16 | Salida | `lib/lib_motors.c` |
+| `IN4` — retroceso | 24 | 18 | Salida | `lib/lib_motors.c` |
 | **Radar: servo de 180°** — vía optoacoplador ||||
 | Señal del servo (pulsos de 50 Hz) | 25 | 22 | Salida | `lib/lib_servo.h` |
 | **Radar: HC-SR04 sobre el servo** ||||
@@ -70,13 +70,13 @@ LED obstáculo─(GPIO26)(37) (38)(GPIO20)─ LED autónomo
 
 ## Por qué estos pines
 
-**La PWM de los motores va sobre `IN1`–`IN4` (5, 6, 23 y 24).** El L298N lleva los
-jumpers `ENA`/`ENB` puestos —siempre habilitado— y la velocidad se da con PWM
-directamente sobre las entradas de sentido (ver
-[`hardware-aislamiento.md`](hardware-aislamiento.md)). La genera `pigpiod` por software
-temporizado con DMA con `set_PWM_dutycycle()`, que funciona en cualquier GPIO: por eso
-las entradas no necesitan estar en los pines de PWM por hardware, y son los mismos pines
-de sentido de antes. `GPIO 12` y `13`, que llevaban `ENA`/`ENB`, quedan libres.
+**Los motores se controlan solo con `IN1`–`IN4` (5, 6, 23 y 24).** El L298N lleva los
+jumpers `ENA`/`ENB` puestos —siempre habilitado— y las entradas de sentido llevan, por
+ahora, niveles fijos: los motores van siempre al máximo (ver
+[`hardware-aislamiento.md`](hardware-aislamiento.md)). Si se vuelve a la velocidad
+variable, la PWM va sobre esas mismas entradas: `pigpiod` la genera por DMA con
+`set_PWM_dutycycle()` en cualquier GPIO, así que no hace falta recablear. `GPIO 12` y
+`13`, que llevaban `ENA`/`ENB`, quedan libres.
 
 **GPIO 18 para el audio.** La salida PWM analógica que normalmente va al jack de 3.5 mm
 se saca al conector con el overlay `audremap`, que acepta los pares 12/13 o 18/19. Se

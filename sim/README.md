@@ -48,10 +48,10 @@ completo (`construir_servidor.sh` + `prueba_api.sh`), ver
 | Servo | pulsos de 1000 µs a 45°, saturación en 500 y 2500 µs, estimación del tiempo de viaje |
 | LEDs | encender y apagar cada indicador cambia su estado |
 | Motores básicos | avanzar, retroceder y girar mueven al robot como se espera |
-| Control diferencial | `motores_set` guarda la velocidad por motor, satura en ±255, y con velocidades distintas describe una curva; `motores_curva(v,100)` detiene la llanta interior |
+| Control diferencial | `motores_set` satura en ±255; con velocidad fija (la de ahora) cualquier velocidad va al máximo y `motores_curva` gira sobre el eje, una llanta adelante y la otra atrás; con `-DMOTOR_VELOCIDAD_VARIABLE=1`, velocidades distintas describen una curva y `motores_curva(v,100)` detiene la llanta interior |
 | Velocidad (MPU) | al arrancar sigue la inercia real mejor que el modelo de motores; en crucero queda a ±15 % de la real; detenido vuelve a 0 (ZUPT) |
 | Tiempo de choque | detecta la pared al frente, coincide con el real a ±15 %, la cuenta regresiva baja entre lecturas y se anula al detenerse |
-| Odometría | tras un recorrido en L, error de posición bajo el 20 % (medido: 5 %) y de rumbo bajo 5° (medido: 0.4°) |
+| Odometría | tras un recorrido en L, error de posición bajo el 20 % (medido: 1–5 %) y de rumbo bajo 5° (medido: 1–2°) |
 | Audio | API: volumen, estado, listado (si hay tarjeta de sonido) |
 | Cierre | `robot_shutdown()` cierra la sesión, deja los motores detenidos, el servo sin pulsos y el I2C libre |
 
