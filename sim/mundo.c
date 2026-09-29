@@ -57,6 +57,7 @@ static double g_v_izq = 0.0, g_v_der = 0.0;          /* llantas, cm/s   */
 static double g_v_cuerpo = 0.0;                      /* avance real     */
 static double g_omega = 0.0;                         /* rad/s, horario  */
 static int    g_choco = 0;
+static int    g_choques = 0;                         /* choques contados */
 
 /* Estado del acelerometro simulado: velocidad e instante de la consulta
    anterior, para entregar la aceleracion media desde entonces. */
@@ -109,6 +110,7 @@ static void integrar(void) {
     if (g_rumbo < 0.0) g_rumbo += 2.0 * M_PI;
 
     /* Las paredes y los muebles frenan: el robot no los atraviesa. */
+    int choco_antes = g_choco;
     g_choco = 0;
     if (nx < SALA_MIN_X + RADIO_ROBOT_CM) { nx = SALA_MIN_X + RADIO_ROBOT_CM; g_choco = 1; }
     if (nx > SALA_MAX_X - RADIO_ROBOT_CM) { nx = SALA_MAX_X - RADIO_ROBOT_CM; g_choco = 1; }
@@ -123,6 +125,13 @@ static void integrar(void) {
             g_choco = 1;
             break;
         }
+    }
+
+    /* Cada choque nuevo se avisa: es la medida de si la navegacion evade. */
+    if (g_choco && !choco_antes) {
+        g_choques++;
+        fprintf(stderr, "[sim] CHOQUE %d en (%.0f, %.0f) cm, rumbo %.0f\n",
+                g_choques, nx, ny, g_rumbo * 180.0 / M_PI);
     }
 
     /* Lo que el cuerpo avanzo de verdad: con el robot trabado contra un
@@ -168,6 +177,7 @@ void mundo_init(void) {
     g_vel_izq = g_vel_der = 0;
     g_v_izq = g_v_der = g_v_cuerpo = g_omega = 0.0;
     g_choco = 0;
+    g_choques = 0;
     g_rastro_n = 0;
     clock_gettime(CLOCK_MONOTONIC, &g_t);
     g_imu_t = g_t;
@@ -294,6 +304,13 @@ int mundo_choco(void) {
     int c = g_choco;
     pthread_mutex_unlock(&g_lock);
     return c;
+}
+
+int mundo_choques(void) {
+    pthread_mutex_lock(&g_lock);
+    int n = g_choques;
+    pthread_mutex_unlock(&g_lock);
+    return n;
 }
 
 /* ── Dibujo en la terminal ──────────────────────────────────────────────── */

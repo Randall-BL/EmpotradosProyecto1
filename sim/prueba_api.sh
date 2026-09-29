@@ -3,7 +3,8 @@
 #
 # Ejercita por HTTP los endpoints del servidor corriendo sobre el simulador
 # (issues #25-#29), sin la Raspberry. Lanza el servidor, hace login y prueba
-# autenticacion, panel, modos, movimiento, audio y el mapa incremental.
+# autenticacion, panel, modos, movimiento, audio, radar, velocidad del MPU,
+# tiempo de choque y el mapa incremental.
 #
 # Uso:  ./construir_servidor.sh && ./prueba_api.sh
 set -e
@@ -27,6 +28,7 @@ echo "  login correcto        -> HTTP $(curl -s -c $CK -o /dev/null -w '%{http_c
 
 echo "== Panel / modo / movimiento (#26) =="
 curl -s -b $CK $URL/api/status | python3 -c "import sys,json;d=json.load(sys.stdin);print('  status:',d['mode'],'| sensores',d['sensors'],'| leds',d['leds'])"
+curl -s -b $CK $URL/api/status | python3 -c "import sys,json;d=json.load(sys.stdin);r=d['radar'];m=d['movimiento'];print('  radar: servo',r['angulo'],'|',' '.join(f\"{l['a']}:{l['d']:.0f}\" for l in r['lecturas']),'| velocidad',m['velocidad'],'cm/s | choque en',m['ttc'],'s | imu',m['imu'])"
 echo "  mode->manual  $(curl -s -b $CK -X POST $URL/api/mode -d '{"mode":"manual"}')"
 echo "  move forward  $(curl -s -b $CK -X POST $URL/api/move -d '{"direction":"forward","speed":70}')"
 
@@ -39,7 +41,7 @@ echo "== Mapa incremental (#28/#29) =="
 curl -s -b $CK -X POST $URL/api/mode -d '{"mode":"autonomous"}' >/dev/null
 for i in 0 1 2 3; do
   [ $i -gt 0 ] && sleep 2
-  curl -s -b $CK $URL/api/status | python3 -c "import sys,json;m=json.load(sys.stdin)['map'];print(f'  robot=({m[\"robot_x\"]},{m[\"robot_y\"]}) rumbo={m[\"robot_heading\"]} visitadas={m[\"visited\"]} obstaculos={m[\"obstacles\"]}')"
+  curl -s -b $CK $URL/api/status | python3 -c "import sys,json;m=json.load(sys.stdin)['map'];print(f'  celda={m[\"celda_cm\"]} cm robot=({m[\"robot_x\"]},{m[\"robot_y\"]}) rumbo={m[\"robot_heading\"]} visitadas={m[\"visited\"]} obstaculos={m[\"obstacles\"]}')"
 done
 rm -f $CK
 echo "OK"

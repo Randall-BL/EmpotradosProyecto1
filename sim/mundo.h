@@ -71,6 +71,9 @@ void mundo_pose(double *x_cm, double *y_cm, double *rumbo_grados);
 /** 1 si el robot esta pegado a una pared o mueble. */
 int mundo_choco(void);
 
+/** Cuantas veces choco desde mundo_init(). Cada choque se avisa por stderr. */
+int mundo_choques(void);
+
 /** Dibuja la habitacion en la terminal, con el robot y su rastro. */
 void mundo_dibujar(void);
 
