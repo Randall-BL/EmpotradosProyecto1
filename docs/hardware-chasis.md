@@ -29,7 +29,7 @@ La estética se lleva de paso: es la silueta que se asocia a una aspiradora robo
 | Parámetro | Valor | Motivo |
 |---|---|---|
 | Diámetro | **22–25 cm** | Espacio para la Pi (8.5 × 5.6 cm), el pack 2S y las dos placas perforadas |
-| Altura total | **10–12 cm** | Los sensores deben quedar a 5–8 cm del piso |
+| Altura total | **10–12 cm** | El sensor del radar debe quedar a 5–8 cm del piso |
 | Separación al piso | **1.5–2 cm** | Salva desniveles de alfombra sin encallar |
 | Masa objetivo | **< 1.5 kg** | Por encima, los motores DC pequeños pierden par para arrancar |
 
@@ -38,17 +38,18 @@ Dos niveles unidos por separadores hexagonales M3 de 40 mm:
 ```
    ── NIVEL SUPERIOR ──────────────────────────
       LEDs indicadores (rotulados)
-      Altavoz
+      Parlante
       Interruptor principal
       Raspberry Pi 4 (acceso a USB-C, HDMI y microSD)
 
    ── NIVEL INFERIOR ──────────────────────────
       Pack 2S 18650 + BMS  (al centro, bajo)
-      Regulador buck 5 V
+      Reguladores buck 5 V ×2 (lógica y servo)
       Placa de optoacopladores + L298N
-      Placa del amplificador LM386
+      Amplificador PAM8403 + filtro RC
+      MPU-6050 (entre las dos llantas, atornillado)
       Motores DC ×2 + rueda loca
-      Sensores HC-SR04 ×3 (en el borde)
+      Radar: servo + HC-SR04 (en el borde frontal)
 ```
 
 La batería va **al centro y lo más bajo posible**: es el componente más pesado y baja el
@@ -59,15 +60,16 @@ centro de gravedad, que es lo que evita que el robot cabecee al arrancar o al fr
 ## Tracción
 
 ```
-              FRENTE
-         ┌──────────────┐
-         │   HC-SR04    │  ← sensor frontal, 0°
-     ╱   │   frontal    │   ╲
-   HC    └──────────────┘    HC     ← laterales a 45°
-  SR04                      SR04
+                  FRENTE
+          180°     90°      0°
+             ╲      │      ╱        ← barrido del radar, cada 30°
+              ╲  ┌──┴──┐  ╱
+               ╲ │HC-SR│ ╱          ← HC-SR04 sobre el brazo del servo,
+                 └──┬──┘               eje 10 cm adelante del centro
+                  servo
     │                         │
-  ══╪═══   Motor izq   ═══════╪══   ← eje de tracción,
-    │      ●    ●    Motor der│        ligeramente adelante del centro
+  ══╪═══   Motor izq  [MPU]═══╪══   ← eje de tracción, ligeramente adelante
+    │      ●    ●    Motor der│        del centro; el MPU-6050 entre las llantas
     │                         │
          ┌──────────────┐
          │  rueda loca  │        ← apoyo trasero
@@ -92,14 +94,28 @@ corrige en la calibración de velocidades (issue #20), pero es mejor no tener qu
 
 ### Odometría
 
-Los motores del kit rara vez traen encoder. Si no lo traen, la odometría (issue #22) se
-estima por tiempo y ciclo de trabajo: se calibra midiendo la distancia real recorrida a
-cada ciclo de trabajo durante un tiempo conocido, y se construye una tabla. Es menos
-exacta —el error se acumula y la deriva es peor sobre alfombra que sobre piso duro— pero
-alcanza para el mapa de grilla que pide el enunciado.
+Los motores del kit rara vez traen encoder. Sin ellos, la odometría (issue #22) combina
+dos fuentes: el **MPU-6050**, cuyo giroscopio da el rumbo y cuyo acelerómetro, integrado,
+da la velocidad; y el **modelo de los motores** —velocidad a cada ciclo de trabajo,
+medida en la calibración—, que corrige la deriva del acelerómetro. El detalle está en
+[`navegacion-radar.md`](navegacion-radar.md). El error se acumula igual, pero el rumbo,
+que es lo que más deforma el mapa, deja de depender de que las dos llantas patinen lo
+mismo.
+
+Por eso el MPU va **entre las dos llantas**, sobre el eje de tracción: ahí girar sobre
+el propio eje no produce aceleración centrípeta que el sensor confunda con avance.
 
 Si el kit trae encoders de ranura, van montados en el eje **antes** de la reductora y
 usan dos GPIO de los que quedaron libres (7 y 8).
+
+### El radar en el borde frontal
+
+El servo va atornillado al nivel inferior, con el eje a **10 cm por delante del centro**
+(`RADAR_EJE_ADELANTE_CM` en `lib/lib_radar.h`) y el HC-SR04 sobre su brazo, a 5–8 cm
+del piso. Al barrer de 0° a 180° el sensor no puede rozar el nivel superior, los
+separadores ni los cables: conviene dejarlo en una muesca del borde, de modo que a 0° y
+180° quede de costado sin salir del círculo del chasis. El cable del sensor sale por el
+eje de giro, con holgura para media vuelta.
 
 ---
 
@@ -159,11 +175,14 @@ Cosas que en el momento de presentar se agradecen:
 | 2 | Llanta con banda de goma, Ø 6.5 cm |
 | 2 | Soporte de motor |
 | 1 | Rueda loca esférica |
-| 3 | Soporte de HC-SR04 |
+| 1 | Servo MG90S (o SG90) de 180° con su brazo |
+| 1 | Soporte del HC-SR04 al brazo del servo |
+| 1 | Soporte del servo al chasis |
+| 2 | Separador de nylon M3 (MPU-6050) |
 | — | Tornillería M3 |
 | — | Amarras plásticas / canaleta |
 | — | Conectores Dupont y JST |
-| 2 | Placa perforada (etapa de potencia y amplificador) |
+| 2 | Placa perforada (etapa de potencia con los 7 optos, y filtro de audio) |
 
 ---
 
@@ -176,7 +195,8 @@ Cosas que en el momento de presentar se agradecen:
 | Estabilidad | No cabecea al arrancar ni al frenar de golpe |
 | Separación al piso | Salva un obstáculo de 1 cm |
 | Cableado | Ningún cable a menos de 1 cm de una llanta |
-| Sensores | Los tres en el mismo plano horizontal, a 5–8 cm del piso |
+| Radar | El sensor barre de 0° a 180° sin rozar nada, horizontal, a 5–8 cm del piso |
+| MPU-6050 | Entre las llantas, plano y firme: no se mueve al empujarlo con el dedo |
 | Autonomía | Navega 30 minutos sin recalentamiento ni caída de tensión |
 
 ---
@@ -191,5 +211,6 @@ Cosas que en el momento de presentar se agradecen:
 - [x] Criterios de ruteo de cableado y accesibilidad para la demostración
 - [x] Lista de materiales y criterios de verificación
 - [ ] Chasis cortado y armado — **pendiente: requiere el kit**
-- [ ] Motores, sensores, LEDs y altavoz montados — **pendiente**
+- [x] Ubicación del radar (servo + HC-SR04) y del MPU-6050 definida
+- [ ] Motores, radar, MPU-6050, LEDs y parlante montados — **pendiente**
 - [ ] Acabado estético terminado — **pendiente**

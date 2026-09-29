@@ -27,11 +27,13 @@ El GPIO de la Raspberry Pi **no tiene diodos de protección hacia 3.3 V** y tole
 
 ---
 
-## Solución adoptada: PC817 en las seis señales
+## Solución adoptada: PC817 en las siete señales
 
 Se aíslan las seis señales de control del L298N, no solo las de PWM. Aislar únicamente
 `ENA`/`ENB` deja `IN1`–`IN4` como camino de retorno para el ruido, que es justo lo que
-se quiere cortar.
+se quiere cortar. La séptima es la señal del **servo del radar**: es un motor, se
+alimenta del riel de potencia y su señal cruza la barrera igual que las del L298N, pero
+con un canal armado distinto (ver [más abajo](#el-canal-del-servo-no-invierte)).
 
 ```
      DOMINIO LÓGICO (3.3 V)          │        DOMINIO DE POTENCIA (7.4 V)
@@ -68,9 +70,11 @@ R = (3.3 V − 1.2 V) / If
 | 10 mA | 210 Ω | 220 Ω | 60 mA ⚠️ |
 
 **Se usa 390 Ω.** El límite de corriente sumada de todos los GPIO de la Raspberry Pi es
-de 50 mA, y a eso hay que restarle todavía los cuatro LEDs indicadores. Con 8 mA por
-canal (48 mA solo en los optos) el presupuesto ya está roto. Con 5 mA quedan 20 mA para
-lo demás, que alcanza para los LEDs a 5 mA cada uno.
+de 50 mA, y a eso hay que restarle todavía los LEDs indicadores y el canal del servo.
+Con 8 mA por canal (48 mA solo en los optos) el presupuesto ya está roto. Con 5 mA
+quedan 20 mA para lo demás: los LEDs, de los que nunca hay más de tres encendidos
+(15 mA), y el canal del servo (3.1 mA). La cuenta completa está en
+[`hardware-pinout.md`](hardware-pinout.md).
 
 El PC817 con `CTR` mínimo de 50 % da 2.5 mA de colector con `If = 5 mA`. Contra la
 resistencia de 4.7 kΩ a 5 V eso satura el transistor de sobra: hacen falta apenas
@@ -137,6 +141,64 @@ implementada y verificada antes de la primera prueba con motores montados.**
 
 ---
 
+## El canal del servo no invierte
+
+Para el servo, la inversión no se puede compensar en software sin un riesgo que los
+motores no tienen. `pigpiod` genera los pulsos del servo por DMA
+(`set_servo_pulsewidth`), y lo que no se puede invertir es el **reposo**: durante el
+arranque, antes de que `pigpiod` configure el pin, o si el servidor se detiene, el GPIO
+queda en bajo. Con un canal de emisor común eso es un nivel alto **permanente** en la
+entrada del servo, que muchos servos interpretan como un pulso larguísimo y los lleva
+contra el tope mecánico.
+
+Por eso el séptimo canal se arma en **seguidor de emisor**: el colector va a `+5V_POT`
+y la salida se toma del emisor, con una resistencia a `GND_POT`.
+
+```
+     DOMINIO LÓGICO (3.3 V)          │        DOMINIO DE POTENCIA
+     GND_LOG                         │        GND_POT
+                                     │
+  GPIO 25 ─[R 680Ω]─┐            ┌───┼──── +5V_POT
+                    │            │   │
+                  ┌─┴─┐          │   │      colector
+                  │ ▼ │ LED      │   │
+   PC817          │   │          │   │
+                  │ ⊂ │          └───┼──┐
+                  └─┬─┘              │  │  emisor
+                    │                │  ├─────────► señal del servo
+                 GND_LOG             │  │
+                                     │ [R 4.7kΩ]
+                                     │  │
+                                     │ GND_POT
+```
+
+| GPIO 25 | LED del opto | Fototransistor | Señal del servo |
+|---|---|---|---|
+| Alto (3.3 V) | Encendido | Conduce | **Alto** (~4.8 V) |
+| Bajo (0 V) | Apagado | Corte | **Bajo** (por la resistencia a tierra) |
+
+Sin inversión: el pulso que manda `pigpiod` es el que recibe el servo, y en reposo no
+recibe nada.
+
+### Cálculo
+
+- **Salida:** la entrada del servo es de alta impedancia; la corriente la fija la
+  resistencia de emisor: 4.8 V / 4.7 kΩ ≈ 1 mA.
+- **Entrada:** con CTR mínimo de 50 % hacen falta 2 mA en el LED para sostener ese
+  miliamperio. `R = (3.3 V − 1.2 V) / 3 mA = 700 Ω` → **680 Ω, 3.1 mA**. Circula solo
+  durante el pulso (≤ 2.5 ms cada 20 ms): 0.4 mA de promedio sobre el presupuesto del
+  conector.
+- **Tiempos:** el PC817 tarda unas decenas de microsegundos en apagarse, así que el
+  pulso llega al servo algo más largo de lo que se mandó. Es un corrimiento fijo de
+  pocos grados y se absorbe en la calibración de `SERVO_PULSO_0_US` /
+  `SERVO_PULSO_180_US` (ver [`odometria.md`](odometria.md)).
+
+El servo se alimenta de su propio regulador de 5 V en el riel de potencia (ver
+[`hardware-alimentacion.md`](hardware-alimentacion.md)); su tierra es `GND_POT`, la
+misma del emisor.
+
+---
+
 ## Separación de tierras
 
 Es la mitad del asunto y la que más se equivoca.
@@ -144,10 +206,11 @@ Es la mitad del asunto y la que más se equivoca.
 ```
      ┌──────────────── DOMINIO LÓGICO ────────────────┐
      │  Raspberry Pi 4                                │
-     │  Sensores HC-SR04                              │
+     │  HC-SR04 del radar                             │
+     │  MPU-6050                                      │
      │  LEDs indicadores                              │
-     │  Amplificador de audio LM386                   │
-     │  Lado LED de los 6 optoacopladores             │
+     │  Amplificador de audio PAM8403 + parlante      │
+     │  Lado LED de los 7 optoacopladores             │
      │                                                │
      │  Todos referidos a GND_LOG                     │
      └────────────────────────────────────────────────┘
@@ -155,7 +218,8 @@ Es la mitad del asunto y la que más se equivoca.
      ┌─────────────── DOMINIO DE POTENCIA ────────────┐
      │  Driver L298N (VS y VSS)                       │
      │  2 motores DC                                  │
-     │  Lado fototransistor de los 6 optoacopladores  │
+     │  Servo del radar + su regulador de 5 V         │
+     │  Lado fototransistor de los 7 optoacopladores  │
      │                                                │
      │  Todos referidos a GND_POT                     │
      └────────────────────────────────────────────────┘
@@ -188,15 +252,21 @@ más caro y más difícil de conseguir localmente que seis PC817.
 
 **Se mantiene la solución con PC817.**
 
+> El HC-SR04 va montado **sobre** el servo pero pertenece al dominio lógico: su
+> alimentación y sus señales llegan por su propio cable desde la Raspberry Pi. El brazo
+> del servo es de plástico y no une las dos tierras; el cable del sensor no debe
+> compartir conector con el del servo.
+
 ---
 
 ## Lista de materiales
 
 | Cantidad | Componente | Notas |
 |---|---|---|
-| 6 | Optoacoplador PC817 (o 4N25) | Uno por señal de control |
-| 6 | Resistencia 390 Ω, 1/4 W | Limitación del LED, lado lógico |
-| 6 | Resistencia 4.7 kΩ, 1/4 W | Pull-up de colector, lado potencia |
+| 7 | Optoacoplador PC817 (o 4N25) | Seis para el L298N y uno para el servo |
+| 6 | Resistencia 390 Ω, 1/4 W | Limitación del LED, canales del L298N |
+| 1 | Resistencia 680 Ω, 1/4 W | Limitación del LED, canal del servo |
+| 7 | Resistencia 4.7 kΩ, 1/4 W | Seis pull-up de colector (L298N) y una a tierra de emisor (servo) |
 | 1 | Driver L298N (módulo) | Doble puente H |
 | 4 | Diodo 1N5822 (Schottky) | Volante, si el módulo no los trae |
 | 1 | Capacitor 100 µF electrolítico | Desacople en `VS` del L298N |
@@ -247,6 +317,13 @@ opto a través de su resistencia de 390 Ω:
 
 Esto confirma el aislamiento y **confirma también la inversión** descrita arriba.
 
+El canal del servo, en cambio, **no invierte**. Con el servo desconectado:
+
+| Entrada del opto (GPIO 25) | Salida hacia el servo |
+|---|---|
+| 3.3 V | ~4.8 V (nivel alto) |
+| 0 V | ~0 V (nivel bajo) |
+
 ### Paso 4 — Riel lógico solo
 
 Energizar el riel lógico sin la Raspberry Pi. Medir en el conector donde iría:
@@ -269,7 +346,8 @@ motores se conectan de últimos.
 
 ## Estado
 
-- [x] Solución de aislamiento definida: 6 × PC817, una por señal de control
+- [x] Solución de aislamiento definida: 7 × PC817, una por señal de control
+- [x] Canal del servo en seguidor de emisor, sin inversión, con su cálculo
 - [x] Resistencias calculadas contra el presupuesto de corriente del GPIO
 - [x] Separación de tierras especificada, con el error común documentado
 - [x] Inversión del optoacoplador identificada y con corrección definida en software

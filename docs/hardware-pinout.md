@@ -1,7 +1,9 @@
 # Mapa de pines GPIO
 
 Referencia única del cableado. Cualquier cambio aquí **tiene que** reflejarse en el
-código, y viceversa: los pines están escritos como `#define` en la biblioteca.
+código, y viceversa: los pines están escritos como `#define` en la biblioteca, y el
+simulador (`sim/pigpio_sim.c`) los repite a propósito para que un cambio en un solo
+lado se note.
 
 Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 pines.
 
@@ -11,30 +13,31 @@ Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 p
 
 | Función | BCM | Pin físico | Dirección | Definido en |
 |---|---|---|---|---|
-| **Motor izquierdo (A)** ||||
+| **Motor izquierdo (A)** — vía optoacoplador ||||
 | `ENA` — PWM velocidad | 12 | 32 | Salida | `lib/lib_motors.c` |
 | `IN1` — sentido | 5 | 29 | Salida | `lib/lib_motors.c` |
 | `IN2` — sentido | 6 | 31 | Salida | `lib/lib_motors.c` |
-| **Motor derecho (B)** ||||
+| **Motor derecho (B)** — vía optoacoplador ||||
 | `ENB` — PWM velocidad | 13 | 33 | Salida | `lib/lib_motors.c` |
 | `IN3` — sentido | 23 | 16 | Salida | `lib/lib_motors.c` |
 | `IN4` — sentido | 24 | 18 | Salida | `lib/lib_motors.c` |
-| **Sensor frontal HC-SR04** ||||
-| `TRIG` | 17 | 11 | Salida | `server/src/robot_hardware.c` |
-| `ECHO` | 27 | 13 | Entrada | `server/src/robot_hardware.c` |
-| **Sensor lateral izquierdo HC-SR04** ||||
-| `TRIG` | 22 | 15 | Salida | `server/src/robot_hardware.c` |
-| `ECHO` | 10 | 19 | Entrada | `server/src/robot_hardware.c` |
-| **Sensor lateral derecho HC-SR04** ||||
-| `TRIG` | 9 | 21 | Salida | `server/src/robot_hardware.c` |
-| `ECHO` | 11 | 23 | Entrada | `server/src/robot_hardware.c` |
+| **Radar: servo de 180°** — vía optoacoplador ||||
+| Señal del servo (pulsos de 50 Hz) | 25 | 22 | Salida | `lib/lib_servo.h` |
+| **Radar: HC-SR04 sobre el servo** ||||
+| `TRIG` | 17 | 11 | Salida | `lib/lib_radar.h` |
+| `ECHO` (con divisor 1k/2k) | 27 | 13 | Entrada | `lib/lib_radar.h` |
+| **MPU-6050 (I2C-1)** ||||
+| `SDA` | 2 | 3 | Bidireccional | `lib/lib_imu.h` (bus 1) |
+| `SCL` | 3 | 5 | Salida | `lib/lib_imu.h` (bus 1) |
+| `VCC` — **3.3 V**, no 5 V | 3V3 | 1 | — | — |
 | **LEDs indicadores** ||||
 | Sistema encendido | 16 | 36 | Salida | `lib/lib_leds.h` |
 | Modo autónomo | 20 | 38 | Salida | `lib/lib_leds.h` |
 | Modo manual | 21 | 40 | Salida | `lib/lib_leds.h` |
 | Obstáculo detectado | 26 | 37 | Salida | `lib/lib_leds.h` |
 | **Audio** ||||
-| Salida analógica | — | jack 3.5 mm | Salida | — |
+| PWM de audio → filtro RC → PAM8403 | 18 | 12 | Salida | `dtoverlay=audremap,pins_18_19` (`rpi-config_%.bbappend`) |
+| Segundo canal PWM (misma señal, sin conectar) | 19 | 35 | Salida | ídem |
 
 ---
 
@@ -43,41 +46,54 @@ Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 p
 Solo los pines usados. `·` = pin libre.
 
 ```
-          3V3  ( 1) ( 2)  5V
-        GPIO2  ( 3) ( 4)  5V
-        GPIO3  ( 5) ( 6)  GND ────── GND lógica
-        GPIO4  ( 7) ( 8)  ·
-          GND  ( 9) (10)  ·
- TRIG frontal ─(11) (12)  ·                  GPIO17
- ECHO frontal ─(13) (14)  GND                GPIO27
- TRIG lat.izq ─(15) (16) ─ IN3 motor der.    GPIO22 / GPIO23
-          3V3  (17) (18) ─ IN4 motor der.    GPIO24
- ECHO lat.izq ─(19) (20)  GND                GPIO10
- TRIG lat.der ─(21) (22)  ·                  GPIO9
- ECHO lat.der ─(23) (24)  ·                  GPIO11
-          GND  (25) (26)  ·
-        ID_SD  (27) (28)  ID_SC
-  IN1 motor iz─(29) (30)  GND                GPIO5
-  IN2 motor iz─(31) (32) ─ ENA PWM motor iz  GPIO6 / GPIO12
-  ENB PWM m.der(33) (34)  GND                GPIO13
-            ·  (35) (36) ─ LED encendido     GPIO16
-LED obstáculo─(37) (38) ─ LED autónomo       GPIO26 / GPIO20
-          GND  (39) (40) ─ LED manual        GPIO21
+      MPU VCC ─ 3V3  ( 1) ( 2)  5V
+      MPU SDA ─(GPIO2)( 3) ( 4)  5V
+      MPU SCL ─(GPIO3)( 5) ( 6)  GND ────── GND lógica
+            ·  GPIO4 ( 7) ( 8)  GPIO14  (UART TX, consola)
+      MPU GND ─  GND ( 9) (10)  GPIO15  (UART RX, consola)
+  TRIG radar ─(GPIO17)(11) (12)(GPIO18)─ audio PWM → PAM8403
+  ECHO radar ─(GPIO27)(13) (14)  GND
+            · GPIO22 (15) (16)(GPIO23)─ IN3 motor der.
+                 3V3 (17) (18)(GPIO24)─ IN4 motor der.
+            · GPIO10 (19) (20)  GND
+            ·  GPIO9 (21) (22)(GPIO25)─ servo del radar
+            · GPIO11 (23) (24)  GPIO8   ·
+                 GND (25) (26)  GPIO7   ·
+               ID_SD (27) (28)  ID_SC
+ IN1 motor iz─(GPIO5)(29) (30)  GND
+ IN2 motor iz─(GPIO6)(31) (32)(GPIO12)─ ENA PWM motor iz.
+ ENB PWM m.der(GPIO13)(33) (34)  GND
+2º canal audio (libre)(GPIO19)(35) (36)(GPIO16)─ LED encendido
+LED obstáculo─(GPIO26)(37) (38)(GPIO20)─ LED autónomo
+                 GND (39) (40)(GPIO21)─ LED manual
 ```
 
 ---
 
 ## Por qué estos pines
 
-**GPIO 12 y 13 para PWM.** Son los pines de los canales PWM0 y PWM1 del SoC. El código
-actual usa `set_PWM_dutycycle()` de pigpio, que es PWM por software temporizado con DMA
-—estable, pero no tan preciso como el periférico. Estando en 12 y 13, migrar a
-`hardware_PWM()` no requiere recablear: es un cambio de una línea si más adelante se
-necesita mejor resolución de velocidad.
+**GPIO 12 y 13 para el PWM de los motores.** Son los pines de los canales PWM0 y PWM1
+del SoC. El código usa `set_PWM_dutycycle()` de pigpio, que es PWM por software
+temporizado con DMA —estable, pero no tan preciso como el periférico—. Estando en 12 y
+13, migrar a `hardware_PWM()` no requiere recablear.
 
-**GPIO 9, 10 y 11 para los sensores laterales.** Son los pines de SPI0. El robot no usa
-SPI, así que están libres, y quedan juntos en el conector, lo que simplifica el ruteo
-del cable plano hacia los sensores.
+**GPIO 18 para el audio, no 12/13.** La salida PWM analógica que normalmente va al jack
+de 3.5 mm se saca al conector con el overlay `audremap`, que acepta los pares 12/13 o
+18/19. El 12/13 está tomado por los motores, así que se usa `pins_18_19`. Solo se
+cablea GPIO 18: la biblioteca mezcla la música a mono y los dos canales llevan la
+misma señal (ver [`hardware-sensores.md`](hardware-sensores.md)).
+
+**GPIO 2 y 3 para el MPU-6050.** Son el bus I2C-1 del SoC (`/dev/i2c-1`) y traen
+resistencias pull-up de 1.8 kΩ a 3.3 V en la propia placa. Estaban reservados
+justamente "por si se agrega un sensor adicional".
+
+**GPIO 25 para el servo.** Queda en el pin 22, al lado de `IN3`/`IN4` (16 y 18): todas
+las señales que cruzan al dominio de potencia salen del mismo lado del conector y van
+juntas a la placa de optoacopladores.
+
+**GPIO 17 y 27 para el HC-SR04 del radar.** Son los del antiguo sensor frontal: el
+cable al borde delantero del chasis no cambia. Los pines de los dos sensores laterales
+que ya no existen (22, 10, 9 y 11) quedan libres.
 
 **LEDs en 16, 20, 21 y 26.** Bloque contiguo al final del conector, lejos de las señales
 de motor. Reduce el acople de ruido de conmutación del PWM hacia las señales lógicas.
@@ -89,9 +105,28 @@ de motor. Reduce el acople de ruido de conmutación del PWM hacia las señales l
 | Límite | Valor | Consecuencia |
 |---|---|---|
 | Corriente por GPIO | 16 mA | Nunca conectar un LED sin resistencia limitadora |
-| Corriente total de todos los GPIO | 50 mA | Con 6 optoacopladores a 5 mA quedan 30 mA: es el presupuesto dominante |
-| Tensión de entrada de un GPIO | **3.3 V máximo** | El `ECHO` del HC-SR04 saca 5 V. **Va con divisor obligatorio** — ver [`hardware-sensores.md`](hardware-sensores.md) |
-| Tensión de salida de un GPIO | 3.3 V | Los optoacopladores y el L298N se dimensionan para esa tensión |
+| Corriente total de todos los GPIO | 50 mA | Ver el presupuesto de abajo |
+| Tensión de entrada de un GPIO | **3.3 V máximo** | El `ECHO` del HC-SR04 saca 5 V: **va con divisor obligatorio**. El MPU-6050 se alimenta a 3.3 V para que sus pull-up no lleven 5 V a SDA/SCL — ver [`hardware-sensores.md`](hardware-sensores.md) |
+| Tensión de salida de un GPIO | 3.3 V | Los optoacopladores y el filtro de audio se dimensionan para esa tensión |
+
+### Presupuesto de corriente del conector
+
+Lo que los GPIO entregan desde su propio riel de 3.3 V, en el peor caso **simultáneo**:
+
+| Consumidor | Peor caso | Por qué |
+|---|---|---|
+| 6 optoacopladores de motor a 5 mA | 30 mA | Con la inversión del opto compensada en software, el robot **detenido** es el caso con los seis LED internos encendidos |
+| Optoacoplador del servo a 3.1 mA | 3.1 mA | Solo durante el pulso: ≤ 2.5 ms cada 20 ms, 0.4 mA de promedio |
+| LEDs indicadores a 5 mA | 15 mA | Como mucho **tres** encendidos: autónomo y manual son excluyentes |
+| Filtro RC del audio | 0.6 mA | 3.3 V sobre 4.7 kΩ + 1 kΩ |
+| `TRIG` del HC-SR04 | ≈ 0 | Entrada de alta impedancia del sensor |
+| SDA/SCL | 0 | Colector abierto: el GPIO solo drena la corriente del pull-up |
+| **Total** | **≈ 49 mA** | Dentro de los 50 mA |
+
+La cuenta anterior sumaba los cuatro LEDs a la vez y cerraba justo en 50 mA; contar que
+autónomo y manual nunca están encendidos juntos es lo que deja lugar al canal del servo.
+El `VCC` del MPU-6050 (unos 4 mA) sale del pin de 3.3 V, no de un GPIO, y no entra en
+esta cuenta.
 
 > Meter 5 V a un GPIO destruye el pin, y a veces el SoC completo. No hay protección
 > interna. Es el error que más Raspberry Pi mata en este tipo de proyecto.
@@ -103,9 +138,9 @@ de motor. Reduce el acople de ruido de conmutación del PWM hacia las señales l
 | Pin | Motivo |
 |---|---|
 | GPIO 14, 15 (UART) | Consola serie de depuración. `ENABLE_UART = "1"` en `local.conf` |
-| GPIO 2, 3 (I2C) | Reservados por si se agrega un DAC I2C o un sensor adicional |
-| GPIO 18, 19 | Alternativa de PWM por hardware si 12/13 dan problema |
-| GPIO 7, 8, 25 | Margen para los requerimientos opcionales (sensores de desnivel) |
+| GPIO 19 | Toma la función PWM de audio con `audremap`; no se conecta, pero tampoco se reutiliza |
+| GPIO 22, 10, 9, 11 | Liberados por los sensores laterales. Si el profesor exige dos sensores físicos, el segundo HC-SR04 va en 22 (`TRIG`) y 10 (`ECHO`) |
+| GPIO 4, 7, 8 | Margen para los requerimientos opcionales (sensores de desnivel) |
 
 ---
 
@@ -116,15 +151,23 @@ multímetro en modo continuidad que cada pin del conector llega a donde dice la 
 Un cable cruzado entre una señal de motor y una entrada de sensor puede meter 5 V a un
 GPIO configurado como salida.
 
-Con el sistema encendido y el software corriendo:
+Con el sistema encendido, el propio servidor confirma lo que encontró:
 
 ```bash
-# Estado de todos los pines: modo y nivel
-pigs mode 12 r ; pigs read 12
+journalctl -u robot-server | grep -E "imu|radar|leds"
+#   [imu] MPU-6050 listo en /dev/i2c-1, direccion 0x68
+#   [imu] calibrado con 100 muestras: sesgo ...
+#   [radar] barriendo de 0 a 180 grados en pasos de 30
+ls /dev/i2c-1                    # el bus existe: dtparam=i2c_arm=on + i2c-dev
+```
 
-# Encender un LED a mano para confirmar el cableado
-pigs modes 16 w ; pigs w 16 1 ; sleep 1 ; pigs w 16 0
+Para probar un pin a mano hace falta `pigs`, que **no** va en la imagen de entrega. En
+desarrollo se agrega con `IMAGE_INSTALL:append = " pigpio-bin-pigs"` en `local.conf`:
 
-# Disparar el sensor frontal y medir el eco
-pigs modes 17 w ; pigs modes 27 r
+```bash
+pigs modes 16 w ; pigs w 16 1 ; sleep 1 ; pigs w 16 0   # un LED
+pigs s 25 1500 ; sleep 1 ; pigs s 25 0                   # servo al frente y suelto
+pigs i2co 1 0x68 0                                       # abre el MPU: devuelve un handle h
+pigs i2crb 0 0x75                                        # WHO_AM_I con h = 0: 104 (0x68)
+pigs i2cc 0                                              # cierra el handle
 ```
