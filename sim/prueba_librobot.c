@@ -179,6 +179,7 @@ int main(void) {
     int vi, vd;
     motores_set(200, 120);
     motores_get(&vi, &vd);
+#if MOTOR_VELOCIDAD_VARIABLE
     verificar("motores_set guarda la velocidad de cada motor", vi == 200 && vd == 120);
 
     mundo_pose(&x0, &y0, &r0);
@@ -190,15 +191,39 @@ int main(void) {
     printf("  curva: avanzo %.1f cm y giro %.0f grados\n", avance, giro);
     verificar("con el motor izquierdo mas rapido describe una curva a la derecha",
               avance > 5.0 && giro > 2.0 && giro < 180.0);
+#else
+    /* Velocidad fija: cualquier orden distinta de cero va al maximo, asi que
+       dos velocidades distintas van recto, y las curvas se hacen girando
+       sobre el eje: una llanta adelante y la otra atras. */
+    verificar("con velocidad fija, cualquier velocidad va al maximo",
+              vi == MOTOR_PWM_MAX && vd == MOTOR_PWM_MAX);
+
+    motores_curva(200, 50);
+    motores_get(&vi, &vd);
+    verificar("motores_curva gira con una llanta adelante y la otra atras",
+              vi == MOTOR_PWM_MAX && vd == -MOTOR_PWM_MAX);
+
+    mundo_pose(&x0, &y0, &r0);
+    andar(400);
+    motores_detener();
+    mundo_pose(&x1, &y1, &r1);
+    double giro = fmod(r1 - r0 + 360.0, 360.0);
+    double avance = hypot(x1 - x0, y1 - y0);
+    printf("  curva: se desplazo %.1f cm y giro %.0f grados\n", avance, giro);
+    verificar("la curva a la derecha gira sobre el eje hacia la derecha",
+              avance < 5.0 && giro > 20.0 && giro < 180.0);
+#endif
 
     motores_set(300, -400);
     motores_get(&vi, &vd);
     verificar("motores_set satura en +-255", vi == 255 && vd == -255);
     motores_detener();
 
+#if MOTOR_VELOCIDAD_VARIABLE
     motores_curva(200, 100);
     motores_get(&vi, &vd);
     verificar("motores_curva(v, 100) detiene la llanta interior", vi == 200 && vd == 0);
+#endif
     motores_detener();
     andar(500);
 
