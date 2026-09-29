@@ -12,9 +12,11 @@
 #include <stdint.h>
 #include <pthread.h>
 
-// Recuadro para el mapa
+// Recuadro para el mapa: 31x31 celdas de MAP_CELDA_CM de lado. Con celdas de
+// 30 cm, del tamano del robot, cubre un cuadrado de 9.3 m.
 #define MAP_COLS 31
 #define MAP_ROWS 31
+#define MAP_CELDA_CM 30
 
 typedef enum { CELL_UNKNOWN = 0, CELL_VISITED = 1, CELL_OBSTACLE = 2 } CellState;
 
@@ -35,6 +37,28 @@ typedef struct {
     float left_cm;
     float right_cm;
 } ProximitySensors;
+
+// Radar: ultima lectura de cada angulo del barrido del servo (0, 30, ..., 180)
+#define RADAR_LECTURAS_MAX 7
+
+typedef struct {
+    int   angulo;        /* del servo: 0 derecha, 90 frente, 180 izquierda */
+    float distancia_cm;  /* -1 sin eco */
+    float edad_s;        /* -1 nunca medido */
+} RadarPunto;
+
+typedef struct {
+    int        angulo_servo;
+    int        n;
+    RadarPunto lecturas[RADAR_LECTURAS_MAX];
+} RadarState;
+
+// Movimiento: velocidad estimada con el MPU-6050 y tiempo antes de chocar
+typedef struct {
+    float velocidad_cm_s;
+    float ttc_s;         /* -1 sin riesgo de choque */
+    int   imu;           /* 1 si la velocidad sale del MPU, 0 del modelo de motores */
+} MovimientoState;
 
 // Led de estados
 typedef struct {
@@ -71,7 +95,9 @@ typedef struct {
     ProximitySensors sensors;
     LedStates        leds;
     AudioState       audio;
-    MapState     map;
+    MapState         map;
+    RadarState       radar;
+    MovimientoState  movimiento;
     uint64_t         uptime_secs;
     pthread_mutex_t  lock;
 } RobotState;
@@ -81,4 +107,4 @@ int         robot_state_init(void);
 RobotState *robot_state_get(void);
 void        robot_state_destroy(void);
 
-#endif 
+#endif

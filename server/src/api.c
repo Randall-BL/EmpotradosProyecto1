@@ -213,7 +213,19 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
             if (rs->map.grid[r][c] == CELL_OBSTACLE) obstacles++;
         }
 
-    char buf[8192];
+    /* Radar: la ultima lectura de cada angulo del barrido. Distancia -1 = sin
+       eco; edad -1 = ese angulo todavia no se midio. */
+    char radar_json[RADAR_LECTURAS_MAX * 48 + 64];
+    int rn = snprintf(radar_json, sizeof(radar_json), "[");
+    for (int i = 0; i < rs->radar.n; i++) {
+        const RadarPunto *p = &rs->radar.lecturas[i];
+        rn += snprintf(radar_json + rn, sizeof(radar_json) - rn,
+                       "%s{\"a\":%d,\"d\":%.1f,\"edad\":%.2f}",
+                       i > 0 ? "," : "", p->angulo, p->distancia_cm, p->edad_s);
+    }
+    snprintf(radar_json + rn, sizeof(radar_json) - rn, "]");
+
+    char buf[12288];
     snprintf(buf, sizeof(buf),
         "{"
           "\"mode\":\"%s\","
@@ -223,6 +235,15 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
             "\"back\":%.1f,"
             "\"left\":%.1f,"
             "\"right\":%.1f"
+          "},"
+          "\"radar\":{"
+            "\"angulo\":%d,"
+            "\"lecturas\":%s"
+          "},"
+          "\"movimiento\":{"
+            "\"velocidad\":%.1f,"
+            "\"ttc\":%.2f,"
+            "\"imu\":%s"
           "},"
           "\"leds\":{"
             "\"power\":%s,"
@@ -237,6 +258,7 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
             "\"volume\":%d"
           "},"
           "\"map\":{"
+            "\"celda_cm\":%d,"
             "\"robot_x\":%d,"
             "\"robot_y\":%d,"
             "\"robot_heading\":%d,"
@@ -249,12 +271,16 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
         (unsigned long long)rs->uptime_secs,
         rs->sensors.front_cm, rs->sensors.back_cm,
         rs->sensors.left_cm,  rs->sensors.right_cm,
+        rs->radar.angulo_servo, radar_json,
+        rs->movimiento.velocidad_cm_s, rs->movimiento.ttc_s,
+        rs->movimiento.imu ? "true" : "false",
         rs->leds.power     ? "true" : "false",
         rs->leds.autonomous? "true" : "false",
         rs->leds.manual    ? "true" : "false",
         rs->leds.obstacle  ? "true" : "false",
         real_status, real_track_id,
         real_position, real_volume,
+        MAP_CELDA_CM,
         rs->map.robot_x, rs->map.robot_y, rs->map.robot_heading,
         visited, obstacles, grid_json
     );
