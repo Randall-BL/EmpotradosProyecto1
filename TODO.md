@@ -43,9 +43,10 @@
 ### 2.1 Modelo físico
 - [ ] Diseñar el chasis (circular o rectangular) — se evalúa funcionalidad **y estética**
 - [ ] Montar 2 motores DC con sus llantas + rueda loca de apoyo
-- [ ] Montar los sensores de proximidad (frontal + lateral)
+- [ ] Montar el radar: HC-SR04 sobre el servo de 180° en el borde frontal, eje a 10 cm del centro — `docs/hardware-chasis.md`
+- [ ] Montar el MPU-6050 plano y firme entre las dos llantas, con X hacia el frente
 - [ ] Montar los 4 LEDs indicadores en posición visible
-- [ ] Montar el altavoz / salida de audio
+- [ ] Montar el parlante y el amplificador PAM8403 con su filtro RC — `docs/hardware-sensores.md`
 - [ ] Montar la fuente de alimentación portátil a bordo
 - [ ] Asegurar el cableado (ruteo limpio, sin cables sueltos que estorben el movimiento)
 
@@ -61,6 +62,7 @@
 - [ ] **Módulo BMS** de protección (sobredescarga / sobrecarga / cortocircuito) — verificar si el pack ya lo incluye
 - [ ] Regulador **buck-boost** DC-DC a 5 V con ≥ 3 A para la Raspberry Pi (XL6009/MT3608 elevador; MP2307/LM2596 reductor)
 - [ ] **Dos rieles de alimentación independientes**: lógica (Pi, sensores, LEDs, audio) y potencia (motores), regulados por separado
+- [ ] Servo del radar en el riel de potencia con su propio buck de 5 V, y su señal por un 7.º PC817 en seguidor de emisor (no invierte) — `docs/hardware-aislamiento.md`
 - [ ] Probar cada riel con multímetro **antes** de conectar la Raspberry Pi
 - [ ] Documentar el diagrama eléctrico completo (para el README y el documento DI)
 
@@ -98,13 +100,14 @@
 - [x] Configurar el build con **CMake o Autotools** y compilación cruzada ARM
 - [x] Generar el **paquete estándar de código abierto** correspondiente
 - [x] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`)
-- [x] Implementar el módulo de **sensores de proximidad (GPIO)**: lectura en tiempo real
+- [x] Implementar el módulo de **sensores de proximidad (GPIO)**: lectura en tiempo real — radar con servo en `lib_radar` + `lib_servo`
+- [x] Implementar el módulo del **MPU-6050 (I2C)**: aceleración de avance y giro, con calibración — `lib_imu`
 - [x] Implementar el módulo de **LEDs (GPIO)**: control de los 4 indicadores
 - [x] Implementar el módulo de **reproducción de audio**
 - [x] Manejo de errores y liberación segura de los recursos GPIO (init/cleanup)
 - [x] **Verificar que el servidor web use exclusivamente esta biblioteca** para tocar hardware — se eliminó `robot_hardware.c`; `readelf` confirma que el servidor ya no enlaza pigpio
 - [x] Documentar la API completa (para el README) — `docs/api-librobot.md`
-- [x] Programa de prueba independiente que ejercite cada función de la biblioteca — `sim/prueba_librobot`, 18/18 comprobaciones
+- [x] Programa de prueba independiente que ejercite cada función de la biblioteca — `sim/prueba_librobot`, 47/47 comprobaciones
 
 ---
 
@@ -112,12 +115,15 @@
 
 - [~] Implementar el **modo autónomo** con al menos un algoritmo de cobertura reactiva — reactivo con rebote implementado y probado en el simulador; falta **prueba de campo**
 - [x] Comportamiento ante obstáculo: **detenerse → retroceder → cambiar de dirección** automáticamente
-- [x] Integrar **≥ 2 sensores de proximidad** (HC-SR04): detección **frontal y lateral** — 3 sensores en código (mont. físico en §2)
-- [x] Lectura y procesamiento de sensores **en tiempo real** (frecuencia de muestreo definida y documentada)
+- [x] Detección **frontal y lateral**: radar con un HC-SR04 sobre un servo de 180°, 7 direcciones (mont. físico en §2)
+- [ ] ⚠️ Confirmar con el profesor que el radar cumple "**al menos dos sensores**"; si no, un 2.º HC-SR04 fijo al frente en GPIO 22/10
+- [x] Lectura y procesamiento de sensores **en tiempo real** — ~10 lecturas/s, frente cada ~0.6 s; `docs/navegacion-radar.md`
+- [x] **Velocidad con el MPU-6050** y **tiempo antes de chocar**, actualizado en cada lectura frontal y proyectado entre lecturas — probado en el simulador
+- [x] Evasión: retroceder, barrido completo y giro en lazo cerrado hacia el lado más libre — 2 min en el simulador, 14 evasiones y ningún choque
 - [x] **Control diferencial** de los 2 motores DC vía PWM (giros con radio variable) — `motores_set` / `motores_curva`
-- [ ] Calibrar velocidades y umbrales de distancia
+- [ ] Calibrar velocidades, umbrales (distancia y tiempo de choque), pulsos del servo y montaje del MPU — `docs/odometria.md`
 - [x] **4 LEDs indicadores**: (1) modo autónomo activo, (2) modo manual activo, (3) alerta de obstáculo detectado, (4) sistema encendido — control en código
-- [x] Implementar la **odometría** de los motores (insumo necesario para el mapa) — `lib_odom`, 8% de error en el simulador; **calibrar en campo**
+- [x] Implementar la **odometría** (insumo necesario para el mapa) — `lib_odom` con MPU-6050 + modelo de motores: 5 % de error de posición y 0.4° de rumbo en el simulador; **calibrar en campo**
 - [ ] Prueba de campo: navegar un área definida sin colisiones ni bloqueos
 
 ---
@@ -126,7 +132,7 @@
 
 - [x] Reproducir archivos **MP3 almacenados localmente** en el sistema de archivos
 - [x] Reproducción **concurrente con la navegación** (proceso o hilo independiente)
-- [ ] Salida de audio física: jack 3.5 mm con pequeño amplificador, **o** DAC externo I2S/I2C con amplificador integrado
+- [~] Salida de audio física: PWM por GPIO 18 (`audremap`) → filtro RC → **PAM8403** → parlante, mezclado a mono — configurado en la imagen; falta montar y probar
 - [x] Control desde la interfaz: **seleccionar canción de una lista**, reproducir, pausar, detener
 - [x] **Control de volumen** desde la interfaz
 - [x] **Retroalimentación sonora** (audios cortos) en los 4 eventos:
@@ -147,15 +153,15 @@
 - [x] **Panel de control** que muestre y/o provea:
   - [x] Indicador del modo activo (autónomo/manual)
   - [x] Controles direccionales (modo manual)
-  - [x] Lecturas de los sensores de proximidad **en tiempo real**
+  - [x] Lecturas de los sensores de proximidad **en tiempo real** — radar semicircular, velocidad del MPU y tiempo de choque
   - [x] Control completo de audio (lista, reproducir/pausar/detener, volumen)
   - [x] Estado de los LEDs
   - [x] Visualización del mapa de recorrido en tiempo real
 - [x] Bloquear los controles manuales mientras el robot está en modo autónomo (y viceversa)
 
 ### 7.1 Mapa de recorrido — (OBL)
-- [x] Construir un mapa incremental a partir de los **sensores de proximidad + la odometría** de los motores
-- [x] Representarlo como **grilla 2D** con 3 estados por celda: visitada / obstáculo detectado / desconocida
+- [x] Construir un mapa incremental a partir de los **sensores de proximidad + la odometría** — cada lectura del radar con la pose al medir
+- [x] Representarlo como **grilla 2D** con 3 estados por celda: visitada / obstáculo detectado / desconocida — celdas de **30 cm**
 - [x] Transmitir el mapa al cliente y **actualizarlo en tiempo real** conforme el robot avanza
 - [x] Renderizar el mapa en la interfaz web/móvil
 

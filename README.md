@@ -4,9 +4,11 @@ Curso **CE-1113 Sistemas Empotrados** — Instituto Tecnológico de Costa Rica
 Robot aspiradora autónomo sobre **Raspberry Pi 4 Model B** con una imagen Linux mínima
 construida con **Yocto Project (Poky, rama `scarthgap`)**.
 
-El robot navega de forma autónoma evadiendo obstáculos, reproduce MP3, y se controla
-remotamente desde un servidor web embebido que muestra telemetría y el mapa de recorrido
-en tiempo real. Todo el acceso al hardware pasa por una biblioteca dinámica propia
+El robot navega de forma autónoma evadiendo obstáculos con un radar ultrasónico (un
+HC-SR04 sobre un servo de 180°) y un MPU-6050 que da su velocidad y el tiempo que falta
+para chocar; reproduce MP3 por un amplificador PAM8403, y se controla remotamente desde
+un servidor web embebido que muestra telemetría, el radar y el mapa de recorrido en
+tiempo real. Todo el acceso al hardware pasa por una biblioteca dinámica propia
 (`librobot.so`) compilada de forma cruzada para ARM.
 
 > Estado del proyecto y desglose de tareas: [`TODO.md`](TODO.md) y los
@@ -18,7 +20,7 @@ en tiempo real. Todo el acceso al hardware pasa por una biblioteca dinámica pro
 
 ```
 .
-├── lib/                    Biblioteca dinámica librobot.so (motores, sensores, LEDs, audio)
+├── lib/                    Biblioteca dinámica librobot.so (motores, radar, MPU-6050, LEDs, audio)
 ├── server/                 Servidor web embebido en C
 │   ├── src/                  Código del servidor (API REST, autenticación, estado)
 │   └── www/                  Interfaz web estática (login + dashboard)
@@ -35,7 +37,9 @@ en tiempo real. Todo el acceso al hardware pasa por una biblioteca dinámica pro
 │   ├── recipes-connectivity/ Configuración de WiFi para arranque headless
 │   ├── recipes-bsp/          Ajustes de config.txt y cmdline.txt
 │   └── recipes-kernel/       Fragmentos de configuración del kernel
-├── docs/                   Documentación técnica, diagramas y evidencias
+├── sim/                    Simulador de hardware: prueba librobot y el servidor sin la Raspberry
+├── docs/                   Documentación técnica y evidencias
+├── documentación/          Diagramas de hardware en LaTeX y su PDF
 ├── CONTRIBUTING.md         Flujo de trabajo Git y convenciones de código
 ├── NOTICE.md               Atribución de software de terceros
 └── TODO.md                 Desglose completo de requerimientos del enunciado
@@ -55,11 +59,14 @@ artefactos de compilación (`*.o`, `*.so`, `CMakeFiles/`) están excluidos vía
 | [`docs/sdk.md`](docs/sdk.md) | Toolchain-SDK: generación, uso y verificación de la compilación cruzada |
 | [`docs/paquetes.md`](docs/paquetes.md) | Justificación de cada paquete incluido en la imagen |
 | [`docs/api-librobot.md`](docs/api-librobot.md) | Referencia de la API pública de la biblioteca de control |
+| [`docs/navegacion-radar.md`](docs/navegacion-radar.md) | Radar, velocidad con el MPU-6050, tiempo antes de chocar, evasión y mapa de 30 cm |
+| [`docs/odometria.md`](docs/odometria.md) | Calibración en campo: motores, servo, MPU-6050, umbrales y odometría |
 | [`docs/arranque-automatico.md`](docs/arranque-automatico.md) | Unidades systemd, arranque automático y recuperación ante fallos |
 | [`docs/hardware-pinout.md`](docs/hardware-pinout.md) | Mapa de pines GPIO — referencia única del cableado |
 | [`docs/hardware-aislamiento.md`](docs/hardware-aislamiento.md) | Etapa de potencia, optoacopladores y separación de tierras |
 | [`docs/hardware-alimentacion.md`](docs/hardware-alimentacion.md) | Batería, BMS y los dos rieles regulados |
-| [`docs/hardware-sensores.md`](docs/hardware-sensores.md) | Sensores, LEDs, audio y diagrama del dominio lógico |
+| [`docs/hardware-sensores.md`](docs/hardware-sensores.md) | Radar (HC-SR04 sobre servo), MPU-6050, LEDs, audio con PAM8403 y diagrama del dominio lógico |
+| [`documentación/hardware-diagramas.pdf`](documentación/hardware-diagramas.pdf) | Los diagramas de hardware dibujados (fuente en `hardware-diagramas.tex`) |
 | [`docs/hardware-chasis.md`](docs/hardware-chasis.md) | Diseño del modelo físico, tracción y montaje |
 | [`meta-robot/README.md`](meta-robot/README.md) | Contenido de la capa Yocto y cómo agregarla al build |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Ramas, Conventional Commits, Pull Requests y estilo de código |

@@ -1,14 +1,15 @@
 # API de `librobot` — biblioteca dinámica de control
 
 `librobot` (`librobot.so.1`) es la **única vía de acceso al hardware** del robot.
-El servidor web y cualquier otro programa la usan para mover motores, leer
-sensores, encender LEDs, reproducir audio y consultar la odometría; nadie toca
-GPIO directamente (lo exige el enunciado).
+El servidor web y cualquier otro programa la usan para mover motores, leer el
+radar y el MPU-6050, encender LEDs, reproducir audio y consultar la odometría;
+nadie toca GPIO directamente (lo exige el enunciado).
 
 - **Enlace:** `-lrobot` · **Headers:** `#include <robot/lib_robot.h>` (y los demás bajo `robot/`)
 - **Versionado:** `SONAME librobot.so.1` (API estable en la serie 1.x)
-- **Dependencias de runtime:** el demonio `pigpiod` (GPIO), `mpg123` y `alsa-lib` (audio)
-- **Concurrencia:** la odometría y el audio son seguros para llamarse desde varios hilos; los módulos de motores/sensores/LEDs asumen un solo hilo de control (el lazo de navegación).
+- **Dependencias de runtime:** el demonio `pigpiod` (GPIO, pulsos del servo e I2C), `mpg123` y `alsa-lib` (audio)
+- **Hilos propios:** `robot_init()` arranca dos — la odometría a 50 Hz y el barrido del radar — además del de reproducción de audio.
+- **Concurrencia:** la odometría, el radar, el MPU-6050 y el audio son seguros para llamarse desde varios hilos; motores y LEDs asumen un solo hilo de control (el lazo de navegación).
 
 Toda función que devuelve `int` usa **0 = éxito, −1 = error** salvo que se indique
 otra cosa; las lecturas de distancia devuelven `−1.0` ante timeout.
@@ -17,21 +18,25 @@ otra cosa; las lecturas de distancia devuelven `−1.0` ante timeout.
 
 ## 1. Fachada del hardware — `lib_robot.h`
 
-Puerta de entrada única. Abre la sesión con `pigpiod` e inicializa motores,
-sensores, LEDs y odometría de una sola llamada.
+Puerta de entrada única. Abre la sesión con `pigpiod` e inicializa todo de una
+sola llamada, en este orden: motores detenidos, LEDs, MPU-6050 (con su
+calibración de medio segundo, **con el robot quieto**), odometría y radar.
 
 | Función | Descripción | Retorno |
 |---|---|---|
-| `int robot_init(void)` | Abre `pigpiod` e inicializa todo el hardware. Deja motores detenidos, sensores listos, LEDs apagados y odometría en el origen. | `0` ok · `−1` si no conecta a `pigpiod` |
-| `void robot_shutdown(void)` | Detiene motores, apaga LEDs y cierra la sesión. Idempotente y segura sin `init` previo. | — |
+| `int robot_init(void)` | Abre `pigpiod` e inicializa todo el hardware; lanza los hilos de la odometría y del radar. Si el MPU-6050 no contesta, sigue sin él y lo avisa por `stderr`. | `0` ok · `−1` si no conecta a `pigpiod` |
+| `void robot_shutdown(void)` | Detiene el radar (suelta el servo) y la odometría, frena los motores, libera el I2C, apaga LEDs y cierra la sesión. Idempotente y segura sin `init` previo. | — |
 | `int robot_activo(void)` | ¿Hay sesión abierta? | `1` sí · `0` no |
-| `double robot_distancia_frontal(void)` | Distancia del sensor frontal, en cm. | cm · `−1.0` timeout |
-| `double robot_distancia_izquierda(void)` | Distancia del sensor lateral izquierdo, en cm. | cm · `−1.0` timeout |
-| `double robot_distancia_derecha(void)` | Distancia del sensor lateral derecho, en cm. | cm · `−1.0` timeout |
+| `double robot_distancia_frontal(void)` | Última lectura del radar a 90° (al frente), en cm. | cm · `−1.0` sin eco o sin medir |
+| `double robot_distancia_izquierda(void)` | Última lectura del radar a 180°, en cm. | cm · `−1.0` sin eco o sin medir |
+| `double robot_distancia_derecha(void)` | Última lectura del radar a 0°, en cm. | cm · `−1.0` sin eco o sin medir |
+
+Las tres distancias se refrescan una vez por barrido (~0.6 s). El barrido completo, con
+la pose de cada lectura, y el tiempo antes de chocar están en `lib_radar.h`.
 
 **Manejo de errores y liberación de recursos:** `robot_init` falla limpio si
 `pigpiod` no está (devuelve −1 sin dejar estado a medias); `robot_shutdown`
-libera el GPIO y puede llamarse siempre. Patrón de uso:
+detiene los hilos, libera el GPIO y el I2C, y puede llamarse siempre. Patrón de uso:
 
 ```c
 if (robot_init() != 0) return 1;          // pigpiod no disponible
@@ -66,10 +71,10 @@ motores_detener();
 
 ---
 
-## 3. Sensores de proximidad — `lib_sensors.h`
+## 3. Sensor ultrasónico — `lib_sensors.h`
 
-HC-SR04 por eco ultrasónico. Normalmente se usan a través de la fachada
-(`robot_distancia_*`); la API de bajo nivel queda expuesta para pruebas.
+Lectura de un HC-SR04 por eco. La usa el radar; la API de bajo nivel queda expuesta
+para pruebas.
 
 | Tipo / Función | Descripción |
 |---|---|
@@ -79,7 +84,113 @@ HC-SR04 por eco ultrasónico. Normalmente se usan a través de la fachada
 
 ---
 
-## 4. LEDs indicadores — `lib_leds.h`
+## 4. Servo del radar — `lib_servo.h`
+
+Servo de 180° en GPIO 25. Ángulos: **0 = derecha, 90 = frente, 180 = izquierda**. Los
+pulsos los genera `pigpiod` por DMA a 50 Hz. Mientras el radar barre, el servo es suyo:
+para moverlo a mano, pausar antes el radar.
+
+| Función | Descripción | Retorno |
+|---|---|---|
+| `void servo_init(int pi)` | Configura el pin. No mueve el servo. | — |
+| `int servo_mover(int grados)` | Ordena ir a `grados` (0–180, se satura). No espera a que llegue. | ms estimados hasta que llega y se asienta · `−1` error |
+| `int servo_angulo(void)` | Último ángulo ordenado. | grados · `−1` desconocido |
+| `void servo_liberar(void)` | Deja de mandar pulsos: el servo queda suelto. | — |
+
+Constantes a calibrar: `SERVO_PULSO_0_US`, `SERVO_PULSO_180_US` (µs de los extremos) y
+`SERVO_MS_POR_GRADO` (velocidad, para saber cuánto esperar).
+
+---
+
+## 5. Radar — `lib_radar.h`
+
+Un hilo propio barre el servo de 0° a 180° y de vuelta, en pasos de 30°
+(`RADAR_N_ANGULOS` = 7), y dispara el HC-SR04 en cada parada: ~10 lecturas por segundo,
+la frontal cada ~0.6 s. De cada ángulo guarda la última lectura con la **pose del robot
+al medir**. Cada lectura frontal con eco actualiza el **tiempo antes de chocar**.
+
+```c
+typedef struct {
+    int      angulo;        /* 0..180 */
+    double   distancia_cm;  /* -1 sin eco */
+    double   edad_s;        /* segundos desde la medicion; -1 nunca medido */
+    uint32_t seq;           /* numero de lectura; 0 = nunca medido */
+    double   x_cm, y_cm, rumbo_grados;   /* pose del robot al medir */
+} RadarLectura;
+
+typedef struct {
+    int    hay_obstaculo;   /* la ultima lectura frontal vio algo */
+    double distancia_cm;    /* distancia de esa lectura */
+    double velocidad_cm_s;  /* velocidad del robot al medirla */
+    double edad_s;
+    double ttc_s;           /* estimacion vigente; -1 = sin riesgo */
+} RadarChoque;
+```
+
+| Función | Descripción | Retorno |
+|---|---|---|
+| `int radar_iniciar(int pi)` | Configura sensor y servo y lanza el hilo. Necesita la odometría corriendo (lo hace `robot_init`). | `0`/`−1` |
+| `void radar_detener(void)` | Detiene el barrido, suelta el servo, deja `TRIG` en bajo. | — |
+| `void radar_pausar(int p)` | Pausa (`1`) o reanuda (`0`) el barrido tras la medición en curso. | — |
+| `int radar_angulo_actual(void)` | Adónde apunta el servo. | grados |
+| `int radar_lecturas(RadarLectura *out, int max)` | Copia la última lectura de cada ángulo, de 0° a 180°. | cuántas copió |
+| `double radar_distancia(int angulo)` | Última distancia en un ángulo múltiplo de 30. | cm · `−1` |
+| `uint32_t radar_seq(void)` | Número de la última lectura: marca para `radar_barrido_completo`. | — |
+| `int radar_barrido_completo(uint32_t desde)` | ¿Todos los ángulos tienen una lectura posterior a `desde`? | `1`/`0` |
+| `int radar_esperar_barrido(int timeout_ms)` | Bloquea hasta que todos los ángulos se midan de nuevo. | `0` · `−1` timeout |
+| `double radar_tiempo_choque(void)` | Segundos antes de chocar con lo que hay al frente. | s · `−1` sin riesgo |
+| `void radar_estado_choque(RadarChoque *out)` | El detalle: la lectura frontal que lo originó y la estimación. | — |
+| `void radar_rayo(const RadarLectura *l, double *ox, double *oy, double *rumbo)` | Origen (el sensor, `RADAR_EJE_ADELANTE_CM` delante del centro) y rumbo de brújula del rayo. El eco está en `origen + d·(sin, cos)`. | — |
+
+**Tiempo antes de chocar:** `(d − avance desde la lectura) / velocidad actual`, con la
+velocidad del MPU-6050. Vale `−1` si la última lectura frontal no tuvo eco, si el robot
+va a menos de 2 cm/s o retrocede, si giró más de 20° desde la lectura o si la lectura
+tiene más de 2 s. Explicado en [`navegacion-radar.md`](navegacion-radar.md).
+
+```c
+RadarLectura l[RADAR_N_ANGULOS];
+int n = radar_lecturas(l, RADAR_N_ANGULOS);
+for (int i = 0; i < n; i++) {
+    double ox, oy, rumbo;
+    radar_rayo(&l[i], &ox, &oy, &rumbo);
+    if (l[i].distancia_cm > 0)
+        marcar(ox + l[i].distancia_cm * sin(rumbo * M_PI / 180),
+               oy + l[i].distancia_cm * cos(rumbo * M_PI / 180));
+}
+if (radar_tiempo_choque() >= 0 && radar_tiempo_choque() < 1.2) evadir();
+```
+
+---
+
+## 6. MPU-6050 — `lib_imu.h`
+
+Acelerómetro y giroscopio por I2C (`/dev/i2c-1`, dirección `0x68`), a través de
+`pigpiod`. Solo lee y quita el sesgo; la integración vive en `lib_odom`.
+
+```c
+typedef struct {
+    double avance_cm_s2;   /* aceleracion hacia adelante, sin sesgo */
+    double lateral_cm_s2;  /* hacia la izquierda */
+    double vertical_g;     /* ~1.0 apoyado en el piso */
+    double giro_dps;       /* grados/s, positivo en sentido horario (como el rumbo) */
+    double temperatura_c;
+} ImuLectura;
+```
+
+| Función | Descripción | Retorno |
+|---|---|---|
+| `int imu_init(int pi)` | Abre el sensor, lo despierta y lo configura (±2 g, ±250 °/s, pasabajos de 10 Hz). Acepta clones con otro `WHO_AM_I`, con aviso. | `0` · `−1` si nadie contesta |
+| `int imu_calibrar(int muestras)` | Promedia `muestras` lecturas **con el robot quieto** y las toma como el cero. | `0`/`−1` |
+| `int imu_leer(ImuLectura *out)` | Una lectura en unidades físicas y sin sesgo. | `0`/`−1` |
+| `int imu_disponible(void)` | ¿Se encontró el sensor? | `1`/`0` |
+| `void imu_cerrar(void)` | Libera el bus. | — |
+
+Orientación: `IMU_SIGNO_AVANCE` e `IMU_SIGNO_GIRO` suponen X hacia el frente y Z hacia
+arriba.
+
+---
+
+## 7. LEDs indicadores — `lib_leds.h`
 
 Los cuatro LEDs obligatorios. IDs en el enum `LedId`:
 `LED_POWER`, `LED_AUTONOMOUS`, `LED_MANUAL`, `LED_OBSTACLE`.
@@ -96,32 +207,40 @@ Pines BCM: POWER 16, AUTONOMOUS 20, MANUAL 21, OBSTACLE 26.
 
 ---
 
-## 5. Odometría — `lib_odom.h`
+## 8. Odometría — `lib_odom.h`
 
-Estima posición y rumbo por **navegación a la estima** (el chasis no tiene
-encoders): integra la velocidad ordenada a los motores con el modelo de
-tracción diferencial. Sirve para el mapa de recorrido, no para posición
-absoluta. Seguro para varios hilos.
+Estima posición, rumbo y velocidad por **navegación a la estima** (el chasis no tiene
+encoders). Con MPU-6050, la velocidad es la aceleración integrada —corregida por el
+modelo de los motores con un filtro complementario y forzada a cero con los motores
+detenidos— y el rumbo es el giroscopio integrado. Sin MPU, todo sale del modelo de
+tracción diferencial. Corre en su propio hilo a 50 Hz. Sirve para el mapa y para el
+tiempo de choque, no para posición absoluta. Seguro para varios hilos.
 
 | Función | Descripción |
 |---|---|
 | `void odom_init(void)` | Arranca en el origen. Idempotente. |
-| `void odom_reset(void)` | Reinicia en el origen mirando al norte. |
-| `void odom_update(void)` | Integra el movimiento desde la llamada anterior (paso = tiempo real, `CLOCK_MONOTONIC`). Se llama en el lazo de navegación. |
+| `int odom_arrancar(void)` / `void odom_parar(void)` | Lanza / detiene el hilo de 50 Hz. `robot_init` y `robot_shutdown` lo hacen. |
+| `void odom_reset(void)` | Reinicia en el origen, quieto y mirando al norte. |
+| `void odom_update(void)` | Integra el movimiento desde la llamada anterior (paso = tiempo real, `CLOCK_MONOTONIC`). La llama el hilo; llamarla además no hace daño. |
 | `void odom_get(double *x_cm, double *y_cm, double *rumbo_grados)` | Posición estimada. X este+, Y norte+, rumbo brújula (0 N, 90 E, 180 S, 270 O). NULL permitido. |
+| `double odom_velocidad_cm_s(void)` | **Velocidad hacia adelante** en cm/s (negativa al retroceder): la del MPU. |
+| `double odom_avance_cm(void)` | Avance neto acumulado, con signo: retroceder resta. |
 | `double odom_distancia_recorrida(void)` | Camino total en cm. |
-| `void odom_get_velocidades(double *izq, double *der)` | Velocidad instantánea de cada llanta en cm/s. |
+| `void odom_get_velocidades(double *izq, double *der)` | Velocidad del modelo de cada llanta en cm/s. |
+| `int odom_usa_imu(void)` | ¿La última integración usó el MPU? |
 
 **Constantes a calibrar en campo:** `ODOM_VEL_MAX_CM_S` (cm/s a PWM máximo),
 `ODOM_ENTRE_EJES_CM` (separación de llantas), `ODOM_PWM_ARRANQUE` (PWM mínimo
-que vence la fricción).
+que vence la fricción) y `ODOM_TAU_FUSION_S` (cuánto se confía en el MPU).
 
 ---
 
-## 6. Audio — `lib_audio.h`
+## 9. Audio — `lib_audio.h`
 
-Reproduce MP3 locales por el jack de 3.5 mm (mpg123 + ALSA), en un hilo propio,
-concurrente con la navegación. Volumen 0–100.
+Reproduce MP3 locales (mpg123 + ALSA) por la salida PWM analógica de la RPi4, que el
+overlay `audremap` saca por GPIO 18 hacia el amplificador PAM8403, en un hilo propio,
+concurrente con la navegación. Con `LIB_AUDIO_MONO` cada pista se mezcla a mono: el
+robot tiene un solo parlante. Volumen 0–100.
 
 | Función | Descripción |
 |---|---|
@@ -145,14 +264,20 @@ concurrente con la navegación. Volumen 0–100.
 #include <robot/lib_robot.h>
 #include <robot/lib_motors.h>
 #include <robot/lib_odom.h>
+#include <robot/lib_radar.h>
 
 int main(void) {
-    if (robot_init() != 0) return 1;
+    if (robot_init() != 0) return 1;       // el robot quieto: calibra el MPU
     while (trabajando) {
-        double f = robot_distancia_frontal();
-        if (f > 0 && f < 15.0) { motores_detener(); /* evadir */ }
-        else                    motores_avanzar(200);
-        odom_update();                 // mantener la odometría al día
+        double f   = robot_distancia_frontal();
+        double ttc = radar_tiempo_choque();
+        if ((f > 0 && f < 20.0) || (ttc >= 0 && ttc < 1.2)) {
+            motores_detener();              /* evadir */
+        } else {
+            motores_avanzar(200);
+        }
+        printf("v = %.1f cm/s\n", odom_velocidad_cm_s());   // la del MPU
+        usleep(100000);                    // la odometría y el radar corren solos
     }
     robot_shutdown();
     return 0;
@@ -160,4 +285,4 @@ int main(void) {
 ```
 
 > Esta referencia se enlaza desde el README. La prueba `sim/prueba_librobot`
-> ejercita cada función de esta API contra un robot simulado (18/18).
+> ejercita cada módulo de esta API contra un robot simulado (47/47).

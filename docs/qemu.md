@@ -34,8 +34,9 @@ Qué cambia en la imagen respecto de la de la Pi:
 
 El código de `lib/` y `server/` es exactamente el mismo; lo único que cambia es contra
 qué se enlaza la biblioteca. El simulador mueve un robot virtual por una sala de
-4×4 m con muebles y responde los sensores midiendo sobre ese mundo (ver
-`sim/README.md`).
+4×4 m con muebles y responde el hardware midiendo sobre ese mundo: el servo del radar,
+el HC-SR04 que mide hacia donde apunta el servo y el MPU-6050 por I2C (ver
+`sim/README.md`). En el panel web se ve el radar barrer y la velocidad del MPU.
 
 ## Construir
 
@@ -113,9 +114,10 @@ sensores y el mapa actualizándose mientras el robot virtual navega en modo aut�
 - **No sustituye al target.** Es otra máquina (`virt`), otro kernel y un simulador en
   lugar del GPIO real. Las evidencias de ejecución en la Pi (issues #7 y #10) siguen
   pendientes del kit.
-- **Audio.** `lib_audio` abre `hw:1,0`, el jack de la RPi4; la máquina virtual no tiene
-  tarjeta de sonido, así que la reproducción falla con un error en el journal y el
-  servidor sigue funcionando.
+- **Audio.** `lib_audio` abre `hw:1,0`, la salida PWM analógica de la RPi4 (la que en
+  el robot va por GPIO 18 al PAM8403); la máquina virtual no tiene tarjeta de sonido,
+  así que la reproducción falla con un error en el journal y el servidor sigue
+  funcionando.
 - **Métricas.** El tiempo de arranque, la RAM y la CPU medidos bajo emulación (TCG, sin
   KVM en un host x86) **no** representan a la Pi. Las métricas del enunciado se toman
   en el hardware real.
