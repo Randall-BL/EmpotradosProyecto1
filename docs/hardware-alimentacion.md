@@ -109,7 +109,7 @@ salida.
 | MPU-6050 | 4 mA | 4 mA |
 | 4 × LED a 5 mA (nunca más de 3 encendidos) | 15 mA | 15 mA |
 | Amplificador PAM8403 + parlante de 8 Ω | 80 mA | 400 mA |
-| 7 × LED de optoacoplador | 30 mA | 33 mA |
+| 5 × LED de optoacoplador | 20 mA | 23 mA |
 | **Total** | **~2.0 A** | **~3.0 A** |
 
 El pico de 3.0 A suma el peor caso de todo **a la vez**: la Pi con la CPU al 100 %, el
@@ -174,8 +174,8 @@ necesita un regulador. Tampoco puede colgarse de:
   motor irían directo al riel lógico, que ya está en su tope de 3 A, y la señal dejaría
   de estar aislada;
 - **el regulador interno del L298N**: es un 78M05 de 500 mA que ya alimenta la lógica
-  del driver y los pull-up de los optoacopladores; un pico del servo haría caer `VSS` y
-  el L298N podría soltar los motores.
+  del driver, los pull-up de los optoacopladores y los jumpers de `ENA`/`ENB`; un pico
+  del servo haría caer `VSS` y el L298N podría soltar los motores.
 
 Se usa **un segundo módulo MP2307 ajustado a 5.0 V**, conectado al riel de potencia y
 referido a `GND_POT`. Es el mismo módulo del riel lógico: una sola referencia en la lista

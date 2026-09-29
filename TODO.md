@@ -62,7 +62,7 @@
 - [ ] **Módulo BMS** de protección (sobredescarga / sobrecarga / cortocircuito) — verificar si el pack ya lo incluye
 - [ ] Regulador **buck-boost** DC-DC a 5 V con ≥ 3 A para la Raspberry Pi (XL6009/MT3608 elevador; MP2307/LM2596 reductor)
 - [ ] **Dos rieles de alimentación independientes**: lógica (Pi, sensores, LEDs, audio) y potencia (motores), regulados por separado
-- [ ] Servo del radar en el riel de potencia con su propio buck de 5 V, y su señal por un 7.º PC817 en seguidor de emisor (no invierte) — `docs/hardware-aislamiento.md`
+- [ ] Servo del radar en el riel de potencia con su propio buck de 5 V, y su señal por un 5.º PC817 en seguidor de emisor (no invierte) — `docs/hardware-aislamiento.md`
 - [ ] Probar cada riel con multímetro **antes** de conectar la Raspberry Pi
 - [ ] Documentar el diagrama eléctrico completo (para el README y el documento DI)
 
@@ -99,7 +99,7 @@
 - [x] Definir la API pública de la biblioteca (header + versionado)
 - [x] Configurar el build con **CMake o Autotools** y compilación cruzada ARM
 - [x] Generar el **paquete estándar de código abierto** correspondiente
-- [x] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`)
+- [x] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`); PWM sobre `IN1`–`IN4` con el L298N siempre habilitado (jumpers `ENA`/`ENB`) y la inversión del PC817 compensada
 - [x] Implementar el módulo de **sensores de proximidad (GPIO)**: lectura en tiempo real — radar con servo en `lib_radar` + `lib_servo`
 - [x] Implementar el módulo del **MPU-6050 (I2C)**: aceleración de avance y giro, con calibración — `lib_imu`
 - [x] Implementar el módulo de **LEDs (GPIO)**: control de los 4 indicadores

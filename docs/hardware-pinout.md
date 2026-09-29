@@ -13,14 +13,12 @@ Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 p
 
 | Función | BCM | Pin físico | Dirección | Definido en |
 |---|---|---|---|---|
-| **Motor izquierdo (A)** — vía optoacoplador ||||
-| `ENA` — PWM velocidad | 12 | 32 | Salida | `lib/lib_motors.c` |
-| `IN1` — sentido | 5 | 29 | Salida | `lib/lib_motors.c` |
-| `IN2` — sentido | 6 | 31 | Salida | `lib/lib_motors.c` |
-| **Motor derecho (B)** — vía optoacoplador ||||
-| `ENB` — PWM velocidad | 13 | 33 | Salida | `lib/lib_motors.c` |
-| `IN3` — sentido | 23 | 16 | Salida | `lib/lib_motors.c` |
-| `IN4` — sentido | 24 | 18 | Salida | `lib/lib_motors.c` |
+| **Motor izquierdo (A)** — vía optoacoplador; `ENA` con jumper en el L298N ||||
+| `IN1` — PWM de avance | 5 | 29 | Salida | `lib/lib_motors.c` |
+| `IN2` — PWM de retroceso | 6 | 31 | Salida | `lib/lib_motors.c` |
+| **Motor derecho (B)** — vía optoacoplador; `ENB` con jumper en el L298N ||||
+| `IN3` — PWM de avance | 23 | 16 | Salida | `lib/lib_motors.c` |
+| `IN4` — PWM de retroceso | 24 | 18 | Salida | `lib/lib_motors.c` |
 | **Radar: servo de 180°** — vía optoacoplador ||||
 | Señal del servo (pulsos de 50 Hz) | 25 | 22 | Salida | `lib/lib_servo.h` |
 | **Radar: HC-SR04 sobre el servo** ||||
@@ -61,8 +59,8 @@ Solo los pines usados. `·` = pin libre.
                  GND (25) (26)  GPIO7   ·
                ID_SD (27) (28)  ID_SC
  IN1 motor iz─(GPIO5)(29) (30)  GND
- IN2 motor iz─(GPIO6)(31) (32)(GPIO12)─ ENA PWM motor iz.
- ENB PWM m.der(GPIO13)(33) (34)  GND
+ IN2 motor iz─(GPIO6)(31) (32)  GPIO12  ·
+            · GPIO13 (33) (34)  GND
 2º canal audio (libre)(GPIO19)(35) (36)(GPIO16)─ LED encendido
 LED obstáculo─(GPIO26)(37) (38)(GPIO20)─ LED autónomo
                  GND (39) (40)(GPIO21)─ LED manual
@@ -72,24 +70,28 @@ LED obstáculo─(GPIO26)(37) (38)(GPIO20)─ LED autónomo
 
 ## Por qué estos pines
 
-**GPIO 12 y 13 para el PWM de los motores.** Son los pines de los canales PWM0 y PWM1
-del SoC. El código usa `set_PWM_dutycycle()` de pigpio, que es PWM por software
-temporizado con DMA —estable, pero no tan preciso como el periférico—. Estando en 12 y
-13, migrar a `hardware_PWM()` no requiere recablear.
+**La PWM de los motores va sobre `IN1`–`IN4` (5, 6, 23 y 24).** El L298N lleva los
+jumpers `ENA`/`ENB` puestos —siempre habilitado— y la velocidad se da con PWM
+directamente sobre las entradas de sentido (ver
+[`hardware-aislamiento.md`](hardware-aislamiento.md)). La genera `pigpiod` por software
+temporizado con DMA con `set_PWM_dutycycle()`, que funciona en cualquier GPIO: por eso
+las entradas no necesitan estar en los pines de PWM por hardware, y son los mismos pines
+de sentido de antes. `GPIO 12` y `13`, que llevaban `ENA`/`ENB`, quedan libres.
 
-**GPIO 18 para el audio, no 12/13.** La salida PWM analógica que normalmente va al jack
-de 3.5 mm se saca al conector con el overlay `audremap`, que acepta los pares 12/13 o
-18/19. El 12/13 está tomado por los motores, así que se usa `pins_18_19`. Solo se
-cablea GPIO 18: la biblioteca mezcla la música a mono y los dos canales llevan la
-misma señal (ver [`hardware-sensores.md`](hardware-sensores.md)).
+**GPIO 18 para el audio.** La salida PWM analógica que normalmente va al jack de 3.5 mm
+se saca al conector con el overlay `audremap`, que acepta los pares 12/13 o 18/19. Se
+eligió 18/19 cuando 12/13 eran el PWM de los motores, y se mantiene: ya está en la imagen
+y en el cableado, y cambiarlo no aporta nada. Solo se cablea GPIO 18: la biblioteca mezcla
+la música a mono y los dos canales llevan la misma señal (ver
+[`hardware-sensores.md`](hardware-sensores.md)).
 
 **GPIO 2 y 3 para el MPU-6050.** Son el bus I2C-1 del SoC (`/dev/i2c-1`) y traen
 resistencias pull-up de 1.8 kΩ a 3.3 V en la propia placa. Estaban reservados
 justamente "por si se agrega un sensor adicional".
 
-**GPIO 25 para el servo.** Queda en el pin 22, al lado de `IN3`/`IN4` (16 y 18): todas
-las señales que cruzan al dominio de potencia salen del mismo lado del conector y van
-juntas a la placa de optoacopladores.
+**GPIO 25 para el servo.** Queda en el pin 22, al lado de `IN3`/`IN4` (16 y 18): las
+señales que cruzan al dominio de potencia quedan cerca y van juntas a la placa de
+optoacopladores.
 
 **GPIO 17 y 27 para el HC-SR04 del radar.** Son los del antiguo sensor frontal: el
 cable al borde delantero del chasis no cambia. Los pines de los dos sensores laterales
@@ -115,16 +117,16 @@ Lo que los GPIO entregan desde su propio riel de 3.3 V, en el peor caso **simult
 
 | Consumidor | Peor caso | Por qué |
 |---|---|---|
-| 6 optoacopladores de motor a 5 mA | 30 mA | Con la inversión del opto compensada en software, el robot **detenido** es el caso con los seis LED internos encendidos |
+| 4 optoacopladores de motor a 5 mA | 20 mA | Con la inversión del opto compensada, el robot **detenido** (las cuatro entradas del L298N en bajo) es el caso con los cuatro LED internos encendidos |
 | Optoacoplador del servo a 3.1 mA | 3.1 mA | Solo durante el pulso: ≤ 2.5 ms cada 20 ms, 0.4 mA de promedio |
 | LEDs indicadores a 5 mA | 15 mA | Como mucho **tres** encendidos: autónomo y manual son excluyentes |
 | Filtro RC del audio | 0.6 mA | 3.3 V sobre 4.7 kΩ + 1 kΩ |
 | `TRIG` del HC-SR04 | ≈ 0 | Entrada de alta impedancia del sensor |
 | SDA/SCL | 0 | Colector abierto: el GPIO solo drena la corriente del pull-up |
-| **Total** | **≈ 49 mA** | Dentro de los 50 mA |
+| **Total** | **≈ 39 mA** | Dentro de los 50 mA, con 11 mA de margen |
 
-La cuenta anterior sumaba los cuatro LEDs a la vez y cerraba justo en 50 mA; contar que
-autónomo y manual nunca están encendidos juntos es lo que deja lugar al canal del servo.
+Sin `ENA`/`ENB` hay dos optoacopladores menos que antes. Y autónomo y manual nunca están
+encendidos juntos, así que los LEDs suman tres, no cuatro.
 El `VCC` del MPU-6050 (unos 4 mA) sale del pin de 3.3 V, no de un GPIO, y no entra en
 esta cuenta.
 
@@ -138,6 +140,7 @@ esta cuenta.
 | Pin | Motivo |
 |---|---|
 | GPIO 14, 15 (UART) | Consola serie de depuración. `ENABLE_UART = "1"` en `local.conf` |
+| GPIO 12, 13 | Liberados al dejar `ENA`/`ENB` con jumper. Son un par de PWM por hardware: sirven para un segundo servo o para pasar el audio a `pins_12_13` |
 | GPIO 19 | Toma la función PWM de audio con `audremap`; no se conecta, pero tampoco se reutiliza |
 | GPIO 22, 10, 9, 11 | Liberados por los sensores laterales. Si el profesor exige dos sensores físicos, el segundo HC-SR04 va en 22 (`TRIG`) y 10 (`ECHO`) |
 | GPIO 4, 7, 8 | Margen para los requerimientos opcionales (sensores de desnivel) |

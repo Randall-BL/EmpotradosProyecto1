@@ -90,8 +90,8 @@ como nivel alto sin problema: **no lleva divisor**.
 El servo es un motor con su propio driver: sus picos de corriente y su ruido de
 conmutación no pueden entrar al riel de la Raspberry Pi, que además ya está cerca de su
 tope de 3 A. Por eso se alimenta del dominio de potencia y su señal cruza la barrera
-óptica como las del L298N, en un séptimo canal. Ese canal, a diferencia de los otros
-seis, **no invierte la señal**: ver
+óptica como las del L298N, en un quinto canal. Ese canal, a diferencia de los otros
+cuatro, **no invierte la señal**: ver
 [`hardware-aislamiento.md`](hardware-aislamiento.md).
 
 Los pulsos los genera `pigpiod` por DMA (`set_servo_pulsewidth`), no el proceso: no se
@@ -267,8 +267,8 @@ R = (3.3 V − Vf) / If
 | Azul | 3.0 V | 60 Ω | **68 Ω** |
 
 Se usan 5 mA y no 15 mA por el presupuesto de corriente del conector
-(ver [`hardware-pinout.md`](hardware-pinout.md)): los seis optoacopladores de los
-motores consumen hasta 30 mA de los 50 mA disponibles. Autónomo y manual nunca están
+(ver [`hardware-pinout.md`](hardware-pinout.md)): los cuatro optoacopladores de los
+motores consumen hasta 20 mA de los 50 mA disponibles. Autónomo y manual nunca están
 encendidos a la vez, así que los LEDs suman como mucho 15 mA.
 
 Un LED difuso de 5 mm a 5 mA es perfectamente visible en interiores. Si hiciera falta
@@ -316,9 +316,10 @@ mueve un parlante.
 
 ### Por qué `pins_18_19` y no el par por defecto
 
-`audremap` saca el PWM de audio por GPIO 12/13 (por defecto) o 18/19. Los 12/13 son el
-PWM de los motores, así que se usa **`pins_18_19`**. Con el overlay, el jack de la placa
-queda sin señal. La configuración está en la capa Yocto:
+`audremap` saca el PWM de audio por GPIO 12/13 (por defecto) o 18/19. Se eligió
+**`pins_18_19`** cuando 12/13 llevaban `ENA`/`ENB` de los motores; hoy 12/13 están libres
+(el L298N va con jumpers), pero no hay motivo para mover el audio. Con el overlay, el
+jack de la placa queda sin señal. La configuración está en la capa Yocto:
 
 - `recipes-bsp/bootfiles/rpi-config_%.bbappend` agrega `dtoverlay=audremap,pins_18_19`
   a `config.txt`;
@@ -427,11 +428,9 @@ los de motor y lejos del cable del servo.
         │                 │  GPIO 21 ──[270Ω]──► LED amarillo
         │                 │  GPIO 26 ──[270Ω]──► LED rojo
         │                 │                           │
-        │                 │  GPIO 12 ──[390Ω]──►┐     │
-        │                 │  GPIO  5 ──[390Ω]──►│     │
-        │                 │  GPIO  6 ──[390Ω]──►│ 6×  │──► L298N
-        │                 │  GPIO 13 ──[390Ω]──►│PC817│    (aislado)
-        │                 │  GPIO 23 ──[390Ω]──►│     │
+        │                 │  GPIO  5 ──[390Ω]──►┐ 4×  │
+        │                 │  GPIO  6 ──[390Ω]──►│PC817│──► IN1–IN4 del L298N
+        │                 │  GPIO 23 ──[390Ω]──►│     │    (PWM, aislado)
         │                 │  GPIO 24 ──[390Ω]──►┘     │
         │                 │  GPIO 25 ──[680Ω]──► PC817 ──► servo (aislado)
         │                 │                           │

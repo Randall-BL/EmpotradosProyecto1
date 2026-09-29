@@ -182,7 +182,7 @@ Cosas que en el momento de presentar se agradecen:
 | — | Tornillería M3 |
 | — | Amarras plásticas / canaleta |
 | — | Conectores Dupont y JST |
-| 2 | Placa perforada (etapa de potencia con los 7 optos, y filtro de audio) |
+| 2 | Placa perforada (etapa de potencia con los 5 optos, y filtro de audio) |
 
 ---
 

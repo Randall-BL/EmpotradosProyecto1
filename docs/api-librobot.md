@@ -49,14 +49,17 @@ robot_shutdown();                          // al terminar, siempre
 
 ## 2. Motores — `lib_motors.h`
 
-Tracción diferencial sobre un puente L298N. `MOTOR_PWM_MAX` (255) es el tope de
-duty cycle.
+Tracción diferencial sobre un puente L298N con los jumpers `ENA`/`ENB` puestos: la PWM
+va directo sobre las entradas `IN1`–`IN4`. Para cada motor, el signo elige cuál de sus
+dos entradas lleva la PWM y la otra queda en bajo; con velocidad 0 las dos quedan en bajo
+y el L298N **frena**. La inversión de los optoacopladores está compensada adentro
+(`OPTO_INVERTIDO`). `MOTOR_PWM_MAX` (255) es el tope de duty cycle.
 
 | Función | Descripción |
 |---|---|
 | `void motores_set(int izq, int der)` | **Primitiva.** Velocidad de cada motor, −255..255; el signo da el sentido, la magnitud el PWM. Se satura. |
 | `void motores_get(int *izq, int *der)` | Última velocidad ordenada a cada motor (entrada de la odometría). Punteros NULL permitidos. |
-| `void motores_detener(void)` | Frena ambos (equivale a `motores_set(0,0)`). |
+| `void motores_detener(void)` | Frena ambos en seco (equivale a `motores_set(0,0)`). |
 | `void motores_avanzar(int v)` | `motores_set(v, v)`. |
 | `void motores_retroceder(int v)` | `motores_set(-v, -v)`. |
 | `void motores_girar_izquierda(int v)` | Gira sobre su eje a la izquierda: `motores_set(-v, v)`. |

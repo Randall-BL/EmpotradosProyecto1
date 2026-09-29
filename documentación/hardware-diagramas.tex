@@ -81,8 +81,9 @@ reúne únicamente los diagramas.}
 
 Un pack 2S alimenta dos rieles regulados por separado. El de potencia mueve
 los motores y, a través de su propio regulador de 5\,V, el servo del radar.
-Las siete señales que cruzan hacia el dominio de potencia ---seis del puente H
-y la del servo--- lo hacen a través de optoacopladores.
+Las cinco señales que cruzan hacia el dominio de potencia ---las cuatro
+entradas del puente H, que llevan la PWM, y la del servo--- lo hacen a través
+de optoacopladores.
 
 \begin{figure}[h]
 \centering
@@ -118,7 +119,7 @@ y la del servo--- lo hacen a través de optoacopladores.
 
   % --- consumidores del riel de potencia ---
   \node[blkp,below=3mm of rp,text width=3.3cm] (l298)
-    {\textbf{Driver L298N}\\[-1pt]\scriptsize doble puente H};
+    {\textbf{Driver L298N}\\[-1pt]\scriptsize ENA/ENB con jumper};
   \node[blkp,below=2.5mm of l298,text width=3.3cm] (mot)
     {\scriptsize Motor izq. \quad Motor der.\\[-1pt]\scriptsize DC con reductora};
   \draw[ln,cPot] (l298) -- (mot);
@@ -133,7 +134,7 @@ y la del servo--- lo hacen a través de optoacopladores.
 
   % --- barrera ---
   \node[blk,draw=cLed,fill=cLed!8,text=cLed] (opto) at (0.75,0.35)
-    {7 $\times$ PC817\\[-1pt]\scriptsize ENA, IN1, IN2,\\[-2pt]\scriptsize ENB, IN3, IN4,\\[-2pt]\scriptsize SERVO};
+    {5 $\times$ PC817\\[-1pt]\scriptsize IN1, IN2,\\[-2pt]\scriptsize IN3, IN4 (PWM),\\[-2pt]\scriptsize SERVO};
   \draw[ln] (pi.east)   -- (opto.west |- pi.east);
   \draw[ln] (opto.east |- l298.west) -- (l298.west);
   \draw[ln] ($(opto.south east)+(-0.25,0)$) -- ++(0,-0.75)
@@ -153,7 +154,7 @@ y la del servo--- lo hacen a través de optoacopladores.
 \end{tikzpicture}
 \caption{Arquitectura de hardware: fuente única, dos rieles regulados por
 separado, el servo del radar con su propio regulador en el riel de potencia
-y barrera óptica en las siete señales de control.}
+y barrera óptica en las cinco señales de control.}
 \end{figure}
 
 \begin{nota}
@@ -173,9 +174,10 @@ antes de armar la placa.
 % ===========================================================================
 \section{Aislamiento de las señales de control}
 
-Siete canales con PC817. Los seis del L298N (\texttt{ENA}, \texttt{IN1},
-\texttt{IN2}, \texttt{ENB}, \texttt{IN3}, \texttt{IN4}) van en emisor común;
-el del servo, en seguidor de emisor.
+Cinco canales con PC817. Los cuatro del L298N (\texttt{IN1}--\texttt{IN4}),
+que llevan la PWM, van en emisor común; el del servo, en seguidor de emisor.
+El L298N no recibe \texttt{ENA}/\texttt{ENB} de la Pi: sus jumpers quedan
+puestos y el puente está siempre habilitado.
 
 \begin{figure}[h]
 \centering
@@ -211,7 +213,7 @@ el del servo, en seguidor de emisor.
   \draw[dashed,thick,cLed] (3.15,-1.15) -- (3.15,4.3);
 
 \end{circuitikz}
-\caption{Canal de aislamiento con PC817 (6 de 7: las señales del L298N).
+\caption{Canal de aislamiento con PC817 (4 de 5: las entradas del L298N).
 Emisor común: el fototransistor conduce cuando el LED enciende, de modo que
 \textbf{la señal sale invertida}. Se compensa en \texttt{lib/lib\_motors.c}.}
 \end{figure}
@@ -228,12 +230,27 @@ Bajo (0\,V)     & apagado   & en corte & \textbf{Alto} (por el \emph{pull-up})\\
 \end{tabular}
 \end{center}
 
+\begin{center}
+\small
+\begin{tabular}{ccl}
+\toprule
+\textbf{IN1} & \textbf{IN2} & \textbf{Motor A (ENA con jumper)}\\
+\midrule
+PWM  & Bajo & avanza, con velocidad según el ciclo de trabajo\\
+Bajo & PWM  & retrocede\\
+Bajo & Bajo & \textbf{frenado} (\texttt{motores\_detener()})\\
+Alto & Alto & frenado (reposo: GPIO en bajo y \emph{pull-up} arriba)\\
+\bottomrule
+\end{tabular}
+\end{center}
+
 \begin{nota}
-\textbf{Consecuencia crítica.} Sin compensar la inversión,
-\texttt{motores\_detener()} escribe ciclo 0 y entrega \textbf{velocidad
-máxima}. La corrección va en software (\texttt{PWM\_DUTY(d) = 255 - d} y
-\texttt{GPIO\_NIVEL(v) = !v}) y debe estar verificada antes de la primera
-prueba con motores montados.
+\textbf{Compensación de la inversión.} Con la PWM sobre las entradas, pedir un
+ciclo $d$ en el GPIO entrega $255-d$ en el L298N: sin compensar, cada motor
+giraría al revés. \texttt{lib/lib\_motors.c} escribe $255-d$
+(\texttt{OPTO\_INVERTIDO}) para que al puente le llegue $d$. Verificarlo la
+primera vez con el robot elevado: al avanzar, las dos llantas deben girar
+hacia adelante.
 \end{nota}
 
 \clearpage
@@ -270,7 +287,7 @@ prueba con motores montados.
   \draw[dashed,thick,cLed] (3.15,-2.35) -- (3.15,4.3);
 
 \end{circuitikz}
-\caption{Canal del servo (7 de 7). \textbf{Seguidor de emisor}: la salida se
+\caption{Canal del servo (5 de 5). \textbf{Seguidor de emisor}: la salida se
 toma del emisor, con una resistencia a \texttt{GND\_POT}, y \textbf{no invierte}.
 Con emisor común, el GPIO en reposo ---en el arranque, o con el servidor
 detenido--- sería un nivel alto permanente que lleva al servo contra su tope.}
@@ -547,8 +564,8 @@ Numeración BCM entre paréntesis. Los pines sin etiqueta quedan libres.
       5/{SCL del MPU (3)}/cLog, 9/{GND (MPU)}/cGris,
       11/{TRIG del radar (17)}/cLog, 13/{ECHO del radar (27)}/cLog,
       17/3V3/cGris, 25/GND/cGris,
-      29/{IN1 motor izq. (5)}/cPot, 31/{IN2 motor izq. (6)}/cPot,
-      33/{ENB PWM der. (13)}/cPot, 37/{LED obstáculo (26)}/cLed,
+      29/{IN1 PWM motor izq. (5)}/cPot, 31/{IN2 PWM motor izq. (6)}/cPot,
+      37/{LED obstáculo (26)}/cLed,
       39/GND/cGris}
   {
     \pgfmathtruncatemacro{\r}{(\p-1)/2}
@@ -560,9 +577,9 @@ Numeración BCM entre paréntesis. Los pines sin etiqueta quedan libres.
   \foreach \p/\lbl/\c in {%
       2/5V/cGris, 4/5V/cGris, 6/GND/cGris,
       12/{audio PWM $\rightarrow$ PAM8403 (18)}/cAud, 14/GND/cGris,
-      16/{IN3 motor der. (23)}/cPot, 18/{IN4 motor der. (24)}/cPot,
+      16/{IN3 PWM motor der. (23)}/cPot, 18/{IN4 PWM motor der. (24)}/cPot,
       20/GND/cGris, 22/{servo del radar (25)}/cPot,
-      30/GND/cGris, 32/{ENA PWM izq. (12)}/cPot,
+      30/GND/cGris,
       34/GND/cGris, 36/{LED encendido (16)}/cLed,
       38/{LED autónomo (20)}/cLed, 40/{LED manual (21)}/cLed}
   {
@@ -576,10 +593,10 @@ Numeración BCM entre paréntesis. Los pines sin etiqueta quedan libres.
   \node[anchor=east,text=cAud!70] at (-\dx-0.55,17) {2.º canal de audio (19), sin conectar};
 
   % --- pines libres ---
-  \foreach \p in {7,15,19,21,23,27}
+  \foreach \p in {7,15,19,21,23,27,33}
     { \pgfmathtruncatemacro{\r}{(\p-1)/2}
       \draw[black!30] (-\dx,\r) circle (2.1pt); }
-  \foreach \p in {8,10,24,26,28}
+  \foreach \p in {8,10,24,26,28,32}
     { \pgfmathtruncatemacro{\r}{(\p-2)/2}
       \draw[black!30] (\dx,\r) circle (2.1pt); }
 
@@ -599,11 +616,11 @@ Numeración BCM entre paréntesis. Los pines sin etiqueta quedan libres.
   \node[anchor=west,text=cGris,font=\scriptsize\bfseries] at (2.95,20.9) {$\bullet$\ \ alimentación};
 
 \end{tikzpicture}
-\caption{Conector de 40 pines. GPIO 12 y 13 son los canales PWM0/PWM1 del
-SoC: permiten migrar los motores a PWM por hardware sin recablear. Por eso el
-audio usa el otro par que admite \texttt{audremap}, GPIO 18/19. GPIO 2/3 son
-el bus I2C-1 del MPU-6050. GPIO 14/15 (UART) quedan libres para la consola
-serie de depuración.}
+\caption{Conector de 40 pines. La PWM de los motores va sobre las entradas
+del L298N (GPIO 5, 6, 23 y 24); \texttt{pigpiod} la genera por DMA en
+cualquier GPIO. GPIO 12 y 13, que llevaban \texttt{ENA}/\texttt{ENB}, quedan
+libres. El audio sale por GPIO 18 con \texttt{audremap}; GPIO 2/3 son el bus
+I2C-1 del MPU-6050; GPIO 14/15 (UART) quedan libres para la consola serie.}
 \end{figure}
 
 \clearpage
