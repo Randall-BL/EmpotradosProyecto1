@@ -100,6 +100,26 @@ static snd_pcm_t *alsa_open(long rate, int channels)
     return pcm;
 }
 
+// Mezcla a mono un bloque estereo S16 intercalado (ver LIB_AUDIO_MONO)
+static void mezclar_a_mono(unsigned char *buf, size_t bytes, int channels)
+{
+#if LIB_AUDIO_MONO
+    if (channels != 2) return;
+    size_t frames = bytes / sizeof(int16_t[2]);
+    for (size_t i = 0; i < frames; i++) {
+        /* memcpy y no un cast: buf es un arreglo de bytes, sin garantia de
+           alineacion para int16_t. */
+        int16_t lr[2];
+        memcpy(lr, buf + i * sizeof(lr), sizeof(lr));
+        /* En int para que la suma no desborde los 16 bits. */
+        lr[0] = lr[1] = (int16_t)(((int)lr[0] + (int)lr[1]) / 2);
+        memcpy(buf + i * sizeof(lr), lr, sizeof(lr));
+    }
+#else
+    (void)buf; (void)bytes; (void)channels;
+#endif
+}
+
 // Ajusta el volumen del mixer ALSA
 static void alsa_set_volume(int vol_pct)
 {
@@ -109,7 +129,7 @@ static void alsa_set_volume(int vol_pct)
     snd_mixer_t *handle = NULL;
     if (snd_mixer_open(&handle, 0) < 0) return;
 
-    // Apuntar a card 1: Headphones en rpi4
+    // Apuntar a card 1: la salida PWM analogica de la rpi4 (GPIO 18 con audremap)
     if (snd_mixer_attach(handle, LIB_AUDIO_MIXER_CARD) < 0) {
         snd_mixer_close(handle); return;
     }
@@ -327,6 +347,7 @@ static void *playback_thread(void *arg)
             }
 
             // Escribir chunk a ALSA
+            mezclar_a_mono(buf, done, channels);
             snd_pcm_uframes_t frames   = snd_pcm_bytes_to_frames(pcm, (ssize_t)done);
             unsigned char    *ptr      = buf;
             snd_pcm_uframes_t written  = 0;
@@ -676,6 +697,7 @@ void lib_audio_notify(NotificationEvent event)
         if (dec_err == MPG123_DONE || done == 0) break;
         if (dec_err != MPG123_OK && dec_err != MPG123_NEW_FORMAT) break;
 
+        mezclar_a_mono(buf, done, channels);
         snd_pcm_uframes_t frames = snd_pcm_bytes_to_frames(pcm, (ssize_t)done);
         unsigned char *ptr = buf;
 
