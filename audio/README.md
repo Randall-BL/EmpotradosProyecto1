@@ -15,7 +15,8 @@ Los cuatro eventos que exige el enunciado:
 
 Ocho fragmentos de unos 10 s (≈690 KB en total) de obras de dominio público,
 sintetizados con `scripts/generar_canciones.py`: no vienen de ninguna grabación,
-así que no tienen derechos de autor y pueden vivir en el repositorio.
+así que no tienen derechos de autor y pueden vivir en el repositorio. Hay una
+sola excepción, descrita después de la tabla.
 
 | Archivo | Obra |
 |---|---|
@@ -27,6 +28,11 @@ así que no tienen derechos de autor y pueden vivir en el repositorio.
 | `06_Minueto_en_Sol.mp3`                   | Petzold (atribuido a Bach) |
 | `07_Cancion_de_cuna.mp3`                  | Brahms, Op. 49 n.º 4 |
 | `08_Estrellita.mp3`                       | Tradicional |
+
+**Única excepción:** `Ren - Bitter Sweet Symphony (Live).mp3` (≈5.6 MB) es una
+grabación real, no sintetizada ni de dominio público. Se versiona solo porque es
+la canción favorita del profesor; cualquier otra grabación va en `music/`, que no
+se versiona. Al no llevar prefijo numérico queda al final de la lista.
 
 Son cortos para no gastar espacio en la imagen: el reproductor repite la pista
 elegida en bucle hasta que se detiene o se elige otra. El prefijo numérico fija
