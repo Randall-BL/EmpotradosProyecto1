@@ -11,6 +11,7 @@
 | `navegacion-radar.md` | Barrido del radar, velocidad con el MPU-6050, tiempo antes de chocar, evasión y mapa |
 | `odometria.md` | Procedimiento de calibración en campo (motores, servo, MPU-6050, umbrales, odometría) |
 | `paquetes.md` | Todo paquete agregado sobre la imagen mínima, con su justificación |
+| `metricas.md` | Métricas de eficiencia: método, resultados y justificación de las desviaciones |
 | `arranque-automatico.md` | Unidades systemd, arranque automático y recuperación ante fallos |
 
 ## Hardware
@@ -28,6 +29,8 @@
 > la Raspberry Pi.
 
 Los diagramas de hardware dibujados están en
-[`../documentación/hardware-diagramas.pdf`](../documentación/hardware-diagramas.pdf).
+[`../documentación/hardware-diagramas.pdf`](../documentación/hardware-diagramas.pdf),
+junto con el Documento de Diseño (`documento-diseno.pdf`) y el de Aprendizaje Continuo
+(`aprendizaje-continuo.pdf`).
 Aquí se guardan los fragmentos de `log.do_compile` que evidencian la compilación
 cruzada y las capturas de ejecución en el target.
