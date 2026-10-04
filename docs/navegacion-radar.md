@@ -14,7 +14,7 @@ navegar, evitar obstáculos y construir el mapa. El hardware está en
   librobot (lib/)                                   robot-server (server/src/main.c)
   ───────────────                                   ───────────────────────────────
   hilo del radar ── servo + HC-SR04 ──┐
-     7 ángulos, ~10 lecturas/s        │  radar_lecturas()      hilo de navegación, 10 Hz
+     7 ángulos, ~5 lecturas/s         │  radar_lecturas()      hilo de navegación, 10 Hz
      guarda cada lectura con la pose  ├───────────────────►   · ¿obstáculo al frente?
      tiempo de choque al mirar al     │  radar_estado_choque()  · evadir / avanzar
      frente                           │                         · proyectar lecturas en el mapa
@@ -33,9 +33,11 @@ servidor no espera al radar: lee la última lectura de cada ángulo cuando la ne
 
 El hilo del radar mueve el servo en vaivén —0°, 30°, …, 180° y de vuelta— y en cada
 parada espera a que el servo llegue y deje de vibrar antes de disparar el sensor.
-`servo_mover()` devuelve cuánto tarda ese viaje (1.7 ms por grado más 30 ms de
-asentamiento), así que la espera no es un número fijo: el primer movimiento desde una
-posición desconocida espera media vuelta completa.
+`servo_mover()` no deja ir al servo a su velocidad máxima: lo lleva en rampa, un pulso
+intermedio cada 20 ms, a un tercio de ella (`SERVO_DIVISOR_VELOCIDAD`: 1.7 × 3 = 5.1 ms
+por grado). Al terminar la rampa devuelve lo que falta para que llegue y se asiente (el
+último escalón más 30 ms). El primer movimiento, desde una posición desconocida, no
+tiene rampa posible: va de un salto y espera media vuelta completa.
 
 Cada lectura se guarda con:
 
@@ -46,9 +48,9 @@ Cada lectura se guarda con:
 
 | Magnitud | Valor |
 |---|---|
-| Lecturas por segundo | ~10 |
-| Pasada completa (0 → 180) | ~0.6 s |
-| Lectura frontal | cada ~0.6 s |
+| Lecturas por segundo | ~5 |
+| Pasada completa (0 → 180) | ~1.2 s |
+| Lectura frontal | cada ~1.2 s |
 
 Es la **frecuencia de muestreo** del sistema (issue #20). La deducción está en
 [`hardware-sensores.md`](hardware-sensores.md#barrido-y-tasa-de-muestreo).
@@ -104,7 +106,7 @@ instante y el rumbo. La estimación vigente es:
 ```
 
 - El **numerador** proyecta la distancia con lo que el robot avanzó desde la lectura.
-  Entre dos lecturas frontales —que llegan cada ~0.6 s— la cuenta regresiva sigue
+  Entre dos lecturas frontales —que llegan cada ~1.2 s— la cuenta regresiva sigue
   bajando sola, en lugar de quedar congelada hasta la próxima vez que el sensor mire al
   frente.
 - El **denominador** es la velocidad **de ahora**: si el robot frena, el riesgo
@@ -133,7 +135,7 @@ cualquiera de dos cosas:
 | **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | En movimiento: a 30 cm/s —la velocidad fija de ahora— salta a ~36 cm de la pared, antes que la distancia |
 | **Distancia** | alguna lectura del cono frontal (60°, 90°, 120°) < `DIST_OBSTACULO_CM` (20 cm) | Robot quieto o muy lento, donde no hay tiempo de choque, y obstáculos que el sensor ve en diagonal |
 
-Del cono frontal solo cuentan lecturas de menos de 1.5 s **tomadas mirando hacia donde
+Del cono frontal solo cuentan lecturas de menos de 2 s **tomadas mirando hacia donde
 el robot mira ahora** (menos de 20° de diferencia de rumbo): tras un giro, lo que había
 "al frente" es otra cosa.
 
@@ -217,6 +219,7 @@ El servidor completo, compilado para ARM y corriendo sobre el simulador:
 |---|---|---|---|
 | `SERVO_PULSO_0_US`, `SERVO_PULSO_180_US` | `lib/lib_servo.h` | 500, 2500 | Pulsos de los extremos; de ellos sale el de 90° |
 | `SERVO_MS_POR_GRADO` | `lib/lib_servo.h` | 1.7 | Espera antes de medir |
+| `SERVO_DIVISOR_VELOCIDAD` | `lib/lib_servo.h` | 3 | El servo barre a 1/3 de su velocidad máxima |
 | `RADAR_EJE_ADELANTE_CM` | `lib/lib_radar.h` | 10 | Dónde está el sensor respecto del centro |
 | `IMU_SIGNO_AVANCE`, `IMU_SIGNO_GIRO` | `lib/lib_imu.h` | +1, −1 | Orientación del MPU en el chasis |
 | `ODOM_TAU_FUSION_S` | `lib/lib_odom.h` | 1.0 s | Cuánto se confía en el MPU frente al modelo |

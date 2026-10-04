@@ -73,6 +73,12 @@ IMAGE_INSTALL:append = " openssh-sftp-server"
 # embebido. Se declara explicitamente para que ninguna dependencia lo reintroduzca.
 IMAGE_FEATURES:remove = "x11-base x11-sato splash"
 
+# Tabla de particiones propia en la Raspberry: la playlist va en una tercera
+# particion montada en /opt/robot/audio/canciones, para que ninguna pase de
+# 200 MB. Ver meta-robot/wic/robot-sdimage.wks. QEMU arranca del ext4 directo
+# y no usa wic.
+WKS_FILE:rpi = "robot-sdimage.wks"
+
 # Presupuesto de rootfs del enunciado: 200 MB.
 # EXTRA_SPACE en 0 para que el tamano medido sea el real y no quede inflado por
 # holgura artificial.

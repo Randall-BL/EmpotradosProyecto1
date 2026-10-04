@@ -92,7 +92,7 @@ geometría del robot y a cuánto tarda en frenar.
 
 1. Con el robot quieto, enfrentarlo a una pared a distancias medidas (10, 15,
    20, 30 cm) y comparar con la lectura "Frente" del radar en el panel web
-   (`robot_distancia_frontal()`, que se refresca cada ~0.6 s). Debe caer
+   (`robot_distancia_frontal()`, que se refresca cada ~1.2 s). Debe caer
    dentro de ±1 cm.
 2. Con el robot en movimiento a `VEL_CRUCERO`, medir la distancia de frenado.
 3. Ajustar en `server/src/main.c`:

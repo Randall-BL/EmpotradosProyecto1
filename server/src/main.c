@@ -344,7 +344,7 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
 /* Una lectura del cono frontal cuenta solo si es reciente y si el robot sigue
    mirando hacia donde miraba al tomarla: tras un giro, "lo que habia al
    frente" es otra cosa. */
-#define LECTURA_VIGENTE_S       1.5
+#define LECTURA_VIGENTE_S       2.0
 #define LECTURA_GIRO_MAX_GRADOS 20.0
 
 static uint32_t g_mapa_seq = 0;   /* ultima lectura del radar ya mapeada */

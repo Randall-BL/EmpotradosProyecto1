@@ -821,6 +821,11 @@ function updateMovimiento(m) {
 }
 
 /* Funcionalidad del Audio */
+// "01_Himno_a_la_alegria.mp3" -> "Himno a la alegria"
+function trackTitle(t) {
+  return (t.nombre || t.name || '').replace(/\.[^.]+$/, '').replace(/^\d+[_ -]+/, '').replace(/_/g, ' ');
+}
+
 function renderTracks() {
   const list = document.getElementById('track-list');
   const none = document.getElementById('no-tracks');
@@ -831,7 +836,7 @@ function renderTracks() {
   S.tracks.forEach((t, i) => {
     const div = document.createElement('div');
     div.className = 'track' + (S.curTrack && S.curTrack.id === t.id ? ' active' : '');
-    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${(t.nombre || t.name || '').replace(/\.[^.]+$/, '')}</span><span class="t-dur">${t.duracion || t.duration || ""}</span>`;
+    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${trackTitle(t)}</span><span class="t-dur">${t.duracion || t.duration || ""}</span>`;
     div.onclick = () => selectTrack(t);
     list.appendChild(div);
   });
@@ -847,7 +852,7 @@ function highlightTrack() {
 
 function selectTrack(t) {
   S.curTrack = t; S.playing = true;
-  document.getElementById('np-title').textContent = t.nombre || t.name || '';
+  document.getElementById('np-title').textContent = trackTitle(t) + '  ⟳';
   document.getElementById('prog-dur').textContent = t.duracion || t.duration || '';
   updatePlayBtn(); highlightTrack();
   apiFetch('/api/audio/control', 'POST', { action: 'play', track_id: t.id });

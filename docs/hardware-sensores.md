@@ -19,7 +19,7 @@ siete ángulos —0°, 30°, …, 180°— y en cada uno se dispara el sensor.
 | Direcciones medidas | 3 | **7**, de lado a lado |
 | Datos para el mapa | 3 rayos por lectura | 7 rayos por barrido, con la pose de cada uno |
 | Elegir hacia dónde girar | izquierda o derecha | el más libre de 6 direcciones |
-| Frecuencia de la lectura frontal | ~16 Hz | ~1.7 Hz (una vez cada ~0.6 s) |
+| Frecuencia de la lectura frontal | ~16 Hz | ~0.8 Hz (una vez cada ~1.2 s) |
 | GPIO | 6 | 3 (`TRIG`, `ECHO` y la señal del servo) |
 | Ecos cruzados entre sensores | posibles, hay que secuenciar | imposibles: hay un solo sensor |
 
@@ -103,19 +103,19 @@ El barrido es de vaivén: 0 → 180 → 0, parando cada 30°. En cada parada:
 
 | Fase | Duración |
 |---|---|
-| Viaje del servo, 30° a 1.7 ms/° | 51 ms |
+| Viaje del servo, 30° en rampa a 1/3 de su velocidad (5.1 ms/°) | 153 ms |
 | Asentamiento, para que el sensor deje de vibrar | 30 ms |
 | Eco del HC-SR04 (a 2 m; 23 ms sin eco dentro de 4 m) | ~12 ms |
-| **Total por lectura** | **~95 ms** |
+| **Total por lectura** | **~195 ms** |
 
 De ahí la **tasa de muestreo del sistema** (issue #20):
 
 | Magnitud | Valor |
 |---|---|
-| Lecturas por segundo | **~10** |
-| Una pasada completa, 0 → 180 | 6 pasos, ~0.6 s |
-| Lectura frontal (90°) | una vez por pasada: **cada ~0.6 s** |
-| Cono frontal (60°, 90° y 120°) | 6 lecturas cada ~1.2 s |
+| Lecturas por segundo | **~5** |
+| Una pasada completa, 0 → 180 | 6 pasos, ~1.2 s |
+| Lectura frontal (90°) | una vez por pasada: **cada ~1.2 s** |
+| Cono frontal (60°, 90° y 120°) | 6 lecturas cada ~2.4 s |
 
 El propio viaje del servo deja más de los 60 ms que pide el HC-SR04 entre disparos
 para no oír el eco del pulso anterior.
@@ -519,7 +519,7 @@ la separación física de los cables de audio y de motor.
 
 - [x] Radar definido: HC-SR04 sobre servo de 180°, siete ángulos, montaje y geometría
 - [x] Divisor de tensión especificado para `ECHO` — **crítico para no dañar la Pi**
-- [x] Tasa de muestreo del barrido calculada (~10 lecturas/s, frente cada ~0.6 s)
+- [x] Tasa de muestreo del barrido calculada (~5 lecturas/s, frente cada ~1.2 s)
 - [x] MPU-6050: conexión a 3.3 V, montaje y calibración definidos
 - [x] LEDs, colores y resistencias calculados contra el presupuesto de corriente
 - [x] Salida de audio decidida (GPIO 18 + PAM8403) con el filtro calculado

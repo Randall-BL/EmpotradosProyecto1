@@ -112,8 +112,11 @@ Estas mediciones alimentan el reporte de eficiencia de recursos (issue #30):
 # Tamaño de la imagen comprimida
 ls -lh tmp/deploy/images/raspberrypi4-64/robot-image-raspberrypi4-64.rootfs.wic.bz2
 
-# Tamaño real del rootfs
+# Tamaño real del rootfs (incluye las canciones, que en la SD van en p3)
 du -sh tmp/work/raspberrypi4_64-poky-linux/robot-image/1.0/rootfs
+
+# Tamaño de cada partición de la SD: ninguna puede pasar de 200 MB
+wic ls tmp/deploy/images/raspberrypi4-64/robot-image-raspberrypi4-64.rootfs.wic.bz2
 
 # Qué paquete ocupa qué — para decidir qué recortar
 cat tmp/deploy/images/raspberrypi4-64/robot-image-raspberrypi4-64.rootfs.manifest

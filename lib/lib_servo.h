@@ -35,6 +35,17 @@
 /** Velocidad sin carga de un SG90/MG90S a 5 V: unos 0.1 s cada 60 grados. */
 #define SERVO_MS_POR_GRADO 1.7
 
+/**
+ * El servo no se deja ir a su velocidad maxima: servo_mover() lo lleva en
+ * rampa, a 1/SERVO_DIVISOR_VELOCIDAD de ella (3 -> 5.1 ms por grado). A toda
+ * velocidad el vaiven sacudia el sensor y el chasis.
+ */
+#define SERVO_DIVISOR_VELOCIDAD 3
+
+/** Cada cuanto avanza la rampa: un periodo del pulso de 50 Hz. Un escalon
+    mas corto no sirve, el servo solo lee un pulso cada 20 ms. */
+#define SERVO_PERIODO_MS 20
+
 /** Espera extra al llegar, para que el sensor deje de vibrar antes de medir. */
 #define SERVO_ASENTAMIENTO_MS 30
 
@@ -42,10 +53,15 @@
 void servo_init(int pi);
 
 /**
- * @brief Ordena al servo ir a un angulo.
+ * @brief Lleva el servo a un angulo, a 1/SERVO_DIVISOR_VELOCIDAD de su
+ *        velocidad maxima.
  *
- * No espera a que llegue. Devuelve cuanto tarda en llegar y asentarse, para
- * que quien mide sepa cuanto esperar antes de disparar el sensor.
+ * Bloquea mientras dura la rampa: manda un pulso intermedio cada
+ * SERVO_PERIODO_MS hasta el angulo pedido. Devuelve cuanto falta despues para
+ * que el servo llegue al ultimo escalon y se asiente, para que quien mide sepa
+ * cuanto esperar antes de disparar el sensor. Desde una posicion desconocida
+ * (el primer movimiento, o tras servo_liberar) no hay desde donde hacer la
+ * rampa: el servo va de un salto y la espera es la de media vuelta.
  *
  * @param grados De 0 (derecha) a 180 (izquierda). Se satura.
  * @return Milisegundos estimados hasta que el servo queda quieto en el

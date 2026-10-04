@@ -5,10 +5,11 @@
 #  REST de control y corre el hilo de navegacion autonoma. Accede al hardware
 #  exclusivamente a traves de librobot.
 #
-#  Instala tres cosas en el target:
+#  Instala en el target:
 #    /usr/bin/robot-server   el binario
 #    /opt/robot/www/         la interfaz web estatica
-#    /opt/robot/audio/       los sonidos de evento y la musica
+#    /opt/robot/audio/       los sonidos de evento
+#    /opt/robot/audio/canciones/  la playlist (particion propia en la RPi)
 # ─────────────────────────────────────────────────────────────────────────────
 
 SUMMARY = "Servidor web embebido de control del robot aspiradora"
@@ -80,12 +81,21 @@ do_install:append() {
     install -d ${D}/opt/robot/www
     cp -r ${WORKDIR}/www/* ${D}/opt/robot/www/
 
-    # Recursos de audio. audio/music/ puede venir vacio del repositorio: la
-    # imagen se construye igual, solo que sin playlist inicial.
+    # Recursos de audio. Los sonidos de evento (notify_*) van en
+    # /opt/robot/audio/; la playlist, que es la versionada de audio/canciones/
+    # mas lo que haya en audio/music/ (no versionada, puede venir vacia), va en
+    # /opt/robot/audio/canciones/. En la Raspberry ese directorio es el punto
+    # de montaje de su propia particion (meta-robot/wic/robot-sdimage.wks), asi
+    # el peso de la musica no cuenta contra la particion raiz.
     # Se copian solo los .mp3: el README y el .gitkeep del repositorio no
     # tienen nada que hacer en el rootfs.
-    install -d ${D}/opt/robot/audio
-    find ${WORKDIR}/audio -name '*.mp3' -exec install -m 0644 {} ${D}/opt/robot/audio/ \;
+    install -d ${D}/opt/robot/audio/canciones
+    install -m 0644 ${WORKDIR}/audio/notify_*.mp3 ${D}/opt/robot/audio/
+    for d in canciones music; do
+        [ -d ${WORKDIR}/audio/$d ] || continue
+        find ${WORKDIR}/audio/$d -name '*.mp3' \
+            -exec install -m 0644 {} ${D}/opt/robot/audio/canciones/ \;
+    done
 
     # Unidad systemd. La clase systemd se encarga de habilitarla en el arranque.
     install -d ${D}${systemd_system_unitdir}

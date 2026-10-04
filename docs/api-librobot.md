@@ -31,7 +31,7 @@ calibración de medio segundo, **con el robot quieto**), odometría y radar.
 | `double robot_distancia_izquierda(void)` | Última lectura del radar a 180°, en cm. | cm · `−1.0` sin eco o sin medir |
 | `double robot_distancia_derecha(void)` | Última lectura del radar a 0°, en cm. | cm · `−1.0` sin eco o sin medir |
 
-Las tres distancias se refrescan una vez por barrido (~0.6 s). El barrido completo, con
+Las tres distancias se refrescan una vez por barrido (~1.2 s). El barrido completo, con
 la pose de cada lectura, y el tiempo antes de chocar están en `lib_radar.h`.
 
 **Manejo de errores y liberación de recursos:** `robot_init` falla limpio si
@@ -103,20 +103,21 @@ para moverlo a mano, pausar antes el radar.
 | Función | Descripción | Retorno |
 |---|---|---|
 | `void servo_init(int pi)` | Configura el pin. No mueve el servo. | — |
-| `int servo_mover(int grados)` | Ordena ir a `grados` (0–180, se satura). No espera a que llegue. | ms estimados hasta que llega y se asienta · `−1` error |
+| `int servo_mover(int grados)` | Lleva el servo a `grados` (0–180, se satura) en rampa, a 1/3 de su velocidad máxima. Bloquea mientras dura la rampa. | ms que faltan para que llegue y se asiente · `−1` error |
 | `int servo_angulo(void)` | Último ángulo ordenado. | grados · `−1` desconocido |
 | `void servo_liberar(void)` | Deja de mandar pulsos: el servo queda suelto. | — |
 
 Constantes a calibrar: `SERVO_PULSO_0_US`, `SERVO_PULSO_180_US` (µs de los extremos) y
-`SERVO_MS_POR_GRADO` (velocidad, para saber cuánto esperar).
+`SERVO_MS_POR_GRADO` (velocidad, para saber cuánto esperar). `SERVO_DIVISOR_VELOCIDAD`
+(3) fija cuánto más lento que su máximo se mueve el servo.
 
 ---
 
 ## 5. Radar — `lib_radar.h`
 
 Un hilo propio barre el servo de 0° a 180° y de vuelta, en pasos de 30°
-(`RADAR_N_ANGULOS` = 7), y dispara el HC-SR04 en cada parada: ~10 lecturas por segundo,
-la frontal cada ~0.6 s. De cada ángulo guarda la última lectura con la **pose del robot
+(`RADAR_N_ANGULOS` = 7), y dispara el HC-SR04 en cada parada: ~5 lecturas por segundo,
+la frontal cada ~1.2 s. De cada ángulo guarda la última lectura con la **pose del robot
 al medir**. Cada lectura frontal con eco actualiza el **tiempo antes de chocar**.
 
 ```c
@@ -256,9 +257,9 @@ robot tiene un solo parlante. Volumen 0–100.
 |---|---|
 | `int lib_audio_init(const char *dir)` | Inicializa el subsistema y escanea `dir` (NULL = `./audio`). Lanza el hilo de reproducción. |
 | `void lib_audio_destroy(void)` | Detiene y libera. |
-| `int lib_audio_scan(void)` | Reescanea el directorio; devuelve el número de pistas. |
+| `int lib_audio_scan(void)` | Reescanea el directorio y sus subcarpetas directas (sin `notify_*`), ordena por nombre; devuelve el número de pistas. |
 | `int lib_audio_get_tracks(LibAudioTrack *out, int max)` | Copia hasta `max` pistas; devuelve cuántas. |
-| `int lib_audio_play(int track_id)` | Reproduce la pista. |
+| `int lib_audio_play(int track_id)` | Reproduce la pista **en bucle** hasta `stop` u otro `play`. |
 | `void lib_audio_pause/resume/stop(void)` | Control de reproducción. |
 | `void lib_audio_set_volume(int v)` / `int lib_audio_get_volume(void)` | Volumen 0–100. |
 | `LibAudioStatus lib_audio_get_status(void)` | `STOPPED` / `PLAYING` / `PAUSED`. |

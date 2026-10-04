@@ -297,6 +297,15 @@ sync
 > Verifique el dispositivo con `lsblk` **antes** de ejecutar `bmaptool`. Escribir sobre
 > el disco equivocado destruye el sistema del host.
 
+La SD queda con tres particiones (`meta-robot/wic/robot-sdimage.wks`), ninguna de más
+de 200 MB:
+
+| Partición | Montaje | Tipo | Tamaño | Contenido |
+|---|---|---|---|---|
+| p1 `boot` | `/boot` | vfat | 130 MiB | firmware, kernel, DTBs |
+| p2 `root` | `/` | ext4 | 180 MiB | rootfs sin las canciones |
+| p3 `canciones` | `/opt/robot/audio/canciones` | ext4 | 180 MiB | la playlist |
+
 ---
 
 ## 9. Primer arranque

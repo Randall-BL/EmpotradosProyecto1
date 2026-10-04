@@ -29,6 +29,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <time.h>
 #include <unistd.h>
 
 static int g_pruebas = 0;
@@ -138,7 +139,15 @@ int main(void) {
     servo_mover(200);
     int p_max = get_servo_pulsewidth(1, SERVO_GPIO);
     verificar("satura en 0 y 180 grados (500 y 2500 us)", p_min == 500 && p_max == 2500);
-    verificar("estima el viaje de media vuelta (> 300 ms)", servo_mover(0) > 300);
+    /* De 180 a 0 a un tercio de la velocidad: 180 * 1.7 ms * 3 = 918 ms. */
+    struct timespec ini, fin;
+    clock_gettime(CLOCK_MONOTONIC, &ini);
+    servo_mover(0);
+    clock_gettime(CLOCK_MONOTONIC, &fin);
+    double ms = (fin.tv_sec - ini.tv_sec) * 1e3 + (fin.tv_nsec - ini.tv_nsec) / 1e6;
+    printf("  media vuelta en %.0f ms\n", ms);
+    verificar("la media vuelta va a 1/3 de la velocidad del servo (~0.9 s)",
+              ms > 850.0 && ms < 1100.0);
     radar_pausar(0);
 
     titulo("LEDs indicadores");
