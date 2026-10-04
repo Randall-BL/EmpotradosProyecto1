@@ -1,0 +1,888 @@
+% ---------------------------------------------------------------------------
+% Proyecto I - Robot Aspiradora Autonomo (Yocto)
+% CE-1113 Sistemas Empotrados - TEC
+%
+% Documento de Diseno (DI): indicadores DI1 a DI4 del enunciado.
+% El detalle tecnico (calculos, listas de materiales, procedimientos) vive en
+% docs/; aqui se resume y se cita.
+%
+% Compilar:  pdflatex documento-diseno.tex   (dos veces)
+% ---------------------------------------------------------------------------
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-noshorthands,es-noquoting]{babel}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{caption}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[hidelinks]{hyperref}
+
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+\captionsetup{font=small,labelfont=bf,width=.92\linewidth}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\emergencystretch=4em
+\setlist{itemsep=1pt,topsep=2pt}
+\renewcommand{\arraystretch}{1.18}
+
+% --- paleta (la misma de hardware-diagramas.tex) ----------------------------
+\definecolor{cLog}{RGB}{31,102,168}
+\definecolor{cPot}{RGB}{193,84,26}
+\definecolor{cGris}{RGB}{120,120,120}
+\definecolor{cFondo}{RGB}{245,247,250}
+\definecolor{cPend}{RGB}{176,32,32}
+
+\tikzset{
+  blk/.style   ={draw,rounded corners=2pt,align=center,inner sep=4pt,
+                 minimum height=9mm,font=\small},
+  blkl/.style  ={blk,draw=cLog,fill=cLog!8},
+  blkp/.style  ={blk,draw=cPot,fill=cPot!8},
+  blkn/.style  ={blk,draw=cGris,fill=black!3},
+  ln/.style    ={-{Latex[length=2mm]},thick},
+}
+
+% --- utilidades -------------------------------------------------------------
+% Identificadores y rutas con guion bajo, sin escaparlos a mano.
+\newcommand{\id}[1]{\texttt{\detokenize{#1}}}
+% Rutas largas en celdas angostas: \path corta en / y en guiones.
+\newcommand{\ruta}{\path}
+% Dato que el grupo debe completar antes de entregar. Buscar "PENDIENTE".
+\newcommand{\pendiente}[1]{\textcolor{cPend}{\textbf{[PENDIENTE: #1]}}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newsavebox{\notabox}
+\newenvironment{nota}
+  {\par\medskip\begin{lrbox}{\notabox}%
+   \begin{minipage}{\dimexpr0.95\linewidth-14pt\relax}\small}
+  {\end{minipage}\end{lrbox}%
+   \begin{center}\setlength{\fboxsep}{7pt}\colorbox{cFondo}{\usebox{\notabox}}\end{center}\medskip}
+
+% ---------------------------------------------------------------------------
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\large\bfseries Instituto Tecnológico de Costa Rica\par}
+\vspace{0.3cm}
+{\large Escuela de Ingeniería en Computadores\par}
+\vspace{0.3cm}
+{\large CE-1113 Sistemas Empotrados\par}
+\vspace{3.2cm}
+{\LARGE\bfseries Documento de Diseño (DI)\par}
+\vspace{0.6cm}
+{\Large Proyecto I --- Sistema embebido a la medida para un robot aspiradora
+autónomo con reproducción de audio y control remoto\par}
+\vspace{3.2cm}
+{\large\bfseries Integrantes\par}
+\vspace{0.2cm}
+{\large \pendiente{nombres y carnés de los cuatro integrantes}\par}
+\vspace{1.6cm}
+{\large\bfseries Profesor\par}
+\vspace{0.2cm}
+{\large Dr.-Ing. Jeferson González Gómez\par}
+\vfill
+{\large Octubre de 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ===========================================================================
+\section{Introducción}
+
+Este documento evidencia el atributo de \textbf{Diseño (DI)} en el Proyecto I
+del curso. Recorre el proceso completo: qué se necesitaba y bajo qué
+restricciones (DI1), qué alternativas se valoraron y con qué criterios (DI2),
+cómo quedó diseñada la alternativa elegida (DI3) y cómo se comprobó que el
+resultado cumple los requerimientos y las consideraciones de seguridad, costo
+e impacto (DI4).
+
+El producto es un robot aspiradora de tracción diferencial sobre una
+Raspberry Pi 4 con una imagen de Linux mínima construida con Yocto (Poky,
+rama \id{scarthgap}). Navega de forma autónoma evadiendo obstáculos, reproduce
+MP3 y se opera desde un panel web que muestra la telemetría y el mapa de
+recorrido en tiempo real. Todo acceso al hardware pasa por una biblioteca
+dinámica propia, \id{librobot.so}, compilada de forma cruzada.
+
+El detalle técnico ---cálculos, listas de materiales, procedimientos de
+verificación y evidencias--- está en la carpeta \id{docs/} del repositorio.
+Aquí se resume y se cita el archivo correspondiente.
+
+% ===========================================================================
+\section{DI1 --- Necesidades y requerimientos}
+
+\subsection{El problema}
+
+Un robot de limpieza coordina en tiempo real subsistemas que compiten por los
+mismos recursos: sensado de proximidad, tracción, audio, red e interfaz de
+usuario. El problema es complejo por tres razones que no se pueden resolver
+por separado:
+
+\begin{itemize}
+  \item \textbf{Recursos acotados.} El enunciado fija un presupuesto de
+        200\,MB de sistema de archivos raíz y 15\,s de arranque. Los GPIO
+        entregan 16\,mA por pin y 50\,mA en total, y no toleran más de
+        3.3\,V.
+  \item \textbf{Dominios eléctricos incompatibles.} La lógica trabaja a
+        3.3\,V y miliamperios; los motores, a 7.4\,V con picos de varias
+        veces su corriente nominal. Deben convivir sin compartir tierra.
+  \item \textbf{Concurrencia.} Navegar, medir, reproducir audio y atender la
+        interfaz ocurren a la vez, y ninguna tarea puede degradar la
+        respuesta ante un obstáculo.
+\end{itemize}
+
+\subsection{Partes interesadas y sus necesidades}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{L{3.1cm}Y}
+\toprule
+\textbf{Parte interesada} & \textbf{Necesidad} \\
+\midrule
+Usuario final & Un robot que limpie sin supervisión, que se pueda tomar a
+mano desde el celular y cuyo estado se entienda de un vistazo (LEDs, sonidos,
+mapa). \\
+Curso y profesor & Cumplimiento verificable del enunciado, y que el equipo
+prestado (Raspberry Pi 4 y su kit) regrese sin daño. \\
+Grupo de trabajo & Un diseño que cuatro personas puedan construir en seis
+semanas, con el inventario disponible y un costo que el grupo pueda asumir. \\
+Terceros en el entorno & Que el robot no represente un riesgo: ni eléctrico,
+ni de incendio, ni por golpear a personas u objetos, ni por exponer la red. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Requerimientos técnicos}
+
+Los requerimientos obligatorios del enunciado se numeran para trazarlos
+después en la validación (sección~\ref{sec:matriz}).
+
+\begin{longtable}{L{1.2cm}L{3.6cm}L{10.2cm}}
+\toprule
+\textbf{Id.} & \textbf{Área} & \textbf{Requerimiento} \\
+\midrule
+\endhead
+R1 & Navegación & Modo autónomo con al menos un algoritmo de cobertura
+reactiva. Ante un obstáculo: detenerse, retroceder y cambiar de dirección. \\
+R2 & Sensado & Al menos dos sensores de proximidad para detección frontal y
+lateral, leídos y procesados en tiempo real. \\
+R3 & Tracción & Dos motores DC con control diferencial (avance, retroceso,
+giros, detención) y velocidad por PWM para giros de radio variable. \\
+R4 & Indicadores & Cuatro LEDs: modo autónomo, modo manual, obstáculo y
+sistema encendido. \\
+R5 & Audio & Reproducir MP3 locales de forma concurrente con la navegación. \\
+R6 & Audio & Desde la interfaz: elegir canción, reproducir, pausar, detener y
+ajustar el volumen. \\
+R7 & Audio & Salida directa desde el robot, con parlante a bordo. \\
+R8 & Audio & Sonidos de notificación en cuatro eventos: inicio del sistema,
+inicio del modo autónomo, obstáculo y cambio a manual. \\
+R9 & Control remoto & Conmutar entre modo autónomo y manual; en manual, los
+controles direccionales mandan los motores. \\
+R10 & Control remoto & Panel con modo activo, controles, sensores en tiempo
+real, control de audio, estado de los LEDs y mapa. \\
+R11 & Mapa & Grilla 2D incremental (visitada, obstáculo, desconocida) a
+partir de los sensores y la odometría, visible en tiempo real. \\
+R12 & Seguridad & Pantalla de inicio de sesión con al menos un usuario y un
+protocolo de seguridad mínimo. \\
+R13 & Arranque & Inicio automático con una unidad \id{systemd} propia,
+\id{Restart=on-failure} y sin interfaz gráfica local. \\
+R14 & Biblioteca & Biblioteca dinámica propia que encapsule motores, sensores,
+LEDs y audio; el servidor la usa de forma exclusiva. \\
+R15 & Desarrollo & Todo el software se compila de forma cruzada en el host. \\
+R16 & Sistema operativo & Imagen mínima con Yocto, solo con los paquetes
+necesarios y cada uno justificado. \\
+R17 & Construcción & CMake o Autotools, generando el paquete estándar. \\
+R18 & Receta & Al menos una receta \id{.bb} propia; la imagen se reproduce
+con \id{bitbake <imagen>} sin pasos manuales. \\
+R19 & Eficiencia & Medir y reportar rootfs, tiempo de arranque, RAM y CPU en
+operación normal. Referencia: rootfs $\leq$ 200\,MB y arranque $\leq$ 15\,s. \\
+\bottomrule
+\end{longtable}
+
+Los tres requerimientos opcionales (detección de desnivel, notificación de
+fin de ciclo y playlist persistente) se dejaron fuera del alcance para
+concentrar el tiempo en el núcleo obligatorio.
+
+\subsection{Salud y seguridad pública}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{L{3.6cm}Y}
+\toprule
+\textbf{Riesgo} & \textbf{Requerimiento que se deriva} \\
+\midrule
+Incendio o fuga térmica de las celdas de Li-Ion & BMS con protección de
+sobrecarga, sobredescarga, cortocircuito y balanceo; fusible en serie con el
+pack; nunca alimentar la Raspberry directo de la celda. \\
+Daño al equipo prestado & Aislamiento óptico entre la lógica y la etapa de
+potencia, con tierras separadas; ninguna señal de 5\,V llega a un GPIO. \\
+Golpes a personas u objetos & Freno automático ante un obstáculo también en
+modo manual; masa menor a 1.5\,kg; los motores quedan frenados en reposo y
+durante el arranque. \\
+Cables en las llantas & Ruteo fijo del cableado, sin tramos sueltos a menos
+de 1\,cm de una llanta. \\
+Acceso no autorizado por la red & Inicio de sesión obligatorio; el demonio
+de GPIO solo escucha en la interfaz local; sin acceso remoto sin contraseña
+en la imagen de entrega. \\
+Nivel sonoro & Volumen ajustable desde la interfaz y potencia máxima acotada
+por el divisor de entrada del amplificador. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Costos}
+
+La Raspberry Pi 4 y su kit los presta el curso, de modo que el costo para el
+grupo es el del modelo físico. La tabla es la estimación con que se planeó la
+compra, por bloques.
+
+\begin{center}
+\begin{tabular}{L{6.6cm}C{3.2cm}}
+\toprule
+\textbf{Bloque} & \textbf{Estimación (USD)} \\
+\midrule
+Alimentación portátil (pack 2S, BMS, reguladores, fusible, interruptor) & 25--45 \\
+Circuitería y sensores (optoacopladores, servo, pasivos, placas) & 9--17 \\
+Etapa de audio (PAM8403, parlante, filtro) & 5--12 \\
+Chasis y acabado & 10--25 \\
+\midrule
+\textbf{Total del robot} & \textbf{49--99} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\pendiente{sustituir la estimación por el costo real, con las facturas de la
+compra}
+
+El requerimiento que se fijó fue mantenerse dentro de ese intervalo y
+aprovechar primero lo que el grupo ya tenía: un sensor ultrasónico, un
+MPU-6050 y un driver L298N.
+
+\subsection{Impacto ambiental}
+
+\begin{itemize}
+  \item \textbf{Baterías.} Las celdas de Li-Ion son el componente de mayor
+        impacto. Se exige que sean recargables y desmontables, y que al final
+        de su vida se entreguen a un gestor de residuos electrónicos.
+  \item \textbf{Residuos electrónicos.} El montaje debe permitir reutilizar
+        los módulos: conectores desconectables y nada pegado de forma
+        permanente a la Raspberry Pi, que se devuelve al curso.
+  \item \textbf{Consumo.} Menos consumo es más autonomía con el mismo pack y
+        menos ciclos de carga: se prefieren reguladores conmutados y
+        amplificación clase D.
+  \item \textbf{Compras.} Reutilizar el inventario del grupo antes que
+        comprar componentes nuevos.
+\end{itemize}
+
+\subsection{Recursos disponibles y restricciones}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{L{3.6cm}Y}
+\toprule
+\textbf{Recurso} & \textbf{Disponibilidad} \\
+\midrule
+Plataforma & Raspberry Pi 4 y kit, prestados por el curso. \\
+Inventario del grupo & Un HC-SR04, un MPU-6050 (módulo GY-521) y un driver
+L298N de doble puente. \\
+Personas y tiempo & Cuatro integrantes, del 25 de agosto al 6 de octubre de
+2026. \\
+Host de construcción & Laptop de 4 núcleos y 7\,GB de RAM, por debajo de lo
+recomendado para Yocto. \\
+Software de partida & Un proyecto de referencia con licencia MIT, del que
+derivan parte de la capa y del código (atribuido en \id{NOTICE.md}). \\
+Herramientas & Multímetro, cautín, y el Toolchain-SDK generado por el propio
+proyecto. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+De ahí salen dos restricciones que marcaron el diseño: el hardware llegó
+tarde respecto del software, así que hacía falta poder desarrollar y probar
+sin él; y el host de construcción era el cuello de botella de cada iteración
+de la imagen.
+
+% ===========================================================================
+\section{DI2 --- Valoración de alternativas}
+
+\subsection{Método}
+
+Las decisiones de mayor peso se evaluaron con una matriz ponderada. Cada
+alternativa recibe una nota de 1 (peor) a 5 (mejor) en cuatro factores:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{L{2.4cm}C{1.4cm}Y}
+\toprule
+\textbf{Factor} & \textbf{Peso} & \textbf{Qué mide} \\
+\midrule
+Técnico & 40\,\% & Cumplimiento del requerimiento, desempeño, uso de GPIO y
+riesgo de integración. \\
+Económico & 25\,\% & Costo de compra y disponibilidad local; cuánto del
+inventario se aprovecha. \\
+Ambiental & 15\,\% & Cantidad de componentes, consumo y reutilización. \\
+Social & 20\,\% & Seguridad de las personas y del equipo prestado. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+El factor técnico pesa más porque una alternativa que no cumple el
+requerimiento no es una alternativa. El social pesa más que el ambiental
+porque el enunciado hace al grupo responsable del equipo prestado.
+
+\subsection{Detección de obstáculos}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{Y C{1.25cm}C{1.4cm}C{1.4cm}C{1.1cm}C{1.2cm}}
+\toprule
+\textbf{Alternativa} & \textbf{Téc.} & \textbf{Econ.} & \textbf{Amb.} &
+\textbf{Soc.} & \textbf{Total} \\
+\midrule
+Tres HC-SR04 fijos & 3 & 3 & 3 & 4 & 3.20 \\
+\textbf{Un HC-SR04 sobre un servo (radar)} & 4 & 4 & 4 & 3 & \textbf{3.80} \\
+Sensores infrarrojos & 2 & 4 & 3 & 2 & 2.65 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Los tres sensores fijos dan una lectura frontal rápida ($\approx$ 16\,Hz),
+pero solo tres direcciones, ocupan seis GPIO, obligan a secuenciar los
+disparos para evitar ecos cruzados y exigían comprar dos sensores más. Los
+infrarrojos económicos tienen poco alcance, dependen del color de la
+superficie y de la luz ambiente, y no entregan una distancia útil para el
+mapa.
+
+El radar mide siete direcciones con tres GPIO y el sensor que el grupo ya
+tenía. Su debilidad es que mira al frente una vez cada 1.2\,s; por eso su
+nota social es menor. Esa debilidad se atacó en el diseño con la estimación
+del tiempo antes de chocar (sección~\ref{sec:creativo}).
+
+\subsection{Alimentación}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{Y C{1.25cm}C{1.4cm}C{1.4cm}C{1.1cm}C{1.2cm}}
+\toprule
+\textbf{Alternativa} & \textbf{Téc.} & \textbf{Econ.} & \textbf{Amb.} &
+\textbf{Soc.} & \textbf{Total} \\
+\midrule
+Una celda (1S) con elevador a 5\,V & 2 & 4 & 4 & 2 & 2.80 \\
+\textbf{Pack 2S con BMS y reductores} & 5 & 3 & 3 & 5 & \textbf{4.20} \\
+Powerbank USB y batería aparte para motores & 3 & 3 & 2 & 4 & 3.05 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Con una celda, entregar 15\,W a 5\,V pide cerca de 4.5\,A de entrada, y más
+de 5\,A con la celda descargada: los elevadores MT3608 y XL6009 no lo
+sostienen, y una caída de tensión corrompe la microSD. El powerbank resuelve
+la lógica pero obliga a un segundo pack para los motores y deja de ser una
+sola fuente regulada por separado. Con 2S, un reductor trabaja con holgura en
+todo el rango de descarga (6.0--8.4\,V) y los motores se alimentan directo.
+
+\subsection{Salida de audio}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{Y C{1.25cm}C{1.4cm}C{1.4cm}C{1.1cm}C{1.2cm}}
+\toprule
+\textbf{Alternativa} & \textbf{Téc.} & \textbf{Econ.} & \textbf{Amb.} &
+\textbf{Soc.} & \textbf{Total} \\
+\midrule
+Jack de 3.5\,mm con LM386 & 3 & 4 & 3 & 3 & 3.25 \\
+\textbf{PWM por GPIO 18 con PAM8403} & 4 & 5 & 4 & 4 & \textbf{4.25} \\
+DAC I2S (MAX98357A) & 4 & 3 & 4 & 4 & 3.75 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+El LM386 es clase AB, rinde cerca del 50\,\% y pide ocho componentes
+discretos para dar 0.5\,W. El DAC I2S da el mejor audio, pero es más caro,
+más difícil de conseguir localmente y cambia la configuración de ALSA. El
+PAM8403 es un módulo armado, clase D ($\approx$ 85\,\%), que entrega 1.3\,W
+sobre 8\,$\Omega$ con un filtro de tres pasivos.
+
+\subsection{Odometría}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{Y C{1.25cm}C{1.4cm}C{1.4cm}C{1.1cm}C{1.2cm}}
+\toprule
+\textbf{Alternativa} & \textbf{Téc.} & \textbf{Econ.} & \textbf{Amb.} &
+\textbf{Soc.} & \textbf{Total} \\
+\midrule
+Solo el modelo de los motores & 2 & 5 & 5 & 3 & 3.40 \\
+Encoders ópticos de rueda & 4 & 3 & 3 & 3 & 3.40 \\
+\textbf{MPU-6050 fusionado con el modelo} & 4 & 5 & 5 & 4 & \textbf{4.40} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Estimar la posición solo con el tiempo y el ciclo de trabajo deja derivar el
+rumbo en cuanto las dos llantas giran distinto, y el rumbo es lo que más
+deforma el mapa. Los encoders miden bien la distancia, pero había que
+comprarlos y montarlos en motores que no traen eje para ello. El MPU-6050 ya
+estaba en el inventario: su giroscopio da el rumbo y su acelerómetro la
+dinámica de la velocidad, que además habilita el tiempo antes de chocar.
+
+\subsection{Otras decisiones}
+
+\begin{longtable}{L{2.6cm}L{3.8cm}L{8.6cm}}
+\toprule
+\textbf{Decisión} & \textbf{Elegida} & \textbf{Alternativas y motivo} \\
+\midrule
+\endhead
+Aislamiento & Cinco PC817 & El DRV8871 acepta 3.3\,V pero comparte tierra:
+no aísla y se descartó. El ADuM1401 aísla cuatro canales en un chip, pero es
+más caro y difícil de conseguir. \\
+Acceso a GPIO & \id{pigpio} & \id{libgpiod} y WiringPi no generan PWM ni
+pulsos de servo con temporización estable; \id{pigpio} lo hace por DMA, mide
+el eco en microsegundos y da el bus I2C por el mismo demonio. \\
+Servidor web & \id{libmicrohttpd} & nginx o lighttpd son un proceso aparte
+con CGI que mantener; un servidor en Python suma unos 40\,MB al rootfs. \\
+Decodificador MP3 & \id{mpg123} & GStreamer trae decenas de MB de plugins
+para el mismo resultado. \\
+Imagen base & \id{core-image-minimal} & \id{core-image-base} y
+\id{full-cmdline} arrastran utilidades y servicios que el robot no usa. \\
+Chasis & Circular & El rectangular es más fácil de cortar, pero se traba en
+las esquinas al girar; el circular rota sobre su eje sin barrer área extra. \\
+Algoritmo de cobertura & Aleatorio con rebote & Espiral y zig-zag dependen
+de una odometría precisa; el rebote tolera el error acumulado y saca partido
+de las siete direcciones del radar. \\
+\bottomrule
+\end{longtable}
+
+% ===========================================================================
+\section{DI3 --- Diseño de la alternativa seleccionada}
+
+\subsection{Arquitectura de hardware}
+
+Un pack 2S alimenta dos rieles regulados por separado. Las cinco señales que
+cruzan del dominio lógico al de potencia ---las cuatro entradas del puente H
+y la del servo--- lo hacen por optoacopladores, y las dos tierras no se
+tocan en ningún punto.
+
+\begin{figure}[h]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}
+  \node[blkn] (bat)  at (0,0)       {Pack 2S 18650\\7.4\,V};
+  \node[blkn] (bms)  at (3.1,0)     {BMS 2S\\fusible 5\,A};
+
+  \node[blkl] (buck) at (6.5,1.7)   {Buck MP2307\\5\,V / 3\,A};
+  \node[blkl] (pi)   at (10.0,1.7)  {Raspberry Pi 4\\\texttt{robot-image}};
+  \node[blkl] (per)  at (14.0,1.7)  {HC-SR04 $\cdot$ MPU-6050\\4 LEDs $\cdot$ PAM8403};
+
+  \node[blkn] (opto) at (10.0,0)    {5 $\times$ PC817};
+
+  \node[blkp] (l298) at (10.0,-1.7) {L298N\\(\texttt{ENA}/\texttt{ENB} con jumper)};
+  \node[blkp] (mot)  at (14.0,-1.7) {2 motores DC};
+  \node[blkp] (bk2)  at (6.5,-3.4)  {Buck MP2307\\5\,V (servo)};
+  \node[blkp] (srv)  at (14.0,-3.4) {Servo del radar};
+
+  \draw[ln] (bat) -- (bms);
+  \draw[ln] (bms.east) -- ++(0.5,0) |- (buck.west);
+  \draw[ln] (bms.east) -- ++(0.5,0) |- (l298.west);
+  \draw[ln] (bms.east) -- ++(0.5,0) |- (bk2.west);
+  \draw[ln] (buck) -- (pi);
+  \draw[ln] (pi) -- (per);
+  \draw[ln,dashed] (pi) -- (opto);
+  \draw[ln,dashed] (opto) -- node[right,font=\scriptsize]{\texttt{IN1}--\texttt{IN4}} (l298);
+  \draw[ln,dashed] (opto.east) -- (16.2,0) |- node[pos=0.25,right,font=\scriptsize]{pulsos} (srv.east);
+  \draw[ln] (l298) -- (mot);
+  \draw[ln] (bk2) -- (srv);
+
+  \begin{scope}[on background layer]
+    \node[draw=cLog,dashed,rounded corners,fit=(buck)(pi)(per),inner sep=7pt,
+          label={[font=\scriptsize\bfseries,text=cLog]above:Dominio lógico --- GND\_LOG}] {};
+    \node[draw=cPot,dashed,rounded corners,fit=(l298)(mot)(bk2)(srv),inner sep=7pt,
+          label={[font=\scriptsize\bfseries,text=cPot]below:Dominio de potencia --- GND\_POT}] {};
+  \end{scope}
+\end{tikzpicture}}
+\caption{Arquitectura de hardware. Las líneas punteadas son señales que
+cruzan la barrera óptica. Los esquemas eléctricos completos están en
+\texttt{hardware-diagramas.pdf}.}
+\end{figure}
+
+\paragraph{Alimentación.} Dos celdas 18650 en serie con BMS de balanceo y un
+fusible de 5\,A. El riel lógico sale de un reductor MP2307 ajustado a 5.0\,V
+(3\,A, $\approx$ 93\,\% de eficiencia) y alimenta la Raspberry Pi por USB-C,
+el sensor, el MPU-6050, los LEDs y el amplificador: 2.0\,A típicos y 3.0\,A
+de pico. El riel de potencia lleva los 7.4\,V directo al L298N. El servo
+tiene su propio reductor de 5\,V en el dominio de potencia, porque sus picos
+de 700\,mA no caben ni en el riel lógico ni en el regulador interno del
+L298N. Autonomía estimada: 60 minutos. Detalle en
+\id{docs/hardware-alimentacion.md}.
+
+\paragraph{Aislamiento.} Un PC817 por señal. Resistencia de entrada de
+390\,$\Omega$, que fija 5\,mA por canal: con cuatro canales son 20\,mA, y
+junto con los LEDs y el servo el conector entrega 39\,mA de los 50\,mA que
+admite. El L298N lleva los jumpers \id{ENA} y \id{ENB} puestos y se controla
+solo con \id{IN1}--\id{IN4}, lo que ahorra dos optoacopladores y 10\,mA.
+Detalle en \id{docs/hardware-aislamiento.md}.
+
+\paragraph{Sensado.} Un HC-SR04 sobre un servo de 180° en el borde frontal,
+con el eje 10\,cm por delante del centro. El pin \id{ECHO} entrega 5\,V y
+pasa por un divisor de 1\,k$\Omega$ y 2\,k$\Omega$ (3.33\,V) antes del GPIO.
+El MPU-6050 va entre las dos llantas, alimentado a 3.3\,V para que sus
+resistencias de pull-up nunca pongan 5\,V en el bus I2C. Detalle en
+\id{docs/hardware-sensores.md}.
+
+\paragraph{Indicadores y audio.} Cuatro LEDs de colores distintos a 5\,mA,
+con la resistencia calculada para cada color. El audio sale por PWM en el
+GPIO 18 (overlay \id{audremap}), pasa por un filtro RC con corte en 19\,kHz y
+entra al PAM8403, alimentado del riel lógico para que el ruido de los motores
+no llegue al parlante.
+
+\paragraph{Modelo físico.} Chasis circular de 22--25\,cm en dos niveles, con
+la batería al centro y abajo para bajar el centro de gravedad, el eje de
+tracción ligeramente adelante del centro y una rueda loca atrás. Detalle en
+\id{docs/hardware-chasis.md}.
+
+\subsection{Arquitectura de software}
+
+\begin{figure}[h]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=5mm]
+  \tikzset{capa/.style={blk,minimum width=13.2cm},
+           media/.style={blk,minimum width=6.4cm}}
+  \node[capa,blkn] (web) {Navegador del celular o la PC: \texttt{login.html} y \texttt{dashboard.html}};
+  \node[capa,blkl,below=of web] (srv) {\textbf{\texttt{robot-server}}: API REST $\cdot$ autenticación $\cdot$ hilo de navegación (10\,Hz) $\cdot$ mapa de 31 $\times$ 31};
+  \node[capa,blkl,below=of srv] (lib) {\textbf{\texttt{librobot.so.1}}: motores $\cdot$ servo $\cdot$ radar (hilo) $\cdot$ MPU-6050 $\cdot$ odometría (hilo, 50\,Hz) $\cdot$ LEDs $\cdot$ audio (hilo)};
+  \node[media,blkn,below=of lib.south west,anchor=north west] (pig) {\texttt{pigpiod}: GPIO, PWM y pulsos por DMA, I2C};
+  \node[media,blkn,below=of lib.south east,anchor=north east] (snd) {\texttt{mpg123} y ALSA};
+  \node[capa,blkn,below=24mm of lib] (ker) {Linux 6.6 y \texttt{systemd} --- imagen \texttt{robot-image} (Yocto \texttt{scarthgap})};
+  \node[capa,blkp,below=of ker] (hw) {Raspberry Pi 4 $\cdot$ L298N $\cdot$ servo $\cdot$ HC-SR04 $\cdot$ MPU-6050 $\cdot$ LEDs $\cdot$ PAM8403};
+
+  \draw[ln] (web) -- node[right,font=\scriptsize]{HTTP en el puerto 8080, JSON, sondeo cada 500\,ms} (srv);
+  \draw[ln] (srv) -- node[right,font=\scriptsize]{única vía de acceso al hardware} (lib);
+  \draw[ln] (lib.south -| pig) -- (pig);
+  \draw[ln] (lib.south -| snd) -- (snd);
+  \draw[ln] (pig) -- (pig |- ker.north);
+  \draw[ln] (snd) -- (snd |- ker.north);
+  \draw[ln] (ker) -- (hw);
+\end{tikzpicture}}
+\caption{Arquitectura de software por capas.}
+\end{figure}
+
+\paragraph{Sistema operativo.} La imagen \id{robot-image} parte de
+\id{core-image-minimal} y agrega solo lo que el robot usa; cada paquete está
+justificado en \id{docs/paquetes.md}. La capa propia \id{meta-robot} aporta
+las recetas de \id{librobot}, \id{robot-server}, \id{pigpio}, la
+configuración de ALSA y de WiFi, los ajustes de \id{config.txt} y la tabla
+de particiones. La música va en una tercera partición, de modo que ninguna
+supera los 200\,MB.
+
+\paragraph{Biblioteca.} \id{librobot} es la única vía de acceso al hardware.
+Una llamada, \id{robot_init()}, abre la sesión e inicia dos hilos propios: la
+odometría a 50\,Hz y el barrido del radar. El audio corre en un tercer hilo.
+La referencia completa está en \id{docs/api-librobot.md}.
+
+\paragraph{Servidor.} \id{robot-server} sirve la interfaz, expone la API y
+corre el hilo de navegación a 10\,Hz. No espera al radar: lee la última
+lectura de cada ángulo cuando la necesita. Las contraseñas se guardan como
+resumen SHA-256 y la sesión viaja en una cookie \id{HttpOnly} que caduca a
+los 10 minutos de inactividad.
+
+\paragraph{Arranque.} Dos unidades \id{systemd}, habilitadas desde las
+recetas. \id{robot-server} declara \id{Requires=pigpiod.service} y
+\id{Restart=on-failure} con un límite de cinco reintentos por minuto.
+
+\subsection{Navegación}
+
+El robot avanza hasta que detecta un obstáculo por cualquiera de dos vías:
+el tiempo antes de chocar baja de 1.2\,s, o alguna lectura del cono frontal
+(60°, 90°, 120°) baja de 20\,cm. Entonces se detiene, suena el aviso y
+enciende el LED rojo. En modo autónomo sigue la evasión:
+
+\begin{enumerate}
+  \item retrocede medio segundo;
+  \item espera un barrido completo del radar, ya quieto;
+  \item elige el rumbo con más espacio entre las seis direcciones que no son
+        el frente; las que quedan a menos de 25\,cm de la mejor compiten al
+        azar, que es la parte aleatoria del rebote;
+  \item gira en lazo cerrado sobre el rumbo del giroscopio hasta cubrir el
+        ángulo elegido, no durante un tiempo fijo.
+\end{enumerate}
+
+En modo manual la misma detección actúa como freno de seguridad.
+
+\subsection{Elementos propios del diseño}
+\label{sec:creativo}
+
+\begin{itemize}
+  \item \textbf{Tiempo antes de chocar.} Cada lectura frontal se congela con
+        el avance acumulado en ese instante. Entre dos lecturas, la distancia
+        se proyecta con lo que el robot avanzó y se divide entre la velocidad
+        actual: $t = (d - \Delta\text{avance}) / v$. La cuenta regresiva
+        sigue bajando aunque el sensor esté mirando a un lado, y compensa la
+        baja frecuencia de la lectura frontal del radar.
+  \item \textbf{Fusión de la velocidad.} Un filtro complementario deja pasar
+        la dinámica rápida del acelerómetro y toma del modelo de los motores
+        la tendencia lenta ($\tau = 1$\,s); con los motores detenidos la
+        velocidad se fuerza a cero. Así el sesgo del acelerómetro no se
+        acumula.
+  \item \textbf{El canal del servo no invierte.} Los cuatro canales del
+        puente H van en emisor común, que invierte la señal, y la inversión
+        se compensa en un único punto de \id{lib_motors.c}. Para el servo eso
+        no sirve: en reposo el GPIO queda en bajo, y un canal inversor le
+        entregaría un nivel alto permanente que lo llevaría contra su tope.
+        Su canal se armó en seguidor de emisor, que no invierte.
+  \item \textbf{El reposo es seguro.} Con los GPIO en bajo, las cuatro
+        entradas del L298N quedan en alto por sus resistencias: con el puente
+        habilitado eso es freno, no movimiento.
+  \item \textbf{Desarrollo sin hardware.} Un simulador reemplaza a
+        \id{pigpiod} por un robot virtual en una sala de 4 $\times$ 4\,m, sin
+        tocar una línea de la biblioteca. Una máquina \id{qemuarm64-robot}
+        con el mismo \emph{tune} Cortex-A72 arranca la imagen completa con
+        los mismos binarios de espacio de usuario que corren en la Pi.
+  \item \textbf{Imagen reproducible sin secretos.} Si falta el archivo de
+        credenciales de WiFi, la receta usa la plantilla y avisa: un clon
+        limpio produce la imagen sin pasos manuales, como exige R18.
+\end{itemize}
+
+\subsection{Cómo responde el diseño a seguridad, costo e impacto}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{L{2.6cm}Y}
+\toprule
+\textbf{Aspecto} & \textbf{Respuesta del diseño} \\
+\midrule
+Seguridad & BMS, fusible, dos rieles, aislamiento óptico con tierras
+separadas, divisor en \id{ECHO}, MPU-6050 a 3.3\,V, freno en reposo y freno
+automático en modo manual, \id{pigpiod} con \id{-l} (solo interfaz local),
+inicio de sesión obligatorio. \\
+Costo & Se reutilizó el sensor, el MPU-6050 y el L298N del grupo. El radar
+evitó comprar dos sensores; el MPU-6050 evitó los encoders; el PAM8403
+reemplazó ocho componentes discretos. \\
+Ambiental & Reguladores conmutados y amplificador clase D; módulos con
+conectores desconectables y reutilizables; celdas recargables y
+desmontables. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ===========================================================================
+\section{DI4 --- Validación del diseño final}
+
+\subsection{Estrategia}
+
+La validación se hizo en tres niveles, de menor a mayor costo de cada
+iteración:
+
+\begin{enumerate}
+  \item \textbf{Simulador en el host.} \id{sim/prueba_librobot} ejercita
+        cada módulo de la biblioteca contra el robot virtual y compara con la
+        verdad del mundo simulado: 47 comprobaciones.
+  \item \textbf{Emulación ARM.} El mismo programa, compilado con el
+        Toolchain-SDK, corre bajo \id{qemu-aarch64}; y la imagen completa
+        arranca en la máquina \id{qemuarm64-robot}.
+  \item \textbf{Target.} La imagen en la Raspberry Pi 4 con el robot armado,
+        siguiendo los procedimientos de verificación de \id{docs/}.
+\end{enumerate}
+
+\subsection{Matriz de cumplimiento}
+\label{sec:matriz}
+
+\begin{longtable}{L{0.8cm}L{6.3cm}L{1.9cm}L{5.4cm}}
+\toprule
+\textbf{Id.} & \textbf{Cómo se validó} & \textbf{Resultado} & \textbf{Evidencia} \\
+\midrule
+\endhead
+R1 & Dos minutos en modo autónomo sobre el simulador: 18 evasiones y ningún
+choque. Prueba de campo en un área delimitada. & Cumple &
+\ruta{docs/navegacion-radar.md} \\
+R2 & Barrido completo contra el mundo simulado: los siete ángulos a menos de
+2\,cm de la distancia real, a 5 lecturas por segundo. & Cumple &
+\ruta{sim/prueba_librobot.c} \\
+R3 & Avance, retroceso, giros y saturación verificados en el simulador;
+sentido de giro confirmado con el robot elevado. & Cumple &
+\ruta{docs/evidencias/ejecucion-cruzada-qemu.md} \\
+R4 & Cada LED cambia de estado al ordenarlo y sigue al modo activo. & Cumple
+& \ruta{docs/evidencias/servidor-web.md} \\
+R5 & Reproducción en un hilo propio mientras el hilo de navegación corre. &
+Cumple & \ruta{lib/lib_audio.c} \\
+R6 & Listar, reproducir, pausar, detener y volumen por HTTP. & Cumple &
+\ruta{sim/prueba_api.sh} \\
+R7 & Tono de prueba y sonido de evento por el parlante del robot. & Cumple &
+\ruta{docs/hardware-sensores.md} \\
+R8 & Los cuatro eventos disparan su sonido; el aviso pausa la música y la
+reanuda. & Cumple & \ruta{docs/api-librobot.md} \\
+R9 & Cambio de modo y movimiento manual por HTTP; los controles manuales se
+bloquean en autónomo. & Cumple & \ruta{docs/evidencias/servidor-web.md} \\
+R10 & \id{/api/status} entrega modo, sensores, LEDs, audio y mapa en una sola
+consulta, cada 500\,ms. & Cumple & \ruta{docs/evidencias/servidor-web.md} \\
+R11 & La grilla crece en tiempo real: de 79 a 85 celdas visitadas en 6\,s. &
+Cumple & \ruta{docs/evidencias/servidor-web.md} \\
+R12 & Credenciales inválidas y consultas sin sesión devuelven 401. & Cumple
+& \ruta{docs/evidencias/servidor-web.md} \\
+R13 & Tras un \id{kill -9}, el servicio vuelve con otro PID y
+\id{NRestarts=1}. & Cumple & \ruta{docs/evidencias/systemd-reinicio.md} \\
+R14 & El servidor declara \id{NEEDED librobot.so.1} y no toca GPIO. & Cumple
+& \ruta{docs/evidencias/binarios-target.md} \\
+R15 & Los logs muestran \id{aarch64-poky-linux-gcc}; los binarios son ELF
+ARM aarch64 y no ejecutan en el host. & Cumple & \ruta{docs/evidencias/} \\
+R16 & Imagen sobre \id{core-image-minimal}; cada paquete agregado, listado y
+justificado. & Cumple & \ruta{docs/paquetes.md} \\
+R17 & Ambas recetas heredan \id{cmake}; la biblioteca se empaqueta en
+\id{librobot} y \id{librobot-dev}. & Cumple & \ruta{meta-robot/} \\
+R18 & \id{bitbake robot-image} produce la imagen desde un clon limpio. &
+Cumple & \ruta{docs/yocto-setup.md} \\
+R19 & Ver la sección~\ref{sec:metricas}. & Ver tabla & \ruta{docs/metricas.md} \\
+\bottomrule
+\end{longtable}
+
+\pendiente{R3: confirmar el estado final de la velocidad variable; ver el
+hallazgo 3 de la sección~\ref{sec:hallazgos}}
+
+\subsection{Validación de la seguridad}
+
+Antes de conectar la Raspberry Pi se ejecutaron, en orden, los procedimientos
+de cinco pasos de \id{docs/hardware-aislamiento.md} y
+\id{docs/hardware-alimentacion.md}. Los criterios de aceptación:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{Y L{5.6cm}}
+\toprule
+\textbf{Verificación} & \textbf{Criterio} \\
+\midrule
+Continuidad entre \id{GND_LOG} y \id{GND_POT}, todo desenergizado &
+Circuito abierto ($>$ 1\,M$\Omega$) \\
+Diferencia de tensión entre las dos celdas & Menor a 0.05\,V \\
+Salida del reductor de 5\,V en vacío y con 2\,A de carga &
+5.00 $\pm$ 0.10\,V y $\geq$ 4.90\,V \\
+Salida del divisor de \id{ECHO} al disparar el sensor & 3.3\,V como máximo \\
+Entradas del L298N con los optoacopladores en reposo &
+$\approx$ 5\,V: motores frenados \\
+Salida del canal del servo con el GPIO en bajo & $\approx$ 0\,V \\
+\id{vcgencmd get_throttled} navegando con audio & \id{0x0} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\pendiente{anotar los valores medidos en cada verificación}
+
+\subsection{Validación de la eficiencia}
+\label{sec:metricas}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{L{2.9cm}C{1.9cm}C{3.1cm}Y}
+\toprule
+\textbf{Métrica} & \textbf{Referencia} & \textbf{Medido} & \textbf{Método} \\
+\midrule
+Rootfs & $\leq$ 200\,MB & 129\,MB & \id{du} sobre el rootfs de la imagen
+construida. La partición raíz es de tamaño fijo, 180\,MiB. \\
+Tiempo de arranque & $\leq$ 15\,s & 17\,s & Instante en que
+\id{robot-server} queda activo, en la Raspberry Pi 4 con WiFi. \\
+RAM en operación & --- & \pendiente{medir} & \id{/proc/meminfo} y
+\id{VmRSS} de cada proceso. \\
+CPU en operación & --- & \pendiente{medir} & \id{/proc/stat} durante 60\,s. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+El rootfs queda en el 65\,\% del presupuesto. El arranque excede la
+referencia por 2\,s: \id{robot-server} espera a que la red esté operativa
+(\id{network-online.target}), y la asociación WPA2 más la concesión DHCP
+dominan ese tiempo. Se considera una desviación justificada, porque sin red
+el panel de control no es alcanzable y el servicio no estaría operativo en
+el sentido del enunciado. El método completo está en \id{docs/metricas.md}.
+
+\subsection{Validación del costo y del impacto}
+
+\begin{itemize}
+  \item \textbf{Costo.} \pendiente{comparar el costo real con la estimación
+        de 49--99 USD.}
+  \item \textbf{Impacto ambiental.} Todos los módulos quedaron con conectores
+        desconectables; la Raspberry Pi se devuelve sin soldaduras ni
+        adhesivos; el pack es recargable y desmontable.
+\end{itemize}
+
+\subsection{Hallazgos de la validación y acciones correctivas}
+\label{sec:hallazgos}
+
+Validar no fue solo confirmar: varias pruebas cambiaron el diseño.
+
+\begin{longtable}{L{0.5cm}L{4.4cm}L{4.9cm}L{4.7cm}}
+\toprule
+& \textbf{Hallazgo} & \textbf{Causa} & \textbf{Acción} \\
+\midrule
+\endhead
+1 & El límite de reintentos de \id{systemd} no existía. &
+\id{StartLimitIntervalSec} estaba en \id{[Service]}; desde systemd 229 va en
+\id{[Unit]} y en otro lugar se ignora en silencio. & Se movió a \id{[Unit]}.
+Lo detectó \id{systemd-analyze verify}. \\
+2 & Con los optoacopladores, los motores girarían al revés. & El PC817 en
+emisor común invierte la señal. & Compensación en un único punto de
+\id{lib_motors.c}; el simulador invierte igual que la placa, así que quitarla
+hace fallar la prueba. \\
+3 & Con PWM de 1\,kHz los motores no se movieron. & El PC817 con pull-up de
+4.7\,k$\Omega$ tarda decenas de microsegundos en apagarse; sumado a los 2\,V
+que cae el L298N, a ciclos medios el motor no alcanza su tensión de arranque.
+& \pendiente{describir la corrección aplicada: PWM a 100\,Hz, pull-up de
+1\,k$\Omega$ o velocidad fija} \\
+4 & El servidor arrancaba a los 130\,s. & \id{eth0} sin cable y dos clientes
+DHCP sobre \id{wlan0} agotaban la espera de red. & Ethernet marcada como no
+requerida y un solo cliente DHCP: 17\,s. \\
+5 & El vaivén del servo sacudía el sensor y el chasis. & El servo iba a su
+velocidad máxima entre paradas. & Rampa a un tercio de la velocidad, con un
+pulso intermedio cada 20\,ms. \\
+6 & El \emph{build} colgaba el host al 67\,\%. & Tres compilaciones pesadas
+a la vez agotaron 7\,GB de RAM y el swap. & Dos hilos y regulación por
+presión de recursos (\id{BB_PRESSURE_MAX_MEMORY}). \\
+\bottomrule
+\end{longtable}
+
+\subsection{Limitaciones conocidas}
+
+\begin{itemize}
+  \item El radar usa un solo sensor físico para cubrir las detecciones
+        frontal y lateral. El diseño deja libres los GPIO 22 y 10 para un
+        segundo HC-SR04 fijo al frente.
+  \item Sin encoders, la distancia recorrida depende de la calibración del
+        modelo de los motores; el mapa sirve para la sesión, no como posición
+        absoluta.
+  \item Una lectura sin eco no significa camino libre: una pared oblicua
+        desvía el pulso. El mapa no usa esas lecturas para despejar celdas.
+  \item Los requerimientos opcionales no se implementaron.
+\end{itemize}
+
+% ===========================================================================
+\section{Conclusiones}
+
+El diseño cumple los requerimientos obligatorios con un rootfs de 129\,MB y
+un modelo físico construido con el inventario del grupo y una compra acotada.
+Las decisiones que más pesaron ---radar sobre servo, pack 2S con dos rieles,
+MPU-6050 fusionado con el modelo de los motores--- se tomaron comparando
+alternativas con criterios técnicos, económicos, ambientales y sociales, y
+cada una dejó una debilidad conocida que el propio diseño atiende.
+
+La validación en tres niveles permitió avanzar el software antes de tener el
+hardware, pero también mostró su límite: el problema de la PWM a través del
+optoacoplador solo apareció en la placa real. El diseño de un sistema
+embebido se cierra en el hardware.
+
+\section{Referencias}
+
+\begin{itemize}
+  \item J. González Gómez, \emph{Especificación Proyecto I}, CE-1113 Sistemas
+        Empotrados, Tecnológico de Costa Rica, 2026.
+  \item Yocto Project, \emph{Reference Manual} y \emph{Development Tasks
+        Manual}, versión 5.0 (\id{scarthgap}).
+  \item Raspberry Pi Ltd., documentación de la Raspberry Pi 4 Model B: GPIO,
+        \id{config.txt} y \emph{device tree overlays}.
+  \item \id{pigpio}, documentación de la interfaz \id{pigpiod_if2}.
+  \item Hojas de datos: Sharp PC817, STMicroelectronics L298N, InvenSense
+        MPU-6050, Diodes Inc. PAM8403, Monolithic Power MP2307, HC-SR04.
+  \item Repositorio del proyecto:
+        \url{https://github.com/Randall-BL/EmpotradosProyecto1}.
+\end{itemize}
+
+\end{document}
