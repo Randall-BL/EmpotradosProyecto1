@@ -2,7 +2,13 @@
 Name=wlan0
 
 [Network]
-DHCP=yes
+# Solo IPv4: la red del robot es un hotspot y no se usa IPv6. Pidiendo tambien
+# DHCPv6, systemd-networkd fallaba al tomar la direccion y marcaba la interfaz
+# como "failed"; systemd-networkd-wait-online esperaba entonces sus 120 s
+# completos y robot-server no arrancaba hasta los 2 min 10 s de encendido.
+DHCP=ipv4
+IPv6AcceptRA=no
+LinkLocalAddressing=ipv4
 
 [DHCP]
 Timeout=30

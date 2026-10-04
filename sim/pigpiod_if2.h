@@ -26,6 +26,13 @@
 #define PI_INPUT  0
 #define PI_OUTPUT 1
 
+/* Codigos de error: los mismos valores de pigpio.h. */
+#define PI_BAD_USER_GPIO     -2
+#define PI_BAD_PULSEWIDTH    -7
+#define PI_BAD_HANDLE       -25
+#define PI_I2C_OPEN_FAILED  -71
+#define PI_I2C_READ_FAILED  -83
+
 int      pigpio_start(const char *addrStr, const char *portStr);
 void     pigpio_stop(int pi);
 int      set_mode(int pi, unsigned gpio, unsigned mode);
@@ -35,5 +42,17 @@ int      set_PWM_frequency(int pi, unsigned user_gpio, unsigned frequency);
 int      set_PWM_range(int pi, unsigned user_gpio, unsigned range);
 int      set_PWM_dutycycle(int pi, unsigned user_gpio, unsigned dutycycle);
 uint32_t get_current_tick(int pi);
+
+/* Servo del radar */
+int      set_servo_pulsewidth(int pi, unsigned user_gpio, unsigned pulsewidth);
+int      get_servo_pulsewidth(int pi, unsigned user_gpio);
+
+/* I2C, para el MPU-6050 */
+int      i2c_open(int pi, unsigned i2c_bus, unsigned i2c_addr, unsigned i2c_flags);
+int      i2c_close(int pi, unsigned handle);
+int      i2c_write_byte_data(int pi, unsigned handle, unsigned i2c_reg, unsigned bVal);
+int      i2c_read_byte_data(int pi, unsigned handle, unsigned i2c_reg);
+int      i2c_read_i2c_block_data(int pi, unsigned handle, unsigned i2c_reg,
+                                 char *buf, unsigned count);
 
 #endif /* PIGPIOD_IF2_SIM_H */

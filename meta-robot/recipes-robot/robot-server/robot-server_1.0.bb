@@ -5,10 +5,11 @@
 #  REST de control y corre el hilo de navegacion autonoma. Accede al hardware
 #  exclusivamente a traves de librobot.
 #
-#  Instala tres cosas en el target:
+#  Instala en el target:
 #    /usr/bin/robot-server   el binario
 #    /opt/robot/www/         la interfaz web estatica
-#    /opt/robot/audio/       los sonidos de evento y la musica
+#    /opt/robot/audio/       los sonidos de evento
+#    /opt/robot/audio/canciones/  la playlist (particion propia en la RPi)
 # ─────────────────────────────────────────────────────────────────────────────
 
 SUMMARY = "Servidor web embebido de control del robot aspiradora"
@@ -23,7 +24,8 @@ LICENSE = "MIT"
 # ${WORKDIR}/src porque el CMakeLists del servidor vive en src/. El LICENSE que
 # trae el SRC_URI, en cambio, se desempaqueta en ${WORKDIR}. Sin la ruta
 # absoluta, do_populate_lic falla con "LIC_FILES_CHKSUM points to an invalid
-# file". librobot no tiene el problema porque alli S es ${WORKDIR}.
+# file". librobot no tiene el problema porque alli el LICENSE se desempaqueta
+# dentro de S (subdir=lib).
 LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
 
 # server/, audio/ y LICENSE estan en la raiz del repositorio, tres niveles arriba.
@@ -51,15 +53,20 @@ S = "${WORKDIR}/src"
 
 # libmicrohttpd -> servidor HTTP; librobot -> acceso al hardware;
 # pigpio -> pigpiod_if2, del que librobot arrastra simbolos al enlazar.
-DEPENDS = "libmicrohttpd librobot pigpio"
+DEPENDS = "libmicrohttpd librobot"
+DEPENDS:append:rpi = " pigpio"
 
 RDEPENDS:${PN} = " \
     librobot \
     libmicrohttpd \
     mpg123 \
     alsa-utils \
-    pigpio-bin-pigpiod \
 "
+RDEPENDS:${PN}:append:rpi = " pigpio-bin-pigpiod"
+
+# La unidad systemd cambia en QEMU (ver do_install:append:qemuall), asi que el
+# paquete es propio de cada maquina aunque compartan el tune cortexa72.
+PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit cmake systemd
 
@@ -74,17 +81,34 @@ do_install:append() {
     install -d ${D}/opt/robot/www
     cp -r ${WORKDIR}/www/* ${D}/opt/robot/www/
 
-    # Recursos de audio. audio/music/ puede venir vacio del repositorio: la
-    # imagen se construye igual, solo que sin playlist inicial.
+    # Recursos de audio. Los sonidos de evento (notify_*) van en
+    # /opt/robot/audio/; la playlist, que es la versionada de audio/canciones/
+    # mas lo que haya en audio/music/ (no versionada, puede venir vacia), va en
+    # /opt/robot/audio/canciones/. En la Raspberry ese directorio es el punto
+    # de montaje de su propia particion (meta-robot/wic/robot-sdimage.wks), asi
+    # el peso de la musica no cuenta contra la particion raiz.
     # Se copian solo los .mp3: el README y el .gitkeep del repositorio no
     # tienen nada que hacer en el rootfs.
-    install -d ${D}/opt/robot/audio
-    find ${WORKDIR}/audio -name '*.mp3' -exec install -m 0644 {} ${D}/opt/robot/audio/ \;
+    install -d ${D}/opt/robot/audio/canciones
+    install -m 0644 ${WORKDIR}/audio/notify_*.mp3 ${D}/opt/robot/audio/
+    for d in canciones music; do
+        [ -d ${WORKDIR}/audio/$d ] || continue
+        find ${WORKDIR}/audio/$d -name '*.mp3' \
+            -exec install -m 0644 {} ${D}/opt/robot/audio/canciones/ \;
+    done
 
     # Unidad systemd. La clase systemd se encarga de habilitarla en el arranque.
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/robot-server.service \
                     ${D}${systemd_system_unitdir}/robot-server.service
+}
+
+# En QEMU no existe pigpiod.service: librobot trae el simulador enlazado. Con el
+# Requires= puesto, systemd se negaria a arrancar el servidor por la dependencia
+# faltante, asi que se quita solo en esta variante.
+do_install:append:qemuall() {
+    sed -i '/^Requires=pigpiod.service/d' \
+        ${D}${systemd_system_unitdir}/robot-server.service
 }
 
 FILES:${PN} += "/opt/robot"

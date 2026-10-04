@@ -1,0 +1,20 @@
+[Match]
+Name=eth0
+
+# Ethernet como plan B: sirve para entrar al robot si el WiFi falla, pero no
+# puede frenar el arranque.
+#
+# systemd trae de fabrica 80-wired.network, que configura eth0 por DHCP. Sin
+# cable conectado la interfaz se queda en estado "configuring" para siempre, y
+# systemd-networkd-wait-online espera a que TODAS las interfaces gestionadas
+# esten listas: agotaba sus 120 s en cada arranque y robot-server no levantaba
+# hasta los 2 min 10 s. Con RequiredForOnline=no, wait-online deja de tomarla en
+# cuenta y el servidor arranca a los 17 s. Este archivo gana por prioridad: 20
+# se aplica antes que el 80 de systemd.
+[Network]
+DHCP=ipv4
+IPv6AcceptRA=no
+LinkLocalAddressing=ipv4
+
+[Link]
+RequiredForOnline=no
