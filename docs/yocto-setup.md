@@ -121,7 +121,17 @@ DISTRO_FEATURES:append = " systemd usrmerge wifi"
 VIRTUAL-RUNTIME_init_manager = "systemd"
 LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 DISABLE_VC4GRAPHICS = "1"
+ENABLE_I2C = "1"
+RPI_KERNEL_DEVICETREE_OVERLAYS:append:rpi = " overlays/audremap.dtbo"
 ```
+
+Las dos últimas son del hardware del radar y del audio: el bus I2C del MPU-6050 y el
+overlay que saca el audio por GPIO 18 hacia el PAM8403 (ver
+[`hardware-sensores.md`](hardware-sensores.md)). **Si su `build/conf/local.conf` es
+anterior a ese cambio**, agregue esas dos líneas y `i2c-dev` a
+`KERNEL_MODULE_AUTOLOAD` —o vuelva a copiar el bloque—. Sin el overlay, el firmware
+ignora la línea de `config.txt` y el audio sale por el jack, que no está conectado.
+Cambiar la lista de overlays recompila el kernel una vez.
 
 Ajuste `BB_NUMBER_THREADS` y `PARALLEL_MAKE` al host — pero al número de núcleos **y** a
 la RAM, no solo a los núcleos:
@@ -287,6 +297,15 @@ sync
 > Verifique el dispositivo con `lsblk` **antes** de ejecutar `bmaptool`. Escribir sobre
 > el disco equivocado destruye el sistema del host.
 
+La SD queda con tres particiones (`meta-robot/wic/robot-sdimage.wks`), ninguna de más
+de 200 MB:
+
+| Partición | Montaje | Tipo | Tamaño | Contenido |
+|---|---|---|---|---|
+| p1 `boot` | `/boot` | vfat | 130 MiB | firmware, kernel, DTBs |
+| p2 `root` | `/` | ext4 | 180 MiB | rootfs sin las canciones |
+| p3 `canciones` | `/opt/robot/audio/canciones` | ext4 | 180 MiB | la playlist |
+
 ---
 
 ## 9. Primer arranque
@@ -300,7 +319,8 @@ sync
    ```bash
    uname -a                          # kernel y arquitectura aarch64
    ip a                              # wlan0 con IP asignada
-   aplay -l                          # tarjeta de audio detectada
+   aplay -l                          # tarjeta de audio detectada (card 1)
+   ls /dev/i2c-1                     # bus I2C del MPU-6050
    systemctl status robot-server     # servicio activo
    ls /usr/lib/librobot.so*          # biblioteca dinamica instalada
    ```
@@ -320,6 +340,14 @@ find $ROOTFS/usr/lib/modules -name "*.ko.xz" | grep brcm | sort
 
 echo "=== Modulos de sonido ==="
 find $ROOTFS/usr/lib/modules -name "*.ko.xz" | grep snd | sort
+
+echo "=== Modulos I2C (MPU-6050) ==="
+find $ROOTFS/usr/lib/modules -name "*.ko.xz" | grep -E "i2c-dev|i2c-bcm2835" | sort
+
+echo "=== Audio por GPIO 18 e I2C en config.txt, y el overlay ==="
+DEPLOY=tmp/deploy/images/raspberrypi4-64
+grep -E "^ *(dtoverlay=audremap|dtparam=i2c_arm=on)" $DEPLOY/bootfiles/config.txt
+ls $DEPLOY/audremap.dtbo
 
 echo "=== Firmware WiFi ==="
 ls $ROOTFS/lib/firmware/brcm/ | grep 43455

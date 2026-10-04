@@ -204,6 +204,15 @@
     .leg-sw { width: 9px; height: 9px; border-radius: 1px; }
     .map-note { font-size: 10px; color: var(--bd2); letter-spacing: .1em; text-align: center; line-height: 1.6; }
 
+    /* Radar: semicirculo con la ultima lectura de cada angulo del servo */
+    .radar-wrap { display: flex; justify-content: center; margin-bottom: 12px; }
+    #radar-canvas { max-width: 100%; }
+    .radar-ang { margin-left: auto; font-size: 9px; color: var(--cyan); letter-spacing: .12em; }
+
+    /* Movimiento (MPU-6050) */
+    .mv-stat span.warn   { color: var(--warn); }
+    .mv-stat span.danger { color: var(--danger); }
+
     /* Estructura de los sensores */
     .sensors { display: flex; flex-direction: column; gap: 12px; }
     .s-row { display: grid; grid-template-columns: 88px 1fr 62px; align-items: center; gap: 8px; }
@@ -376,7 +385,7 @@
     <div class="card">
       <div class="card-hdr">
         <div class="dot" style="color:var(--green)"></div>MAPA DE RECORRIDO
-        <span style="margin-left:auto;font-size:9px;color:var(--bd2)"></span>
+        <span class="radar-ang" id="map-celda">CELDA 30 × 30 CM</span>
       </div>
       <div class="card-body">
         <div class="map-wrap">
@@ -396,31 +405,42 @@
       </div>
     </div>
 
-    <!-- Sensores -->
+    <!-- Radar: HC-SR04 sobre el servo -->
     <div class="card">
-      <div class="card-hdr"><div class="dot" style="color:var(--cyan)"></div>SENSORES DE PROXIMIDAD</div>
+      <div class="card-hdr">
+        <div class="dot" style="color:var(--cyan)"></div>RADAR ULTRASÓNICO
+        <span class="radar-ang" id="radar-ang">SERVO —</span>
+      </div>
       <div class="card-body">
+        <div class="radar-wrap"><canvas id="radar-canvas"></canvas></div>
         <div class="sensors">
           <div class="s-row">
-            <span class="s-name">Frontal</span>
-            <div class="s-bar"><div class="s-fill" id="sf-front"></div></div>
-            <span class="s-val" id="sv-front">— cm</span>
-          </div>
-          <div class="s-row">
-            <span class="s-name">Posterior</span>
-            <div class="s-bar"><div class="s-fill" id="sf-back"></div></div>
-            <span class="s-val" id="sv-back">— cm</span>
-          </div>
-          <div class="s-row">
-            <span class="s-name">Izquierdo</span>
+            <span class="s-name">Izquierda</span>
             <div class="s-bar"><div class="s-fill" id="sf-left"></div></div>
             <span class="s-val" id="sv-left">— cm</span>
           </div>
           <div class="s-row">
-            <span class="s-name">Derecho</span>
+            <span class="s-name">Frente</span>
+            <div class="s-bar"><div class="s-fill" id="sf-front"></div></div>
+            <span class="s-val" id="sv-front">— cm</span>
+          </div>
+          <div class="s-row">
+            <span class="s-name">Derecha</span>
             <div class="s-bar"><div class="s-fill" id="sf-right"></div></div>
             <span class="s-val" id="sv-right">— cm</span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Movimiento: velocidad del MPU-6050 y tiempo antes de chocar -->
+    <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--cyan)"></div>MOVIMIENTO — MPU-6050</div>
+      <div class="card-body">
+        <div class="map-info">
+          <div class="map-stat mv-stat">Velocidad<span id="mv-vel">— cm/s</span></div>
+          <div class="map-stat mv-stat">Choque en<span id="mv-ttc">—</span></div>
+          <div class="map-stat mv-stat">Fuente<span id="mv-src">—</span></div>
         </div>
       </div>
     </div>
@@ -471,6 +491,7 @@
 <div class="statusbar">
   <span>MODO: <span class="hi" id="sb-mode">—</span></span>
   <span>UP: <span class="hi" id="sb-uptime">—</span></span>
+  <span id="sb-msg">—</span>
 </div>
 
 <!-- Barra Inferior de las funcionalidades -->
@@ -505,7 +526,7 @@ function switchTab(name) {
   document.getElementById('tab-' + name).classList.add('active');
   document.getElementById('view-' + name).classList.add('active');
   document.getElementById('main').scrollTop = 0;
-  if (name === 'map') setTimeout(initCanvas, 60);
+  if (name === 'map') setTimeout(() => { initCanvas(); initRadar(); }, 60);
 }
 
 /* Mapa */
@@ -696,10 +717,10 @@ function updateLEDs(leds) {
   set('obstacle', leds.obstacle   ? 'on-danger' : '', leds.obstacle   ? '⚠ ALERTA'  : 'OK');
 }
 
-/* Funcionalidad de Sensores */
+/* Funcionalidad de Sensores: frente, izquierda y derecha son el radar a 90, 180 y 0 grados */
 const SMAX = 200;
 function updateSensors(s) {
-  ['front','back','left','right'].forEach(id => {
+  ['front','left','right'].forEach(id => {
     const val = s[id] || 0;
     const pct = Math.min(100, Math.round(val / SMAX * 100));
     const cls = pct < 15 ? 'danger' : pct < 35 ? 'warn' : '';
@@ -710,7 +731,101 @@ function updateSensors(s) {
   });
 }
 
+/* Radar: semicirculo visto desde arriba, con el robot abajo al centro.
+   Servo a 0 grados = derecha, 90 = frente (arriba), 180 = izquierda. */
+const RADAR_MAX_CM = 200;
+const radarCanvas = document.getElementById('radar-canvas');
+const rctx = radarCanvas.getContext('2d');
+let radarData = null;
+
+function initRadar() {
+  const w = Math.min(radarCanvas.parentElement.clientWidth || 300, 420);
+  radarCanvas.width  = w;
+  radarCanvas.height = Math.round(w / 2) + 14;
+  drawRadar(radarData);
+}
+
+function drawRadar(radar) {
+  const W = radarCanvas.width, H = radarCanvas.height;
+  if (!W) return;
+  const cx = W / 2, cy = H - 8, R = W / 2 - 8;
+  const punto = (ang, cm) => {
+    const r = Math.min(cm, RADAR_MAX_CM) / RADAR_MAX_CM * R;
+    const a = ang * Math.PI / 180;
+    return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+  };
+
+  rctx.fillStyle = '#050709';
+  rctx.fillRect(0, 0, W, H);
+
+  // Anillos cada 50 cm y radios cada 30 grados
+  rctx.strokeStyle = 'rgba(28,44,62,0.9)';
+  rctx.fillStyle = 'rgba(138,168,192,0.5)';
+  rctx.lineWidth = 1;
+  rctx.font = '9px monospace';
+  for (let cm = 50; cm <= RADAR_MAX_CM; cm += 50) {
+    const r = cm / RADAR_MAX_CM * R;
+    rctx.beginPath(); rctx.arc(cx, cy, r, Math.PI, 2 * Math.PI); rctx.stroke();
+    rctx.fillText(cm + '', cx + r - 14, cy - 2);
+  }
+  for (let a = 0; a <= 180; a += 30) {
+    const [x, y] = punto(a, RADAR_MAX_CM);
+    rctx.beginPath(); rctx.moveTo(cx, cy); rctx.lineTo(x, y); rctx.stroke();
+  }
+
+  if (!radar) return;
+
+  // Haz del servo
+  const [hx, hy] = punto(radar.angulo, RADAR_MAX_CM);
+  rctx.strokeStyle = 'rgba(0,232,122,0.55)';
+  rctx.lineWidth = 3;
+  rctx.beginPath(); rctx.moveTo(cx, cy); rctx.lineTo(hx, hy); rctx.stroke();
+
+  // Lecturas: la linea llega hasta el eco; sin eco, punteada hasta el borde
+  (radar.lecturas || []).forEach(l => {
+    if (l.edad < 0) return;
+    const sinEco = l.d <= 0;
+    const col = sinEco ? 'rgba(138,168,192,0.35)'
+              : l.d < 20 ? '#ff3344' : l.d < 50 ? '#ffaa00' : '#2b93f5';
+    const [x, y] = punto(l.a, sinEco ? RADAR_MAX_CM : l.d);
+    rctx.globalAlpha = Math.max(0.35, 1 - l.edad / 3);
+    rctx.strokeStyle = col; rctx.lineWidth = 2;
+    rctx.setLineDash(sinEco ? [4, 4] : []);
+    rctx.beginPath(); rctx.moveTo(cx, cy); rctx.lineTo(x, y); rctx.stroke();
+    rctx.setLineDash([]);
+    if (!sinEco) { rctx.fillStyle = col; rctx.beginPath(); rctx.arc(x, y, 3.5, 0, 2 * Math.PI); rctx.fill(); }
+    rctx.globalAlpha = 1;
+  });
+
+  // Robot
+  rctx.fillStyle = '#45ee69';
+  rctx.beginPath(); rctx.arc(cx, cy, 5, Math.PI, 2 * Math.PI); rctx.fill();
+}
+
+function updateRadar(radar) {
+  radarData = radar;
+  document.getElementById('radar-ang').textContent = 'SERVO ' + radar.angulo + '°';
+  drawRadar(radar);
+}
+
+/* Movimiento: velocidad estimada con el MPU-6050 y tiempo antes de chocar */
+function updateMovimiento(m) {
+  document.getElementById('mv-vel').textContent = m.velocidad.toFixed(1) + ' cm/s';
+  const ttc = document.getElementById('mv-ttc');
+  if (m.ttc < 0) { ttc.textContent = '—'; ttc.className = ''; }
+  else {
+    ttc.textContent = m.ttc.toFixed(1) + ' s';
+    ttc.className = m.ttc < 1.2 ? 'danger' : m.ttc < 3 ? 'warn' : '';
+  }
+  document.getElementById('mv-src').textContent = m.imu ? 'MPU' : 'MOTORES';
+}
+
 /* Funcionalidad del Audio */
+// "01_Himno_a_la_alegria.mp3" -> "Himno a la alegria"
+function trackTitle(t) {
+  return (t.nombre || t.name || '').replace(/\.[^.]+$/, '').replace(/^\d+[_ -]+/, '').replace(/_/g, ' ');
+}
+
 function renderTracks() {
   const list = document.getElementById('track-list');
   const none = document.getElementById('no-tracks');
@@ -721,7 +836,7 @@ function renderTracks() {
   S.tracks.forEach((t, i) => {
     const div = document.createElement('div');
     div.className = 'track' + (S.curTrack && S.curTrack.id === t.id ? ' active' : '');
-    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${(t.nombre || t.name || '').replace(/\.[^.]+$/, '')}</span><span class="t-dur">${t.duracion || t.duration || ""}</span>`;
+    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${trackTitle(t)}</span><span class="t-dur">${t.duracion || t.duration || ""}</span>`;
     div.onclick = () => selectTrack(t);
     list.appendChild(div);
   });
@@ -737,7 +852,7 @@ function highlightTrack() {
 
 function selectTrack(t) {
   S.curTrack = t; S.playing = true;
-  document.getElementById('np-title').textContent = t.nombre || t.name || '';
+  document.getElementById('np-title').textContent = trackTitle(t) + '  ⟳';
   document.getElementById('prog-dur').textContent = t.duracion || t.duration || '';
   updatePlayBtn(); highlightTrack();
   apiFetch('/api/audio/control', 'POST', { action: 'play', track_id: t.id });
@@ -793,6 +908,10 @@ async function pollStatus() {
   if (data.mode && data.mode !== S.mode) applyModeUI(data.mode);
   if (data.leds)    updateLEDs(data.leds);
   if (data.sensors) updateSensors(data.sensors);
+  if (data.radar)   updateRadar(data.radar);
+  if (data.movimiento) updateMovimiento(data.movimiento);
+  if (data.map && data.map.celda_cm)
+    document.getElementById('map-celda').textContent = `CELDA ${data.map.celda_cm} × ${data.map.celda_cm} CM`;
   if (data.uptime != null) {
     const h = Math.floor(data.uptime / 3600), m = Math.floor(data.uptime % 3600 / 60), s = data.uptime % 60;
     document.getElementById('sb-uptime').textContent =
@@ -858,7 +977,9 @@ window.addEventListener('DOMContentLoaded', () => {
   updateClock();
   setInterval(updateClock, 1000);
   pollStatus();
-  setInterval(pollStatus, 1000);
+  // Cada 500 ms: el radar da un paso cada ~100 ms, a 1 s el barrido se veria a saltos
+  setInterval(pollStatus, 500);
+  window.addEventListener('resize', () => { if (S.connected) initRadar(); });
   pollAudioList();
   setInterval(pollAudioList, 10000);
 });

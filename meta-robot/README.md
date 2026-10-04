@@ -16,9 +16,9 @@ Compatible con **Poky `scarthgap`**.
 | `recipes-multimedia/librobot/` | `librobot_1.0.bb` — biblioteca dinámica de control |
 | `recipes-robot/robot-server/` | `robot-server_1.0.bb` — servidor web + unidad systemd |
 | `recipes-support/pigpio/` | `pigpio_1.0.bb` — acceso a GPIO y PWM por hardware |
-| `recipes-audio/alsa-config/` | `asound.conf` — fuerza la salida por el jack 3.5 mm |
+| `recipes-audio/alsa-config/` | `asound.conf` — fuerza la salida PWM analógica (GPIO 18 → PAM8403) |
 | `recipes-connectivity/wifi-config/` | WiFi preconfigurado para arranque headless |
-| `recipes-bsp/bootfiles/` | `bbappend` de `config.txt` y `cmdline.txt` |
+| `recipes-bsp/bootfiles/` | `bbappend` de `config.txt` (audio por GPIO 18 con `audremap`, I2C) y `cmdline.txt` |
 | `recipes-kernel/linux/` | Fragmento de configuración del kernel para el WiFi Broadcom |
 
 ## Dependencias

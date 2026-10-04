@@ -13,9 +13,19 @@
 
 // Configuracion
 #define LIB_AUDIO_DIR_DEFAULT   "./audio"   // directorio para guardar los tracks / audios  
+
+/* Salida PWM analogica de la RPi4 (card 1, "Headphones"). El overlay audremap
+   la saca por GPIO 18 hacia el filtro RC y el amplificador PAM8403, en vez de
+   por el jack de 3.5 mm. Ver docs/hardware-sensores.md. */
 #define LIB_AUDIO_ALSA_DEVICE   "hw:1,0"
 #define LIB_AUDIO_MIXER_CARD    "hw:1"            
 #define LIB_AUDIO_MIXER_CTRL    "PCM"    // "PCM" Rasp, "Master" PC
+
+/* El robot tiene un solo parlante, colgado de un solo canal del PAM8403.
+   Con 1 cada pista estereo se mezcla a mono (L+R)/2 antes de salir, y los dos
+   canales llevan la misma senal: no se pierde lo que viene solo por la
+   derecha y da igual a cual de los dos GPIO quedo cableado el amplificador. */
+#define LIB_AUDIO_MONO          1
 #define LIB_AUDIO_TRACKS_MAX     64
 #define LIB_AUDIO_NAME_MAX       128
 

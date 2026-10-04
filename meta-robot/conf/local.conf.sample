@@ -13,7 +13,11 @@ CONF_VERSION = "2"
 # raspberrypi4-64 selecciona el BSP aarch64 de meta-raspberrypi. Se usa la
 # variante de 64 bits porque el kernel 6.6 de la RPi4 la trae por defecto y
 # permite usar los paquetes kernel-module-* precompilados sin recompilar.
-MACHINE = "raspberrypi4-64"
+#
+# Con ?= la maquina se puede cambiar desde la linea de comandos sin editar este
+# archivo. Para la imagen que corre en QEMU (ver docs/qemu.md):
+#   MACHINE=qemuarm64-robot bitbake robot-image
+MACHINE ?= "raspberrypi4-64"
 DISTRO  = "poky"
 
 # ── Gestor de arranque: systemd ──────────────────────────────────────────────
@@ -49,18 +53,34 @@ ENABLE_UART  = "1"
 # arrastrar Mesa ni el stack de DRM a la imagen (ahorro importante de rootfs).
 DISABLE_VC4GRAPHICS = "1"
 
-# ── Modulos de kernel a cargar en el arranque ────────────────────────────────
-# brcmfmac + brcmutil: WiFi. snd-bcm2835: salida de audio por el jack 3.5 mm.
-KERNEL_MODULE_AUTOLOAD += "cfg80211 brcmfmac brcmfmac-wcc brcmutil rfkill snd-bcm2835"
+# I2C-1 en GPIO 2/3 para el MPU-6050. Ademas de dtparam=i2c_arm=on en
+# config.txt, hace que el BSP recomiende los modulos i2c-dev e i2c-bcm2708.
+ENABLE_I2C = "1"
 
-MACHINE_EXTRA_RRECOMMENDS += " \
+# ── Modulos de kernel a cargar en el arranque ────────────────────────────────
+# brcmfmac + brcmutil: WiFi. snd-bcm2835: salida de audio PWM (GPIO 18 con
+# audremap, hacia el PAM8403). i2c-dev: /dev/i2c-1, que es por donde pigpiod
+# habla con el MPU-6050; el driver del bus (i2c-bcm2835) lo carga udev solo.
+# Solo en la Raspberry (override rpi): el kernel de QEMU no trae estos modulos.
+KERNEL_MODULE_AUTOLOAD:append:rpi = " cfg80211 brcmfmac brcmfmac-wcc brcmutil rfkill snd-bcm2835 i2c-dev"
+
+MACHINE_EXTRA_RRECOMMENDS:append:rpi = " \
     linux-firmware-rpidistro-bcm43455 \
     linux-firmware-rpidistro-bcm43456 \
 "
 
 # ── config.txt del bootloader ────────────────────────────────────────────────
-# audio_pwm_mode=2 activa el modo PWM de mayor calidad del jack analogico.
+# audio_pwm_mode=2 activa el modo PWM de mayor calidad de la salida analogica.
+# El resto de config.txt, incluido el overlay audremap, esta en
+# recipes-bsp/bootfiles/rpi-config_%.bbappend.
 RPI_EXTRA_CONFIG:append = "\ndtparam=audio=on\naudio_pwm_mode=2\n"
+
+# audremap saca el audio PWM por GPIO 18/19 en vez del jack (ver el bbappend de
+# rpi-config). Su .dtbo no esta en la lista por defecto de meta-raspberrypi, y
+# sin el archivo en la particion de arranque el firmware ignora la linea de
+# config.txt en silencio. Va aqui y no en una receta porque la lista la leen
+# el kernel (que compila el overlay) y la imagen (que lo copia a /boot).
+RPI_KERNEL_DEVICETREE_OVERLAYS:append:rpi = " overlays/audremap.dtbo"
 
 # ── Desarrollo ───────────────────────────────────────────────────────────────
 # debug-tweaks deja root sin contrasena para poder entrar por SSH durante el
@@ -72,6 +92,14 @@ EXTRA_IMAGE_FEATURES += "debug-tweaks"
 # rootfs desempaquetado y poder inspeccionarlo.
 INHERIT += "rm_work"
 RM_WORK_EXCLUDE += "robot-image librobot robot-server"
+
+# ── QEMU ─────────────────────────────────────────────────────────────────────
+# qemu-system-native trae por defecto la ventana grafica (sdl, que agrega el
+# local.conf de poky) y la aceleracion 3D (virglrenderer + epoxy, porque poky
+# tiene "opengl" en DISTRO_FEATURES). Eso arrastra Mesa y LLVM nativos, horas
+# de compilacion. La imagen del robot se usa en QEMU solo con "nographic"
+# (consola serie en la terminal), asi que nada de eso hace falta.
+PACKAGECONFIG:remove:pn-qemu-system-native = "sdl virglrenderer epoxy"
 
 # ── Paralelismo (ajustar al host de cada quien) ──────────────────────────────
 # Regla practica: un hilo por nucleo, pero limitado por la RAM. Cada tarea de

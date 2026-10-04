@@ -17,13 +17,10 @@ CC=${CC:-gcc}
 LIB=../lib
 SRV=../server/src
 
+# Todos los modulos de la biblioteca: motores, sensor, servo, radar, MPU,
+# odometria, LEDs, audio y la fachada.
 $CC -Wall -Wextra -O1 -g -I. -I"$LIB" \
-    "$LIB"/lib_motors.c \
-    "$LIB"/lib_sensors.c \
-    "$LIB"/lib_leds.c \
-    "$LIB"/lib_odom.c \
-    "$LIB"/lib_audio.c \
-    "$LIB"/lib_robot.c \
+    "$LIB"/lib_*.c \
     "$SRV"/robot_state.c \
     mundo.c \
     pigpio_sim.c \

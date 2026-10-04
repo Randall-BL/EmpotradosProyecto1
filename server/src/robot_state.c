@@ -43,6 +43,15 @@ int robot_state_init(void) {
 
     /// Funcionalida de tracklist de la biblioteca
 
+    // Estado del radar: nada medido todavia, servo al frente
+    g_robot.radar.angulo_servo = 90;
+    g_robot.radar.n            = 0;
+
+    // Movimiento: quieto y sin riesgo de choque
+    g_robot.movimiento.velocidad_cm_s = 0.0f;
+    g_robot.movimiento.ttc_s          = -1.0f;
+    g_robot.movimiento.imu            = 0;
+
     // Estado de la posicion del robot
     memset(g_robot.map.grid, CELL_UNKNOWN, sizeof(g_robot.map.grid));
     g_robot.map.robot_x       = MAP_COLS / 2;

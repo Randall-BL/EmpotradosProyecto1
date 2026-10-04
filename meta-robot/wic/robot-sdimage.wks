@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  robot-sdimage — Tabla de particiones de la SD del robot (Raspberry Pi 4)
+#
+#  Parte de sdimage-raspberrypi.wks de meta-raspberrypi y le agrega una tercera
+#  particion para la playlist, de modo que ninguna pase de 200 MB:
+#
+#    p1  /boot                       vfat  130 MiB  firmware, kernel, DTBs
+#                                              (--size 100 x 1.3 de wic)
+#    p2  /                           ext4  180 MiB  rootfs sin las canciones
+#    p3  /opt/robot/audio/canciones  ext4  180 MiB  la playlist
+#
+#  Las canciones las instala robot-server en /opt/robot/audio/canciones/ del
+#  rootfs; aqui se sacan de p2 (--exclude-path) y se vuelcan en p3
+#  (--change-directory). lib_audio entra en las subcarpetas de
+#  /opt/robot/audio, asi que las encuentra montadas sin cambiar nada.
+#
+#  El --exclude-path va SIN "/" final, aunque asi se borra tambien el
+#  directorio y p2 queda sin punto de montaje: con "/" wic borra archivo por
+#  archivo con un "rm -rf" sin comillas, y un nombre con espacios o parentesis
+#  ("Ren - Bitter Sweet Symphony (Live).mp3") rompe do_image_wic. No hace
+#  falta el directorio: systemd lo crea al montar.
+#
+#  --fixed-size en vez del calculo automatico de wic (du x 1.3 + 10 MiB): el
+#  tamano queda fijo bajo el tope, y si el contenido crece de mas el build
+#  falla con "Actual rootfs size ... is larger than allowed size" en lugar de
+#  producir una particion de mas de 200 MB. 180 MiB son 188.7 MB.
+#
+#  wic agrega p3 al /etc/fstab de p2. nofail: si la particion faltara el robot
+#  arranca igual, solo que sin playlist. x-systemd.before: robot-server escanea
+#  las canciones al arrancar, asi que tiene que encontrarlas ya montadas.
+# ─────────────────────────────────────────────────────────────────────────────
+
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 100
+
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label root --align 4096 --fixed-size 180M --exclude-path opt/robot/audio/canciones
+
+part /opt/robot/audio/canciones --source rootfs --change-directory=opt/robot/audio/canciones --ondisk mmcblk0 --fstype=ext4 --label canciones --align 4096 --fixed-size 180M --fsoptions "defaults,nofail,x-systemd.before=robot-server.service"

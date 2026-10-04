@@ -7,26 +7,14 @@
  */
 
 #include "lib_robot.h"
-#include "lib_motors.h"
-#include "lib_sensors.h"
+#include "lib_imu.h"
 #include "lib_leds.h"
+#include "lib_motors.h"
 #include "lib_odom.h"
+#include "lib_radar.h"
 
 #include <pigpiod_if2.h>
 #include <stdio.h>
-
-/* Sensores HC-SR04: pines TRIG y ECHO en numeracion BCM.
-   Ver docs/hardware-pinout.md — el ECHO va con divisor de tension. */
-#define TRIG_FRONTAL 17
-#define ECHO_FRONTAL 27
-#define TRIG_IZQ     22
-#define ECHO_IZQ     10
-#define TRIG_DER      9
-#define ECHO_DER     11
-
-static SensorUltrasonico g_frontal;
-static SensorUltrasonico g_izquierdo;
-static SensorUltrasonico g_derecho;
 
 static int g_pi    = -1;
 static int g_listo = 0;
@@ -42,15 +30,30 @@ int robot_init(void) {
     }
 
     motores_init(g_pi);
-    sensor_init(g_pi, &g_frontal,    TRIG_FRONTAL, ECHO_FRONTAL);
-    sensor_init(g_pi, &g_izquierdo,  TRIG_IZQ,     ECHO_IZQ);
-    sensor_init(g_pi, &g_derecho,    TRIG_DER,     ECHO_DER);
 
     /* Los LEDs son indicadores: si fallan, el robot igual navega. */
     if (lib_leds_init(g_pi) < 0)
         fprintf(stderr, "[librobot] los LEDs indicadores no se pudieron inicializar\n");
 
+    /* El MPU se calibra antes de que nada se mueva: con los motores recien
+       detenidos y el servo todavia sin pulsos, el robot esta quieto. Sin MPU
+       la odometria cae al modelo de los motores, que ya funcionaba solo. */
+    if (imu_init(g_pi) == 0) {
+        if (imu_calibrar(IMU_MUESTRAS_CALIBRACION) < 0)
+            fprintf(stderr, "[librobot] el MPU-6050 no se pudo calibrar\n");
+    } else {
+        fprintf(stderr, "[librobot] MPU-6050 no disponible: la velocidad y el "
+                        "rumbo salen del modelo de los motores\n");
+    }
+
+    /* Primero la odometria y despues el radar: cada lectura del radar se
+       guarda con la pose del robot en el instante de medir. */
     odom_reset();
+    if (odom_arrancar() < 0)
+        fprintf(stderr, "[librobot] no se pudo lanzar el hilo de la odometria\n");
+
+    if (radar_iniciar(g_pi) < 0)
+        fprintf(stderr, "[librobot] el radar no pudo arrancar: sin sensores de proximidad\n");
 
     g_listo = 1;
     return 0;
@@ -59,12 +62,11 @@ int robot_init(void) {
 void robot_shutdown(void) {
     if (!g_listo) return;
 
+    /* El radar primero: deja de mover el servo y de disparar el sensor. */
+    radar_detener();
+    odom_parar();
     motores_detener();
-
-    /* Dejar los TRIG en bajo para que ningun sensor quede disparando. */
-    gpio_write(g_pi, g_frontal.pinTrigger,   0);
-    gpio_write(g_pi, g_izquierdo.pinTrigger, 0);
-    gpio_write(g_pi, g_derecho.pinTrigger,   0);
+    imu_cerrar();
 
     lib_leds_destroy();
     pigpio_stop(g_pi);
@@ -77,6 +79,6 @@ int robot_activo(void) {
     return g_listo;
 }
 
-double robot_distancia_frontal(void)    { return sensor_leer_distancia(&g_frontal);    }
-double robot_distancia_izquierda(void)  { return sensor_leer_distancia(&g_izquierdo);  }
-double robot_distancia_derecha(void)    { return sensor_leer_distancia(&g_derecho);    }
+double robot_distancia_frontal(void)   { return radar_distancia(RADAR_FRENTE); }
+double robot_distancia_izquierda(void) { return radar_distancia(180);          }
+double robot_distancia_derecha(void)   { return radar_distancia(0);            }

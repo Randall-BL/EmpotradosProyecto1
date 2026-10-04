@@ -16,8 +16,7 @@ SRV=../server/src
 
 $CC -Wall -O1 -g -I. -I"$LIB" -I"$SRV" \
     "$SRV"/main.c "$SRV"/api.c "$SRV"/auth.c "$SRV"/sha256.c "$SRV"/robot_state.c \
-    "$LIB"/lib_motors.c "$LIB"/lib_sensors.c "$LIB"/lib_leds.c \
-    "$LIB"/lib_odom.c "$LIB"/lib_robot.c "$LIB"/lib_audio.c \
+    "$LIB"/lib_*.c \
     mundo.c pigpio_sim.c \
     -o robot-server-sim \
     -lmicrohttpd -lmpg123 -lasound -lm -lpthread

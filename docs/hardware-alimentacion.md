@@ -39,13 +39,16 @@ nominal— directamente en el riel de la Pi.
           │                                │
     RIEL LÓGICO                       RIEL POTENCIA
     5 V · GND_LOG                     7.4 V · GND_POT
-          │                                │
-    ┌─────┴─────┐                    ┌─────┴─────┐
-    │ RPi 4     │                    │ L298N VS  │
-    │ HC-SR04×3 │                    │ Motor izq │
-    │ LEDs ×4   │                    │ Motor der │
-    │ LM386     │                    └───────────┘
-    └───────────┘
+          │                                ├──────────────────┐
+    ┌─────┴─────┐                    ┌─────┴─────┐     ┌──────┴───────┐
+    │ RPi 4     │                    │ L298N VS  │     │ Buck 5V      │
+    │ HC-SR04   │                    │ Motor izq │     │ MP2307       │
+    │ MPU-6050  │                    │ Motor der │     └──────┬───────┘
+    │ LEDs ×4   │                    └───────────┘            │
+    │ PAM8403   │                                       ┌─────┴─────┐
+    └───────────┘                                       │ Servo del │
+                                                        │ radar     │
+                                                        └───────────┘
 
            ╳  GND_LOG y GND_POT NO se unen
               (ver docs/hardware-aislamiento.md)
@@ -102,11 +105,23 @@ salida.
 |---|---|---|
 | Raspberry Pi 4 (sin periféricos) | 600–900 mA | 1.2 A |
 | Raspberry Pi 4 (WiFi + CPU al 100 %) | 1.2 A | **2.5 A** |
-| 3 × HC-SR04 | 45 mA | 60 mA |
-| 4 × LED a 5 mA | 20 mA | 20 mA |
-| Amplificador LM386 + altavoz | 50 mA | 300 mA |
-| 6 × LED de optoacoplador a 5 mA | 30 mA | 30 mA |
-| **Total** | **~2.0 A** | **~2.9 A** |
+| HC-SR04 del radar | 15 mA | 20 mA |
+| MPU-6050 | 4 mA | 4 mA |
+| 4 × LED a 5 mA (nunca más de 3 encendidos) | 15 mA | 15 mA |
+| Amplificador PAM8403 + parlante de 8 Ω | 80 mA | 400 mA |
+| 5 × LED de optoacoplador | 20 mA | 23 mA |
+| **Total** | **~2.0 A** | **~3.0 A** |
+
+El pico de 3.0 A suma el peor caso de todo **a la vez**: la Pi con la CPU al 100 %, el
+amplificador a volumen máximo sobre un golpe de bajo. En la práctica no coinciden.
+El PAM8403 es clase D y rinde ~85 %: a volumen de conversación consume menos que el
+LM386 que reemplaza, pero sus picos son mayores. Con un parlante de **4 Ω** los picos
+llegan a ~750 mA y el total pasa de 3 A: por eso se especifica **8 Ω**. Si
+`vcgencmd get_throttled` marca subtensión con música fuerte, bajar el volumen máximo
+antes que cambiar el regulador.
+
+El servo **no** está en esta tabla: con picos de 700 mA y ruido de motor, va al riel de
+potencia (ver abajo).
 
 **Especificación:** regulador reductor de 5 V con **3 A de salida continua**.
 
@@ -125,9 +140,10 @@ conectar la Pi**. Vienen ajustados de fábrica en cualquier valor, a veces 12 V.
 Energía útil del pack:  2500 mAh × 7.4 V × 0.85 (BMS + margen)  ≈ 15.7 Wh
 Consumo del riel lógico: 2.0 A × 5 V / 0.93 (eficiencia)        ≈ 10.8 W
 Consumo de motores:      ~0.5 A × 7.4 V en navegación           ≈  3.7 W
-                                                        Total  ≈ 14.5 W
+Servo del radar:         ~0.2 A × 5 V / 0.93 en vaivén continuo ≈  1.1 W
+                                                        Total  ≈ 15.6 W
 
-Autonomía ≈ 15.7 Wh / 14.5 W ≈ 65 minutos
+Autonomía ≈ 15.7 Wh / 15.6 W ≈ 60 minutos
 ```
 
 Suficiente para la demostración con margen. Aun así, **el plan B incluye un pack
@@ -149,6 +165,22 @@ mano.**
 el jumper puesto, válido mientras `VS ≤ 12 V`. **Nunca de los 5 V de la Raspberry Pi**:
 eso anula el aislamiento (ver [`hardware-aislamiento.md`](hardware-aislamiento.md)).
 
+### El servo del radar: 5 V propios
+
+El servo (SG90/MG90S) trabaja entre 4.8 y 6 V: los 7.4–8.4 V del pack lo queman, así que
+necesita un regulador. Tampoco puede colgarse de:
+
+- **los 5 V de la Raspberry Pi**: sus picos de ~700 mA cuando se traba y el ruido de su
+  motor irían directo al riel lógico, que ya está en su tope de 3 A, y la señal dejaría
+  de estar aislada;
+- **el regulador interno del L298N**: es un 78M05 de 500 mA que ya alimenta la lógica
+  del driver, los pull-up de los optoacopladores y los jumpers de `ENA`/`ENB`; un pico
+  del servo haría caer `VSS` y el L298N podría soltar los motores.
+
+Se usa **un segundo módulo MP2307 ajustado a 5.0 V**, conectado al riel de potencia y
+referido a `GND_POT`. Es el mismo módulo del riel lógico: una sola referencia en la lista
+de materiales, y 3 A es holgura de sobra para un servo de 700 mA de pico.
+
 ---
 
 ## Desacople
@@ -158,7 +190,9 @@ eso anula el aislamiento (ver [`hardware-aislamiento.md`](hardware-aislamiento.m
 | Entrada del buck de 5 V | 470 µF electrolítico | Absorbe el transitorio de la batería |
 | Salida del buck de 5 V | 220 µF + 100 nF | Sostiene el pico de arranque de la Pi |
 | `VS` del L298N | 100 µF + 100 nF | Absorbe el pico de arranque de los motores |
-| Cada HC-SR04 | 100 nF | Ruido del pulso de disparo |
+| El HC-SR04 | 100 nF | Ruido del pulso de disparo |
+| Bornes del servo | 470 µF / 10 V + 100 nF | Absorbe el pico de arranque en cada paso del barrido |
+| `VDD` del PAM8403 | 100 µF + 100 nF | El clase D consume a pulsos |
 
 Los electrolíticos van **con la polaridad correcta y lo más cerca posible del punto que
 desacoplan**. Un capacitor a diez centímetros por un cable largo no desacopla nada.
@@ -192,11 +226,12 @@ Un **interruptor principal** en la salida del BMS, accesible sin desarmar el cha
 | 2 | Celda 18650 | ≥ 2500 mAh, ≥ 10 A de descarga |
 | 1 | Portapilas 2S 18650 | Con terminales soldables |
 | 1 | Módulo BMS 2S | ≥ 10 A, con balanceo |
-| 1 | Módulo buck 5 V | MP2307, 3 A |
+| 2 | Módulo buck 5 V | MP2307, 3 A — uno para el riel lógico, otro para el servo |
 | 1 | Interruptor SPST | ≥ 5 A |
 | 1 | Portafusible + fusible 5 A | En serie con el positivo del pack |
 | 1 | Conector de carga | Según el cargador del pack |
 | 1 | Capacitor 470 µF / 25 V | Entrada del buck |
+| 1 | Capacitor 470 µF / 10 V | Bornes del servo |
 | 1 | Capacitor 220 µF / 10 V | Salida del buck |
 | 2 | Capacitor 100 nF cerámico | Desacople |
 | — | Cable AWG 18 y AWG 20 | Rojo y negro |
@@ -221,6 +256,7 @@ antes de armar el pack.
 | Punto | Esperado |
 |---|---|
 | Salida del buck de 5 V | **5.00 V ± 0.10 V** — ajustar con el potenciómetro |
+| Salida del buck del servo | **5.00 V ± 0.10 V** — ajustar **antes** de conectar el servo |
 | Riel de potencia | 7.4 V nominal |
 
 ### Paso 3 — Reguladores con carga
@@ -265,10 +301,11 @@ caso de consumo.
 ## Estado
 
 - [x] Topología definida: 2S + BMS + dos rieles regulados por separado
+- [x] Servo del radar en el riel de potencia, con su propio buck de 5 V
 - [x] Elección de 2S sobre 1S justificada con números
-- [x] Presupuesto de corriente del riel lógico calculado (~2.0 A típico, ~2.9 A pico)
+- [x] Presupuesto de corriente del riel lógico calculado (~2.0 A típico, ~3.0 A pico)
 - [x] Regulador especificado (MP2307, 3 A) con las alternativas descartadas y por qué
-- [x] Autonomía estimada: ~65 minutos
+- [x] Autonomía estimada: ~60 minutos
 - [x] Lista de materiales y calibres de cable
 - [x] Procedimiento de verificación con multímetro, en cinco pasos
 - [ ] Componentes conseguidos y pack armado — **pendiente**
