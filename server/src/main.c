@@ -651,10 +651,8 @@ int main(void) {
     if (lib_audio_init(NULL) < 0)  { fprintf(stderr, "[main] audio init failed\n");}
     if (auth_init()        < 0)  { fprintf(stderr, "[main] autorizacion inicial fallo\n");}
 
-    // Notificacion de encendido
-    lib_audio_notify(NOTIFY_STARTUP); 
-
-    // Iniciar en modo autonomo
+    // Iniciar en modo autonomo. Se fija antes de abrir el puerto para que un
+    // cambio de modo pedido desde el panel no quede pisado despues.
     {
         RobotState *rs = robot_state_get();
         if (rs) {
@@ -662,23 +660,15 @@ int main(void) {
             rs->mode = MODE_AUTONOMOUS;
             pthread_mutex_unlock(&rs->lock);
         }
-        printf("[main] Modo inicial: AUTONOMO\n");
-        lib_audio_notify(NOTIFY_AUTONOMOUS);
     }
 
-    lib_leds_sync_from_state();
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
 
-    // Inicializar Threads
-    pthread_t tid_uptime, tid_watchdog;
-    pthread_create(&tid_uptime,   NULL, uptime_thread,   NULL);
-    pthread_create(&tid_watchdog, NULL, watchdog_thread, NULL);
-
-    // --- INICIAR HILO DE NAVEGACIÓN AUTÓNOMA ---
-    pthread_t auto_tid;
-    pthread_create(&auto_tid, NULL, autonomous_thread, NULL);
-
+    /* El servidor HTTP se abre antes de los sonidos de inicio: cada
+       lib_audio_notify() bloquea hasta que termina el MP3 (unos 6 s entre los
+       dos), y el panel debe ser alcanzable cuanto antes. MHD atiende en sus
+       propios hilos, asi que no espera al main. */
     g_daemon = MHD_start_daemon(
         MHD_USE_THREAD_PER_CONNECTION | MHD_USE_INTERNAL_POLLING_THREAD,
         SERVER_PORT,
@@ -691,10 +681,6 @@ int main(void) {
 
     if (!g_daemon) {
         fprintf(stderr, "[main] fallo al iniciar el daemon en puerto %d\n", SERVER_PORT);
-        g_running = 0;
-        pthread_join(tid_uptime, NULL);
-        pthread_join(tid_watchdog, NULL);
-        pthread_join(auto_tid, NULL);
         auth_destroy();
         lib_audio_destroy();
         robot_shutdown();
@@ -706,6 +692,23 @@ int main(void) {
     printf("[server] Servidor escuchando en puerto %d\n\n", SERVER_PORT);
     printf("  Dev:               http://localhost:%d\n", SERVER_PORT);
     printf("  Red local:         http://<hostname -I>:%d\n",   SERVER_PORT);
+
+    // Notificacion de encendido
+    lib_audio_notify(NOTIFY_STARTUP);
+
+    printf("[main] Modo inicial: AUTONOMO\n");
+    lib_audio_notify(NOTIFY_AUTONOMOUS);
+
+    lib_leds_sync_from_state();
+
+    // Inicializar Threads
+    pthread_t tid_uptime, tid_watchdog;
+    pthread_create(&tid_uptime,   NULL, uptime_thread,   NULL);
+    pthread_create(&tid_watchdog, NULL, watchdog_thread, NULL);
+
+    // --- INICIAR HILO DE NAVEGACIÓN AUTÓNOMA ---
+    pthread_t auto_tid;
+    pthread_create(&auto_tid, NULL, autonomous_thread, NULL);
 
     while (g_running) sleep(1);
 

@@ -139,6 +139,11 @@ Entre el 18.6 y el 24.7 s el servidor reproduce `notify_startup.mp3` y
 `notify_autonomous.mp3` antes de abrir el socket HTTP: `lib_audio_notify()` bloquea
 hasta que termina cada sonido.
 
+Corregido después de esta captura: el servidor ahora abre el puerto antes de los
+sonidos de inicio, que siguen sonando antes de que arranque la navegación. Con eso
+debería escuchar alrededor de los 18 s. Falta medirlo en la Raspberry Pi 4 con la
+imagen reconstruida.
+
 ## Pendiente con el robot armado
 
 - `vcgencmd get_throttled`: `vcgencmd` no está en la imagen.
