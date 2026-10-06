@@ -26,6 +26,10 @@
 #define PI_INPUT  0
 #define PI_OUTPUT 1
 
+#define PI_PUD_OFF  0
+#define PI_PUD_DOWN 1
+#define PI_PUD_UP   2
+
 /* Codigos de error: los mismos valores de pigpio.h. */
 #define PI_BAD_USER_GPIO     -2
 #define PI_BAD_PULSEWIDTH    -7
@@ -38,6 +42,7 @@ void     pigpio_stop(int pi);
 int      set_mode(int pi, unsigned gpio, unsigned mode);
 int      gpio_write(int pi, unsigned gpio, unsigned level);
 int      gpio_read(int pi, unsigned gpio);
+int      set_pull_up_down(int pi, unsigned gpio, unsigned pud);
 int      set_PWM_frequency(int pi, unsigned user_gpio, unsigned frequency);
 int      set_PWM_range(int pi, unsigned user_gpio, unsigned range);
 int      set_PWM_dutycycle(int pi, unsigned user_gpio, unsigned dutycycle);

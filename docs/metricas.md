@@ -14,12 +14,48 @@ justifica.
 | Métrica | Referencia | Resultado | Dónde se midió | Estado |
 |---|---|---|---|---|
 | Rootfs | ≤ 200 MB | **129 MB** | Imagen construida, en el host | Medido |
-| Tiempo de arranque | ≤ 15 s | **17 s** | Raspberry Pi 4 con WiFi, 17 de setiembre de 2026 | Medido; repetir sobre la imagen final |
-| RAM en operación normal | — | **PENDIENTE** | Raspberry Pi 4 | Pendiente |
-| CPU en operación normal | — | **PENDIENTE** | Raspberry Pi 4 | Pendiente |
+| Tiempo de arranque | ≤ 15 s | **19.2 s** | Raspberry Pi 4 con WiFi, imagen final, 5 de octubre de 2026 | Medido; desviación justificada |
+| RAM en operación normal | — | **97 MB** de 1845 MB (`robot-server`: 5.2 MB RSS) | Raspberry Pi 4, robot armado | Medido |
+| CPU en operación normal | — | **3.6 %** de los 4 núcleos (`robot-server`: 4.5 % de un núcleo) | Raspberry Pi 4, robot armado | Medido |
 
-> **PENDIENTE:** correr `scripts/medir-metricas.sh` contra el robot recién arrancado y
-> pegar aquí la tabla que imprime. Ver [Cómo reproducir](#cómo-reproducir).
+Tabla completa que imprimió `scripts/medir-metricas.sh` con el robot recién arrancado,
+en modo autónomo con el HC-SR04, el servo y el MPU-6050 conectados, música sonando y el
+panel consultando `/api/status` cada 500 ms durante 60 s:
+
+### Medición del 2026-10-05 21:36 (hora de Costa Rica) sobre el robot armado
+
+| Metrica | Valor | Metodo |
+|---|---|---|
+| Plataforma | Raspberry Pi 4 Model B Rev 1.2, 4 nucleos, kernel 6.6.63-v8 | `/proc/device-tree/model`, `uname -r` |
+| Particion `/` | 108 MB usados de 169 MB | `df -k /` |
+| Particion `/boot` | 48 MB usados de 130 MB | `df -k /boot` |
+| Particion `/opt/robot/audio/canciones` | 6 MB usados de 169 MB | `df -k /opt/robot/audio/canciones` |
+| Arranque: kernel | 4.4 s | `UserspaceTimestampMonotonic` |
+| Arranque: `robot-server` activo | 17.7 s | `ActiveEnterTimestampMonotonic` de la unidad |
+| Arranque: servidor escuchando | 19.2 s | `journalctl -o short-monotonic`, primera linea "Servidor escuchando" |
+| Arranque: sistema completo | 17.7 s | `FinishTimestampMonotonic` |
+| CPU del sistema (60 s) | 3.6 % de los nucleos | diferencia de `/proc/stat` |
+| CPU de `robot-server` | 4.5 % de un nucleo | diferencia de `utime + stime` en `/proc/PID/stat` |
+| CPU de `pigpiod` | 9.7 % de un nucleo | idem |
+| Carga promedio (1 min) | 0.42 | `/proc/loadavg` |
+| RAM en uso | 97 MB de 1845 MB | `MemTotal - MemAvailable` de `/proc/meminfo` |
+| RAM de `robot-server` (RSS) | 5.2 MB | `VmRSS` de `/proc/PID/status` |
+| RAM de `pigpiod` (RSS) | 1.3 MB | idem |
+| Temperatura del SoC | 38.5 C | `/sys/class/thermal/thermal_zone0/temp` |
+
+**Repetición con los requerimientos opcionales (6 de octubre de 2026).** Misma prueba
+sobre la imagen que agrega la detección de desnivel, el ciclo de limpieza y la playlist
+persistente: RAM 97 MB (`robot-server` 5.4 MB), CPU 3.3 % de los núcleos (`robot-server`
+4.2 % de un núcleo, `pigpiod` 9.2 %). Los opcionales no cambian el consumo. El arranque
+dio 26.8 s porque el primer intento de asociación con el hotspot falló a los 17.1 s y el
+segundo entró a los 25.1 s: el tiempo hasta que el servidor escucha varía entre 19 y
+27 s según la WiFi, y desde que hay red el servidor tarda 1.5 s.
+
+`pigpiod` (9.7 % de un núcleo) es el que más CPU usa: muestrea los GPIO cada 5 µs para
+medir el eco del HC-SR04 y generar el pulso del servo. Durante la ventana el radar
+detectó obstáculos y el robot evadió varias veces; el contador de throttling del
+firmware (`/sys/devices/platform/soc/soc:firmware/get_throttled`) quedó en `0`: sin
+bajo voltaje ni limitación térmica.
 
 Como referencia, bajo emulación (`qemuarm64-robot`, 11 de setiembre de 2026) la imagen
 usó 98 MB de rootfs y unos 50 MB de RAM. No son las métricas del enunciado: ver
@@ -135,7 +171,22 @@ Condiciones:
 
 ## Justificación de la desviación en el arranque
 
-El arranque medido, 17 s, excede la referencia en 2 s.
+El arranque medido, 19.2 s hasta que el servidor escucha en el puerto 8080, excede la
+referencia en 4.2 s. El desglose, de los relojes de `systemd` y del journal:
+
+| Hito | Tiempo desde el kernel |
+|---|---|
+| Arranca el espacio de usuario | 4.4 s |
+| `wpa_supplicant` listo | 10.5 s |
+| Empieza la asociación con el punto de acceso | 17.3 s |
+| WiFi conectada, `robot-server` activo | 17.7 s |
+| MPU-6050 calibrado | 18.7 s |
+| Servidor escuchando | 19.2 s |
+
+Entre el 10.5 y el 17.3 s `wpa_supplicant` busca el punto de acceso (un hotspot de
+teléfono): casi 7 s que dependen de la red y no del robot. Desde que la red está
+lista, el servidor tarda 1.5 s en escuchar, de los cuales 0.7 s son la calibración del
+MPU-6050.
 
 `robot-server` declara `Wants=network-online.target` y `After=network-online.target`:
 espera a que la red esté operativa antes de arrancar. En un robot sin cable, eso es la
@@ -146,7 +197,9 @@ estaría operativo en el sentido del enunciado aunque el proceso ya corriera.
 Ese tiempo ya se redujo una vez. El servidor arrancaba a los **130 s** porque
 `systemd-networkd-wait-online` agotaba su espera por dos motivos: `eth0` sin cable se
 quedaba configurando, y dos clientes DHCP competían por `wlan0`. Marcar la Ethernet
-como no requerida y dejar un solo cliente DHCP lo llevó a 17 s (commit `5890dbb`).
+como no requerida y dejar un solo cliente DHCP lo llevó a 17 s (commit `5890dbb`). Después el servidor llegó a escuchar a los 24.7 s,
+porque reproducía los sonidos de inicio antes de abrir el puerto; abrirlo antes de los
+sonidos lo dejó en 19.2 s.
 
 Para bajar de 15 s quedaría arrancar el servidor sin esperar a la red: escucha en todas
 las interfaces, así que respondería en cuanto la WiFi asociara. El costo es que el LED
@@ -181,6 +234,6 @@ Pi**: el enunciado pide las métricas sobre la imagen final.
 - [x] Método y herramientas documentados para las cuatro métricas
 - [x] Script de medición reproducible
 - [x] Tiempo de arranque medido en la Raspberry Pi 4 y desviación justificada
-- [ ] Tiempo de arranque repetido sobre la imagen final
-- [ ] RAM y CPU medidos en operación normal
-- [ ] Tabla final copiada al README
+- [x] Tiempo de arranque repetido sobre la imagen final
+- [x] RAM y CPU medidos en operación normal
+- [x] Tabla final copiada al README

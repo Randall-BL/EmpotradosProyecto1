@@ -217,9 +217,20 @@ operación normal. Referencia: rootfs $\leq$ 200\,MB y arranque $\leq$ 15\,s. \\
 \bottomrule
 \end{longtable}
 
-Los tres requerimientos opcionales (detección de desnivel, notificación de
-fin de ciclo y playlist persistente) se dejaron fuera del alcance para
-concentrar el tiempo en el núcleo obligatorio.
+Se implementaron además los tres requerimientos opcionales:
+
+\begin{itemize}
+  \item \textbf{RO1, desnivel.} Dos sensores infrarrojos al piso en las
+        esquinas delanteras (GPIO 4 y 8) detienen el robot ante el borde de
+        una grada; en autónomo retrocede y gira hacia el otro lado, y en
+        manual no deja avanzar.
+  \item \textbf{RO2, fin de ciclo.} El usuario fija una meta en minutos de
+        modo autónomo o en metros cuadrados recorridos; al cumplirla el robot
+        se detiene, suena un aviso y el panel lo informa.
+  \item \textbf{RO3, playlist persistente.} La lista se edita desde el panel
+        y se guarda en la partición de la música, así sobrevive a los
+        reinicios.
+\end{itemize}
 
 \subsection{Salud y seguridad pública}
 
@@ -780,6 +791,13 @@ R17 & Ambas recetas heredan \id{cmake}; la biblioteca se empaqueta en
 R18 & \id{bitbake robot-image} produce la imagen desde un clon limpio. &
 Cumple & \ruta{docs/yocto-setup.md} \\
 R19 & Ver la sección~\ref{sec:metricas}. & Ver tabla & \ruta{docs/metricas.md} \\
+RO1 & Tres minutos en autónomo sobre el simulador, con una grada que el
+HC-SR04 no ve: una detección con evasión y ninguna caída. Falta montar los
+sensores en el robot. & Cumple en simulador & \ruta{docs/opcionales.md} \\
+RO2 & Con una meta de 12\,s el robot se detuvo a los 12.5\,s, sonó el aviso
+y el panel marcó el ciclo completo. & Cumple & \ruta{docs/opcionales.md} \\
+RO3 & La playlist se guardó, sobrevivió a un reinicio del servidor y se
+reprodujo en orden y en bucle. & Cumple & \ruta{docs/opcionales.md} \\
 \bottomrule
 \end{longtable}
 
@@ -846,19 +864,22 @@ optoacopladores.
 \midrule
 Rootfs & $\leq$ 200\,MB & 129\,MB & \id{du} sobre el rootfs de la imagen
 construida. La partición raíz es de tamaño fijo, 180\,MiB. \\
-Tiempo de arranque & $\leq$ 15\,s & 17\,s & Instante en que
-\id{robot-server} queda activo, en la Raspberry Pi 4 con WiFi. \\
-RAM en operación & --- & \pendiente{medir} & \id{/proc/meminfo} y
-\id{VmRSS} de cada proceso. \\
-CPU en operación & --- & \pendiente{medir} & \id{/proc/stat} durante 60\,s. \\
+Tiempo de arranque & $\leq$ 15\,s & 19.2\,s & Instante en que
+\id{robot-server} escucha en el puerto 8080, en la Raspberry Pi 4 con WiFi. \\
+RAM en operación & --- & 97\,MB de 1845\,MB & \id{/proc/meminfo};
+\id{robot-server} ocupa 5.2\,MB (\id{VmRSS}). \\
+CPU en operación & --- & 3.6\,\% de 4 núcleos & \id{/proc/stat} durante 60\,s;
+\id{robot-server} usa el 4.5\,\% de un núcleo. \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-El rootfs queda en el 65\,\% del presupuesto. El arranque excede la
-referencia por 2\,s: \id{robot-server} espera a que la red esté operativa
-(\id{network-online.target}), y la asociación WPA2 más la concesión DHCP
-dominan ese tiempo. Se considera una desviación justificada, porque sin red
+Medido sobre la imagen final con el robot armado, en modo autónomo, con
+música y el panel consultando el estado cada 500\,ms. El rootfs queda en el
+65\,\% del presupuesto, y la RAM y la CPU dejan margen de sobra. El arranque
+excede la referencia por 4.2\,s: \id{robot-server} espera a que la red esté
+operativa (\id{network-online.target}), y la búsqueda del punto de acceso
+WiFi se lleva casi 7\,s; desde que hay red, el servidor escucha en 1.5\,s. Se considera una desviación justificada, porque sin red
 el panel de control no es alcanzable y el servicio no estaría operativo en
 el sentido del enunciado. El método completo está en \id{docs/metricas.md}.
 
@@ -940,7 +961,10 @@ quien la reemplazó, y el proyecto continuó con la nueva. \\
   \item Las baterías de 9\,V tienen poca capacidad y su tensión cae bajo la
         corriente de los motores: la autonomía de la tracción es corta y
         conviene tener repuestos a mano.
-  \item Los requerimientos opcionales no se implementaron.
+  \item Los sensores de desnivel se probaron solo en el simulador: falta
+        montarlos y ajustar su umbral sobre el piso de la demostración.
+  \item La meta del ciclo de limpieza vive en memoria: vuelve a ``sin
+        límite'' al reiniciar el robot.
 \end{itemize}
 
 % ===========================================================================

@@ -49,6 +49,18 @@ static const Caja g_muebles[] = {
 };
 #define N_MUEBLES ((int)(sizeof(g_muebles) / sizeof(g_muebles[0])))
 
+/* El hueco de una grada en una esquina: no tiene altura, asi que el HC-SR04 no
+   lo ve; solo lo detectan los sensores infrarrojos que miran al piso. Si el
+   centro del robot pasa el borde, el robot se cae: se cuenta como caida y se
+   lo deja en el borde para que la simulacion siga. */
+static const Caja g_hueco = { 110.0, -195.0, 195.0, -100.0 };
+static int        g_caidas = 0;
+static int        g_cayendo = 0;
+
+static int en_hueco(double x, double y) {
+    return x > g_hueco.x0 && x < g_hueco.x1 && y > g_hueco.y0 && y < g_hueco.y1;
+}
+
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static double g_x = 0.0, g_y = 0.0, g_rumbo = 0.0;   /* pose verdadera  */
@@ -127,6 +139,15 @@ static void integrar(void) {
         }
     }
 
+    int cayo = en_hueco(nx, ny);
+    if (cayo) { nx = g_x; ny = g_y; }
+    if (cayo && !g_cayendo) {
+        g_caidas++;
+        fprintf(stderr, "[sim] CAIDA %d en (%.0f, %.0f) cm, rumbo %.0f\n",
+                g_caidas, nx, ny, g_rumbo * 180.0 / M_PI);
+    }
+    g_cayendo = cayo;
+
     /* Cada choque nuevo se avisa: es la medida de si la navegacion evade. */
     if (g_choco && !choco_antes) {
         g_choques++;
@@ -178,6 +199,8 @@ void mundo_init(void) {
     g_v_izq = g_v_der = g_v_cuerpo = g_omega = 0.0;
     g_choco = 0;
     g_choques = 0;
+    g_caidas  = 0;
+    g_cayendo = 0;
     g_rastro_n = 0;
     clock_gettime(CLOCK_MONOTONIC, &g_t);
     g_imu_t = g_t;
@@ -313,6 +336,24 @@ int mundo_choques(void) {
     return n;
 }
 
+int mundo_caidas(void) {
+    pthread_mutex_lock(&g_lock);
+    int n = g_caidas;
+    pthread_mutex_unlock(&g_lock);
+    return n;
+}
+
+int mundo_sin_piso(double adelante_cm, double izquierda_cm) {
+    pthread_mutex_lock(&g_lock);
+    integrar();
+    /* Rumbo de brujula: adelante es (sin, cos); la izquierda, (-cos, sin). */
+    double x = g_x + adelante_cm * sin(g_rumbo) - izquierda_cm * cos(g_rumbo);
+    double y = g_y + adelante_cm * cos(g_rumbo) + izquierda_cm * sin(g_rumbo);
+    int r = en_hueco(x, y);
+    pthread_mutex_unlock(&g_lock);
+    return r;
+}
+
 /* ── Dibujo en la terminal ──────────────────────────────────────────────── */
 
 #define DIBUJO_COLS 61
@@ -334,6 +375,11 @@ void mundo_dibujar(void) {
             for (int c = A_COL(g_muebles[i].x0); c <= A_COL(g_muebles[i].x1); c++)
                 if (f >= 0 && f < DIBUJO_FILS && c >= 0 && c < DIBUJO_COLS)
                     lienzo[f][c] = '#';
+
+    for (int f = A_FIL(g_hueco.y1); f <= A_FIL(g_hueco.y0); f++)
+        for (int c = A_COL(g_hueco.x0); c <= A_COL(g_hueco.x1); c++)
+            if (f >= 0 && f < DIBUJO_FILS && c >= 0 && c < DIBUJO_COLS)
+                lienzo[f][c] = '~';
 
     pthread_mutex_lock(&g_lock);
     for (int i = 0; i < g_rastro_n; i++) {
@@ -357,6 +403,6 @@ void mundo_dibujar(void) {
     printf("+");
     for (int c = 0; c < DIBUJO_COLS; c++) printf("-");
     printf("+\n");
-    printf("  # mueble   . recorrido   ^>v< robot (%.0f, %.0f) rumbo %.0f\n",
+    printf("  # mueble   ~ grada   . recorrido   ^>v< robot (%.0f, %.0f) rumbo %.0f\n",
            g_x, g_y, grados);
 }

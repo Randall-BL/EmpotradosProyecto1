@@ -9,6 +9,7 @@
 | `qemu.md` | La imagen completa en QEMU (`MACHINE=qemuarm64-robot runqemu robot-image nographic slirp`), sin la Raspberry |
 | `api-librobot.md` | Referencia de la API pública de `librobot` (motores, radar, servo, MPU-6050, LEDs, odometría, audio) |
 | `navegacion-radar.md` | Barrido del radar, velocidad con el MPU-6050, tiempo antes de chocar, evasión y mapa |
+| `opcionales.md` | Los tres requerimientos opcionales: desnivel con sensores IR, fin de ciclo de limpieza y playlist persistente |
 | `odometria.md` | Procedimiento de calibración en campo (motores, servo, MPU-6050, umbrales, odometría) |
 | `paquetes.md` | Todo paquete agregado sobre la imagen mínima, con su justificación |
 | `metricas.md` | Métricas de eficiencia: método, resultados y justificación de las desviaciones |
