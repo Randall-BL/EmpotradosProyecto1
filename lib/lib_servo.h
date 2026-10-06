@@ -15,9 +15,9 @@
  * 0 = derecha, 90 = al frente, 180 = izquierda.
  *
  * El pulso lo genera pigpiod por DMA a 50 Hz (set_servo_pulsewidth), asi que
- * no se deforma aunque el proceso tarde en recibir CPU. La senal cruza al
- * dominio de potencia por un PC817 en seguidor de emisor, que NO la invierte:
- * con el GPIO en bajo el servo no recibe pulsos y se queda quieto. Ver
+ * no se deforma aunque el proceso tarde en recibir CPU. La senal va directo
+ * del GPIO al servo, que se alimenta de los 5 V de la Raspberry Pi: con el
+ * GPIO en bajo el servo no recibe pulsos y se queda quieto. Ver
  * docs/hardware-aislamiento.md.
  */
 
@@ -26,8 +26,7 @@
 
 /**
  * Pulso que lleva el servo a 0 y a 180 grados, en microsegundos. Varian entre
- * unidades y el optoacoplador corre el flanco unas decenas de microsegundos:
- * se calibran en campo (docs/odometria.md).
+ * unidades: se calibran en campo (docs/odometria.md).
  */
 #define SERVO_PULSO_0_US    500
 #define SERVO_PULSO_180_US 2500

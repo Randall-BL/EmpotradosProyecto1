@@ -25,6 +25,9 @@
  *   GET  /api/audio/list
  *   POST /api/audio/control
  *   POST /api/audio/volume
+ *   GET  /api/audio/playlist
+ *   POST /api/audio/playlist
+ *   POST /api/ciclo
  */
 
 enum MHD_Result api_login        (struct MHD_Connection *conn, const char *body, size_t len);
@@ -35,5 +38,8 @@ enum MHD_Result api_move         (struct MHD_Connection *conn, const char *body,
 enum MHD_Result api_audio_list   (struct MHD_Connection *conn);
 enum MHD_Result api_audio_control(struct MHD_Connection *conn, const char *body, size_t len);
 enum MHD_Result api_audio_volume (struct MHD_Connection *conn, const char *body, size_t len);
+enum MHD_Result api_audio_playlist_get(struct MHD_Connection *conn);
+enum MHD_Result api_audio_playlist_set(struct MHD_Connection *conn, const char *body, size_t len);
+enum MHD_Result api_ciclo        (struct MHD_Connection *conn, const char *body, size_t len);
 
 #endif /* API_H */

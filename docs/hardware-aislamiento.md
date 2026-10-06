@@ -17,8 +17,8 @@ Tres cosas lo hacen peor en este robot:
 
 1. **Corriente de arranque.** Un motor DC pequeño arrancando consume entre 5 y 8 veces
    su corriente nominal durante decenas de milisegundos.
-2. **PWM a 1 kHz.** Se conmuta la corriente del motor mil veces por segundo. Cada flanco
-   es un transitorio.
+2. **Arranques y frenados.** Cada vez que el robot arranca, frena o evade un obstáculo
+   la corriente del motor se conmuta de golpe. Cada flanco es un transitorio.
 3. **Inversión de sentido.** Pasar de avance a retroceso invierte la corriente en un
    inductor cargado: es el peor caso.
 
@@ -27,17 +27,18 @@ El GPIO de la Raspberry Pi **no tiene diodos de protección hacia 3.3 V** y tole
 
 ---
 
-## Solución adoptada: PC817 en las cinco señales
+## Solución adoptada: PC817 en las cuatro señales de los motores
 
 El L298N se usa con los **jumpers `ENA` y `ENB` puestos**: el puente queda siempre
-habilitado y esos pines no salen a la Raspberry Pi. La velocidad se controla con **PWM
-directamente sobre las entradas de sentido** `IN1`–`IN4`, así que hacia el dominio de
-potencia cruzan cuatro señales, las cuatro con PWM. La quinta es la del **servo del
-radar**: es un motor, se alimenta del riel de potencia y su señal cruza la barrera igual,
-pero con un canal armado distinto (ver [más abajo](#el-canal-del-servo-no-invierte)).
+habilitado y esos pines no salen a la Raspberry Pi. Los motores se controlan con
+**niveles fijos sobre las entradas de sentido** `IN1`–`IN4` (ver
+[Velocidad fija](#velocidad-fija)), así que hacia el dominio de potencia cruzan cuatro
+señales, y las cuatro lo hacen por un optoacoplador. El **servo del radar** no cruza
+la barrera: se alimenta de los 5 V de la Raspberry Pi y su señal sale directo del GPIO
+(ver [más abajo](#el-servo-va-en-el-dominio-lógico)).
 
 ```
-     DOMINIO LÓGICO (3.3 V)          │        DOMINIO DE POTENCIA (7.4 V)
+     DOMINIO LÓGICO (3.3 V)          │        DOMINIO DE POTENCIA (9 V)
      GND_LOG                         │        GND_POT
                                      │
   GPIO ──[R 390Ω]──┐             ┌───┼──── +5V_POT
@@ -74,30 +75,30 @@ sobre su eje.
 
 Los pines `GPIO 12` y `13`, que antes llevaban `ENA`/`ENB`, quedan libres.
 
-### Por ahora, velocidad fija
+### Velocidad fija
 
-La entrada activa lleva un **nivel fijo**, no PWM: cualquier velocidad distinta de cero
-es la máxima (`MOTOR_VELOCIDAD_VARIABLE` en 0, en `lib/lib_motors.h`).
+Los motores trabajan **sin PWM**: la entrada activa lleva un nivel fijo y cualquier
+velocidad distinta de cero es la máxima (`MOTOR_VELOCIDAD_VARIABLE` en 0, en
+`lib/lib_motors.h`). El robot avanza, retrocede, gira sobre su eje hacia los dos lados y
+frena, que es el control diferencial que pide el enunciado.
 
-Se probó primero con PWM de 1 kHz sobre la entrada activa —el motor alterna entre avanzar
-y frenar, y la velocidad sigue al ciclo de trabajo— y **los motores no se movieron**. La
-causa más probable es la suma de tres pérdidas:
+> **Desviación acordada con el profesor.** El enunciado pide que la velocidad de cada
+> motor se controle por PWM. Se le consultó al profesor y se acordó que en este robot la
+> PWM no es necesaria, porque con ella el robot no se mueve.
 
-- el PC817 con 4.7 kΩ de pull-up tarda decenas de microsegundos en apagarse, y en cada
-  ciclo se come parte del tiempo en que la entrada debía estar en alto;
-- el L298N cae unos 2 V: de los 7.4 V del pack, al motor le llegan ~5.4 V a fondo;
-- a una velocidad media (el 50 % por defecto del panel), lo que queda en promedio es
-  menos de 2 V, por debajo de la tensión de arranque de un motor de 6 V con reductora.
+La razón está en los motores. Son motorreductores lentos y de alto torque (30 rpm a 6 V
+y 60 rpm a 12 V; 110 y 200 oz-in a rotor bloqueado) y trabajan a unos 9 V, que es lo que
+da la batería. El L298N cae unos 2 V, así que a fondo les llegan unos 7 V: con ruedas de
+30 mm, el robot avanza a unos 5 cm/s. Recortar esa tensión con PWM los deja por debajo
+de lo que necesitan para mover el robot.
 
-Sin la PWM se pierde el control de velocidad y los giros de radio variable que pide el
-enunciado: el robot avanza, retrocede y gira sobre su eje, siempre al máximo. Para
-recuperarlos, cualquiera de estas, y después `MOTOR_VELOCIDAD_VARIABLE` en 1:
+Se comprobó en la placa: con PWM de 1 kHz sobre la entrada activa **los motores no se
+movieron**. A la caída del L298N se suma que el PC817 con 4.7 kΩ de pull-up tarda decenas
+de microsegundos en apagarse, y en cada ciclo se come parte del tiempo en que la entrada
+debía estar en alto.
 
-| Cambio | Dónde | Efecto |
-|---|---|---|
-| Bajar la PWM a **100 Hz** | `PWM_FREQ` en `lib/lib_motors.c` | El apagado del PC817 pasa a ser ~1 % del ciclo |
-| Bajar el pull-up a **1 kΩ** | Placa de optoacopladores | El PC817 se apaga varias veces más rápido; 5 mA por canal del riel de potencia |
-| Velocidad mínima útil | `server/src/main.c`, `api.c` | Llevar el 1–100 % del panel a un ciclo de ~150–255, por encima del arranque |
+El modo con PWM sigue en la biblioteca (`MOTOR_VELOCIDAD_VARIABLE` en 1) y está probado
+en el simulador, pero el robot no lo usa.
 
 ### Cálculo de la resistencia de entrada
 
@@ -114,9 +115,9 @@ R = (3.3 V − 1.2 V) / If
 | 10 mA | 210 Ω | 220 Ω | 40 mA ⚠️ |
 
 **Se usa 390 Ω.** El límite de corriente sumada de todos los GPIO de la Raspberry Pi es
-de 50 mA, y a eso hay que restarle todavía los LEDs indicadores y el canal del servo.
+de 50 mA, y a eso hay que restarle todavía los LEDs indicadores.
 Con 5 mA por canal los cuatro optos suman 20 mA y queda holgura para los LEDs, de los que
-nunca hay más de tres encendidos (15 mA), y el canal del servo (3.1 mA). La cuenta
+nunca hay más de tres encendidos (15 mA). La cuenta
 completa está en [`hardware-pinout.md`](hardware-pinout.md).
 
 El PC817 con `CTR` mínimo de 50 % da 2.5 mA de colector con `If = 5 mA`. Contra la
@@ -128,8 +129,8 @@ resistencia de 4.7 kΩ a 5 V eso satura el transistor de sobra: hacen falta apen
 `4.7 kΩ` de colector a `+5V_POT`. Con `Cpar ≈ 10 pF` de la entrada del L298N la
 constante de tiempo es de unos 50 ns, despreciable. Lo que manda es el apagado del
 propio PC817: con la carga de 4.7 kΩ y el transistor saturado tarda decenas de
-microsegundos. Con niveles fijos no importa; con PWM de 1 kHz es parte de por qué los
-motores no se movieron (ver [arriba](#por-ahora-velocidad-fija)).
+microsegundos. Con niveles fijos, que es como trabaja el robot, no importa; con PWM de
+1 kHz fue parte de por qué los motores no se movieron (ver [arriba](#velocidad-fija)).
 
 Bajarla a 1 kΩ acelera el apagado pero consume 5 mA por canal del riel de potencia.
 
@@ -145,9 +146,8 @@ el LED está encendido, y al conducir lleva la salida a **nivel bajo**:
 | Alto (3.3 V) | Encendido | Conduce | **Bajo** |
 | Bajo (0 V) | Apagado | Corte | **Alto** (por el pull-up) |
 
-Con la PWM sobre las entradas, pedir un ciclo *d* en el GPIO entrega 255 − *d* en el
-L298N. Sin compensarlo, la entrada que debía quedar en bajo queda siempre en alto, y
-cada motor **gira al revés**: `motores_avanzar()` haría retroceder el robot y el giro a
+Sin compensarlo, la entrada que debía quedar en bajo queda en alto y la que debía
+quedar en alto, en bajo: cada motor **gira al revés**: `motores_avanzar()` haría retroceder el robot y el giro a
 la derecha sería a la izquierda.
 
 ### Cómo se compensa
@@ -191,61 +191,19 @@ L298N en alto por los pull-up. Con el puente habilitado eso es **freno**, no mov
 
 ---
 
-## El canal del servo no invierte
+## El servo va en el dominio lógico
 
-Para el servo, en cambio, la inversión no se puede compensar en software sin un riesgo
-que los motores no tienen. `pigpiod` genera los pulsos del servo por DMA
-(`set_servo_pulsewidth`), y lo que no se puede invertir es el **reposo**: durante el
-arranque, antes de que `pigpiod` configure el pin, o si el servidor se detiene, el GPIO
-queda en bajo. Con un canal de emisor común eso es un nivel alto **permanente** en la
-entrada del servo, que muchos servos interpretan como un pulso larguísimo y los lleva
-contra el tope mecánico.
+El servo del radar se alimenta del **pin de 5 V de la Raspberry Pi** y su señal sale
+**directo del GPIO 25**, sin optoacoplador. Un servo de este tamaño acepta el pulso de
+3.3 V como nivel alto, y al compartir fuente y tierra con la Pi no hay barrera que
+cruzar.
 
-Por eso el quinto canal se arma en **seguidor de emisor**: el colector va a `+5V_POT`
-y la salida se toma del emisor, con una resistencia a `GND_POT`.
+Los pulsos los genera `pigpiod` por DMA (`set_servo_pulsewidth`). En reposo el GPIO
+queda en bajo y el servo no recibe pulsos: se queda donde estaba.
 
-```
-     DOMINIO LÓGICO (3.3 V)          │        DOMINIO DE POTENCIA
-     GND_LOG                         │        GND_POT
-                                     │
-  GPIO 25 ─[R 680Ω]─┐            ┌───┼──── +5V_POT
-                    │            │   │
-                  ┌─┴─┐          │   │      colector
-                  │ ▼ │ LED      │   │
-   PC817          │   │          │   │
-                  │ ⊂ │          └───┼──┐
-                  └─┬─┘              │  │  emisor
-                    │                │  ├─────────► señal del servo
-                 GND_LOG             │  │
-                                     │ [R 4.7kΩ]
-                                     │  │
-                                     │ GND_POT
-```
-
-| GPIO 25 | LED del opto | Fototransistor | Señal del servo |
-|---|---|---|---|
-| Alto (3.3 V) | Encendido | Conduce | **Alto** (~4.8 V) |
-| Bajo (0 V) | Apagado | Corte | **Bajo** (por la resistencia a tierra) |
-
-Sin inversión: el pulso que manda `pigpiod` es el que recibe el servo, y en reposo no
-recibe nada.
-
-### Cálculo
-
-- **Salida:** la entrada del servo es de alta impedancia; la corriente la fija la
-  resistencia de emisor: 4.8 V / 4.7 kΩ ≈ 1 mA.
-- **Entrada:** con CTR mínimo de 50 % hacen falta 2 mA en el LED para sostener ese
-  miliamperio. `R = (3.3 V − 1.2 V) / 3 mA = 700 Ω` → **680 Ω, 3.1 mA**. Circula solo
-  durante el pulso (≤ 2.5 ms cada 20 ms): 0.4 mA de promedio sobre el presupuesto del
-  conector.
-- **Tiempos:** el PC817 tarda unas decenas de microsegundos en apagarse, así que el
-  pulso llega al servo algo más largo de lo que se mandó. Es un corrimiento fijo de
-  pocos grados y se absorbe en la calibración de `SERVO_PULSO_0_US` /
-  `SERVO_PULSO_180_US` (ver [`odometria.md`](odometria.md)).
-
-El servo se alimenta de su propio regulador de 5 V en el riel de potencia (ver
-[`hardware-alimentacion.md`](hardware-alimentacion.md)); su tierra es `GND_POT`, la
-misma del emisor.
+El costo de esta decisión es que los picos de corriente del servo entran al riel de 5 V
+de la Pi; cómo se mantienen controlados está en
+[`hardware-alimentacion.md`](hardware-alimentacion.md).
 
 ---
 
@@ -260,7 +218,8 @@ Es la mitad del asunto y la que más se equivoca.
      │  MPU-6050                                      │
      │  LEDs indicadores                              │
      │  Amplificador de audio PAM8403 + parlante      │
-     │  Lado LED de los 5 optoacopladores             │
+     │  Servo del radar                               │
+     │  Lado LED de los 4 optoacopladores             │
      │                                                │
      │  Todos referidos a GND_LOG                     │
      └────────────────────────────────────────────────┘
@@ -268,8 +227,8 @@ Es la mitad del asunto y la que más se equivoca.
      ┌─────────────── DOMINIO DE POTENCIA ────────────┐
      │  Driver L298N (VS, VSS y jumpers ENA/ENB)      │
      │  2 motores DC                                  │
-     │  Servo del radar + su regulador de 5 V         │
-     │  Lado fototransistor de los 5 optoacopladores  │
+     │  2 baterías de 9 V en paralelo                 │
+     │  Lado fototransistor de los 4 optoacopladores  │
      │                                                │
      │  Todos referidos a GND_POT                     │
      └────────────────────────────────────────────────┘
@@ -283,11 +242,12 @@ los optoacopladores no sirven de nada.
 
 El L298N tiene un pin `+5V` (`VSS`) para su propia lógica interna. **Ese pin NO se
 conecta a los 5 V de la Raspberry Pi.** Si se conecta, la tierra de referencia de la
-lógica del L298N pasa a ser la de la Pi y el aislamiento queda anulado, aunque los seis
+lógica del L298N pasa a ser la de la Pi y el aislamiento queda anulado, aunque los cuatro
 optoacopladores estén perfectamente montados.
 
-`VSS` se alimenta desde el regulador del **riel de potencia**, o desde el regulador
-interno del propio módulo L298N si trae el jumper de 5 V puesto y `VS ≤ 12 V`.
+`VSS` se alimenta desde el regulador interno del propio módulo L298N, con el jumper de
+5 V puesto: es válido mientras `VS ≤ 12 V`, y las baterías dan 9 V. De esa misma salida
+(`+5V_POT`) cuelgan los pull-up de los optoacopladores.
 
 ---
 
@@ -303,10 +263,9 @@ cuatro PC817.
 
 **Se mantiene la solución con PC817.**
 
-> El HC-SR04 va montado **sobre** el servo pero pertenece al dominio lógico: su
-> alimentación y sus señales llegan por su propio cable desde la Raspberry Pi. El brazo
-> del servo es de plástico y no une las dos tierras; el cable del sensor no debe
-> compartir conector con el del servo.
+> El servo y el HC-SR04 que lleva encima pertenecen los dos al dominio lógico: su
+> alimentación y sus señales llegan desde la Raspberry Pi. Ninguno de sus cables debe
+> tocar el lado de potencia.
 
 ---
 
@@ -314,10 +273,9 @@ cuatro PC817.
 
 | Cantidad | Componente | Notas |
 |---|---|---|
-| 5 | Optoacoplador PC817 (o 4N25) | Cuatro para `IN1`–`IN4` y uno para el servo |
+| 4 | Optoacoplador PC817 (o 4N25) | Uno por entrada: `IN1`–`IN4` |
 | 4 | Resistencia 390 Ω, 1/4 W | Limitación del LED, canales del L298N |
-| 1 | Resistencia 680 Ω, 1/4 W | Limitación del LED, canal del servo |
-| 5 | Resistencia 4.7 kΩ, 1/4 W | Cuatro pull-up de colector (L298N) y una a tierra de emisor (servo) |
+| 4 | Resistencia 4.7 kΩ, 1/4 W | Pull-up de colector hacia `+5V_POT` |
 | 1 | Driver L298N (módulo) | Doble puente H, **con los jumpers `ENA` y `ENB` puestos** |
 | 4 | Diodo 1N5822 (Schottky) | Volante, si el módulo no los trae |
 | 1 | Capacitor 100 µF electrolítico | Desacople en `VS` del L298N |
@@ -348,11 +306,11 @@ seguir.
 
 ### Paso 2 — Riel de potencia solo
 
-Energizar únicamente la batería y el lado de potencia, sin la Raspberry Pi conectada.
+Conectar únicamente las baterías de 9 V, sin la Raspberry Pi encendida.
 
 | Punto | Esperado |
 |---|---|
-| `VS` del L298N | 7.4 V nominal (6.0–8.4 V según carga de la batería) |
+| `VS` del L298N | Alrededor de 9 V con baterías nuevas |
 | `VSS` del L298N | 5 V ± 0.25 V |
 | `ENA` y `ENB` del L298N | ~5 V: los jumpers están puestos |
 | Entradas `IN1`–`IN4` (con optos en reposo) | ~5 V, por el pull-up — los motores quedan frenados |
@@ -369,24 +327,11 @@ opto a través de su resistencia de 390 Ω:
 
 Esto confirma el aislamiento y **confirma también la inversión** descrita arriba.
 
-El canal del servo, en cambio, **no invierte**. Con el servo desconectado:
+### Paso 4 — Dominio lógico solo
 
-| Entrada del opto (GPIO 25) | Salida hacia el servo |
-|---|---|
-| 3.3 V | ~4.8 V (nivel alto) |
-| 0 V | ~0 V (nivel bajo) |
-
-### Paso 4 — Riel lógico solo
-
-Energizar el riel lógico sin la Raspberry Pi. Medir en el conector donde iría:
-
-| Punto | Esperado |
-|---|---|
-| Salida del regulador de 5 V | 5.00 V ± 0.25 V, **sin carga y con carga** |
-| Rizado (osciloscopio, si hay) | < 100 mV pico a pico |
-
-Una lectura de 4.7 V en vacío indica un regulador que no va a sostener la corriente de
-arranque de la Pi. Resolverlo antes de continuar.
+Conectar el power bank a la Raspberry Pi por USB-C, con las baterías de 9 V
+desconectadas. La Pi debe arrancar y el servo, el sensor y el MPU-6050 deben responder
+(ver [`hardware-sensores.md`](hardware-sensores.md)).
 
 ### Paso 5 — Conectar la Raspberry Pi
 
@@ -395,7 +340,7 @@ del L298N**, verificando por consola serie que arranca y que los GPIO responden.
 motores se conectan de últimos.
 
 La primera vez que se conectan, hacerlo **con el robot elevado** (llantas sin tocar el
-piso), en modo manual, y avanzar a baja velocidad desde el panel web: las dos llantas
+piso), en modo manual, y avanzar desde el panel web: las dos llantas
 tienen que girar hacia adelante. Si giran al revés, la compensación de la inversión no
 coincide con la placa: revisar `OPTO_INVERTIDO` en `lib/lib_motors.c` y el Paso 3.
 
@@ -403,14 +348,14 @@ coincide con la placa: revisar `OPTO_INVERTIDO` en `lib/lib_motors.c` y el Paso 
 
 ## Estado
 
-- [x] Solución de aislamiento definida: 5 × PC817, una por señal de control
+- [x] Solución de aislamiento definida: 4 × PC817, uno por entrada del L298N
 - [x] L298N siempre habilitado (jumpers `ENA`/`ENB`), control por `IN1`–`IN4`
-- [ ] Velocidad variable: la PWM de 1 kHz a través del PC817 no movió los motores; por ahora niveles fijos (velocidad máxima)
-- [x] Canal del servo en seguidor de emisor, sin inversión, con su cálculo
+- [x] Velocidad fija, con niveles fijos en `IN1`–`IN4` y sin PWM: desviación acordada con el profesor
+- [x] Servo en el dominio lógico: 5 V de la Raspberry Pi y señal directa del GPIO 25
 - [x] Resistencias calculadas contra el presupuesto de corriente del GPIO
 - [x] Separación de tierras especificada, con el error común documentado
 - [x] Inversión del optoacoplador identificada y compensada en `lib_motors.c` (`OPTO_INVERTIDO`)
 - [x] Procedimiento de verificación con multímetro, en cinco pasos
-- [ ] Circuito armado en placa perforada — **pendiente: requiere los componentes**
-- [ ] Verificación de los cinco pasos ejecutada y registrada
+- [x] Circuito armado
+- [x] Verificación ejecutada: todos los pasos pasaron
 - [ ] Compensación de la inversión verificada con la placa real (Paso 3 y primer avance con el robot elevado)

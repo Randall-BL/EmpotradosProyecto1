@@ -112,8 +112,8 @@ sensores y el mapa actualizándose mientras el robot virtual navega en modo aut�
 ## Límites
 
 - **No sustituye al target.** Es otra máquina (`virt`), otro kernel y un simulador en
-  lugar del GPIO real. Las evidencias de ejecución en la Pi (issues #7 y #10) siguen
-  pendientes del kit.
+  lugar del GPIO real. La ejecución en la Pi está en
+  [`evidencias/ejecucion-target.md`](evidencias/ejecucion-target.md).
 - **Audio.** `lib_audio` abre `hw:1,0`, la salida PWM analógica de la RPi4 (la que en
   el robot va por GPIO 18 al PAM8403); la máquina virtual no tiene tarjeta de sonido,
   así que la reproducción falla con un error en el journal y el servidor sigue

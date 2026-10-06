@@ -74,6 +74,16 @@ int mundo_choco(void);
 /** Cuantas veces choco desde mundo_init(). Cada choque se avisa por stderr. */
 int mundo_choques(void);
 
+/** Cuantas veces se cayo por la grada desde mundo_init(). */
+int mundo_caidas(void);
+
+/**
+ * @brief 1 si debajo de un punto fijo al robot no hay piso (la grada).
+ * @param adelante_cm  Hacia adelante desde el centro del robot.
+ * @param izquierda_cm Hacia la izquierda (negativo: derecha).
+ */
+int mundo_sin_piso(double adelante_cm, double izquierda_cm);
+
 /** Dibuja la habitacion en la terminal, con el robot y su rastro. */
 void mundo_dibujar(void);
 

@@ -27,6 +27,7 @@
 #include "lib_motors.h"
 #include "lib_odom.h"
 #include "lib_radar.h"
+#include "lib_caida.h"
 
 /* El estado global guarda una lectura por angulo del radar. */
 _Static_assert(RADAR_LECTURAS_MAX >= RADAR_N_ANGULOS,
@@ -204,6 +205,15 @@ static enum MHD_Result handle_request(
     if (is_post && strcmp(url, "/api/audio/volume") == 0)
         return api_audio_volume(conn, body, ub->used);
 
+    if (is_get  && strcmp(url, "/api/audio/playlist") == 0)
+        return api_audio_playlist_get(conn);
+
+    if (is_post && strcmp(url, "/api/audio/playlist") == 0)
+        return api_audio_playlist_set(conn, body, ub->used);
+
+    if (is_post && strcmp(url, "/api/ciclo") == 0)
+        return api_ciclo(conn, body, ub->used);
+
     return send_404(conn);
 }
 
@@ -349,6 +359,10 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
 
 static uint32_t g_mapa_seq = 0;   /* ultima lectura del radar ya mapeada */
 
+/* Ultima lectura de los sensores de desnivel (bits CAIDA_IZQ y CAIDA_DER).
+   La escribe actualizar_estado(), que corre en el hilo de navegacion. */
+static volatile int g_caida = 0;
+
 static double diferencia_rumbo(double a, double b) {
     return fabs(fmod(a - b + 540.0, 360.0) - 180.0);
 }
@@ -392,6 +406,11 @@ static int actualizar_estado(RobotState *rs) {
     int    obstaculo = (d_frente > 0.0 && d_frente < DIST_OBSTACULO_CM) ||
                        (choque.ttc_s >= 0.0 && choque.ttc_s < TTC_OBSTACULO_S);
 
+    /* Se lee en cada actualizacion, tambien en medio de las maniobras: a
+       25 cm/s el robot avanza menos de 3 cm entre dos lecturas. */
+    int caida = caida_leer();
+    g_caida = caida;
+
     pthread_mutex_lock(&rs->lock);
 
     rs->sensors.front_cm = (float)lectura_en(l, n, RADAR_FRENTE);
@@ -410,8 +429,13 @@ static int actualizar_estado(RobotState *rs) {
     rs->movimiento.ttc_s          = (float)choque.ttc_s;
     rs->movimiento.imu            = odom_usa_imu();
 
-    int cambio_led = rs->leds.obstacle != obstaculo;
-    rs->leds.obstacle = obstaculo;
+    rs->caida.izq = (caida & CAIDA_IZQ) != 0;
+    rs->caida.der = (caida & CAIDA_DER) != 0;
+
+    /* El LED de alerta se enciende igual ante un obstaculo o un desnivel. */
+    int alerta = obstaculo || caida;
+    int cambio_led = rs->leds.obstacle != alerta;
+    rs->leds.obstacle = alerta;
 
     /* Cada lectura nueva del radar, una sola vez. */
     uint32_t mayor = g_mapa_seq;
@@ -434,7 +458,7 @@ static int actualizar_estado(RobotState *rs) {
 
     pthread_mutex_unlock(&rs->lock);
 
-    if (cambio_led) lib_leds_set(LED_OBSTACLE, obstaculo);
+    if (cambio_led) lib_leds_set(LED_OBSTACLE, alerta);
     return obstaculo;
 }
 
@@ -496,6 +520,9 @@ static int girar_grados(RobotState *rs, double grados) {
     int ok = 1;
     for (int t = 0; t < tope_ms; t += PASO_MS) {
         if (!esperar_ms(rs, PASO_MS)) { ok = 0; break; }
+        /* Girando en el lugar una esquina puede asomarse al borde: se
+           detiene y el lazo principal se encarga del desnivel. */
+        if (g_caida) { ok = 0; break; }
 
         double r;
         odom_get(NULL, NULL, &r);
@@ -559,6 +586,77 @@ static void evadir(RobotState *rs) {
     girar_grados(rs, giro);
 }
 
+/* Rutina ante un desnivel: el HC-SR04 no ve una grada, asi que no hay barrido
+   que consultar. Retrocede mas que ante un obstaculo —el borde esta debajo
+   del robot, no a 20 cm— y gira hacia el lado contrario al del sensor que
+   perdio el piso; con los dos, media vuelta. */
+#define RETROCESO_CAIDA_MS 800
+
+static void evadir_caida(RobotState *rs, int caida) {
+    motores_detener();
+    if (!esperar_ms(rs, 100)) return;
+
+    motores_retroceder(VEL_RETROCESO);
+    int ok = esperar_ms(rs, RETROCESO_CAIDA_MS);
+    motores_detener();
+    if (!ok) return;
+
+    double giro = 180.0;
+    if (caida == CAIDA_IZQ) giro =  120.0;   /* borde a la izquierda: a la derecha */
+    if (caida == CAIDA_DER) giro = -120.0;
+    printf("[auto] desnivel (%s): retrocede y gira %+.0f grados\n",
+           caida == (CAIDA_IZQ | CAIDA_DER) ? "ambos" : caida == CAIDA_IZQ ? "izq" : "der",
+           giro);
+    girar_grados(rs, giro);
+}
+
+/* ══════════════════════════════════════════════════════════
+   Ciclo de limpieza
+══════════════════════════════════════════════════════════ */
+
+static double reloj_s(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec + t.tv_nsec / 1e9;
+}
+
+/* Suma al ciclo el tiempo transcurrido en modo autonomo y el area nueva
+   recorrida. Devuelve 1 la vez que el ciclo se completa. */
+static int avanzar_ciclo(RobotState *rs, OperationMode modo, double dt) {
+    int termino = 0;
+    pthread_mutex_lock(&rs->lock);
+    CicloState *c = &rs->ciclo;
+    if (modo == MODE_AUTONOMOUS && !c->completo) {
+        c->segundos += dt;
+        double celda_m = MAP_CELDA_CM / 100.0;
+        int nuevas = robot_mapa_visitadas(rs) - c->visitadas_inicio;
+        c->area_m2 = (nuevas > 0 ? nuevas : 0) * celda_m * celda_m;
+        if (c->tipo != CICLO_OFF && robot_ciclo_progreso(rs) >= 1.0) {
+            c->completo = 1;
+            c->completados++;
+            termino = 1;
+            printf("[ciclo] ciclo %u completado: %.0f s en autonomo, %.2f m2 recorridos\n",
+                   c->completados, c->segundos, c->area_m2);
+        }
+    }
+    pthread_mutex_unlock(&rs->lock);
+    return termino;
+}
+
+/* 1 si los dos motores empujan hacia adelante. */
+static int avanzando(void) {
+    int izq, der;
+    motores_get(&izq, &der);
+    return izq > 0 && der > 0;
+}
+
+static int ciclo_completo(RobotState *rs) {
+    pthread_mutex_lock(&rs->lock);
+    int c = rs->ciclo.completo;
+    pthread_mutex_unlock(&rs->lock);
+    return c;
+}
+
 /* ══════════════════════════════════════════════════════════
    Hilo de Navegación Autónoma y Lectura de Sensores
 ══════════════════════════════════════════════════════════ */
@@ -567,6 +665,8 @@ static void *autonomous_thread(void *arg) {
 
     OperationMode modo_anterior = MODE_AUTONOMOUS;
     int obstaculo_anterior = 0;
+    int caida_anterior = 0;
+    double t_anterior = reloj_s();
 
     while (g_running) {
         RobotState *rs = robot_state_get();
@@ -582,11 +682,41 @@ static void *autonomous_thread(void *arg) {
         /* 2. El sonido y la detencion son de la APARICION del obstaculo, en
            cualquier modo: tambien frenan al usuario que maneja a mano. Al
            despejarse el camino solo se apaga el LED. */
+        /* Solo se frena si el robot va hacia adelante: el obstaculo y el
+           desnivel estan al frente, y cortar un retroceso o un giro impediria
+           justamente alejarse de ellos. El panel manda la orden una vez al
+           presionar, asi que un freno a destiempo dejaba el robot quieto. */
+        int va_adelante = avanzando();
+
         if (obstaculo && !obstaculo_anterior) {
-            motores_detener();
+            if (va_adelante) motores_detener();
             lib_audio_notify(NOTIFY_OBSTACLE);
         }
         obstaculo_anterior = obstaculo;
+
+        /* Igual con un desnivel. El sonido es el del obstaculo: avisa que el
+           robot freno por algo que tiene delante. */
+        int caida = g_caida;
+        if (caida && !caida_anterior) {
+            if (va_adelante) motores_detener();
+            pthread_mutex_lock(&rs->lock);
+            rs->caida.eventos++;
+            pthread_mutex_unlock(&rs->lock);
+            printf("[caida] sin piso bajo %s\n",
+                   caida == (CAIDA_IZQ | CAIDA_DER) ? "las dos esquinas"
+                   : caida == CAIDA_IZQ ? "la esquina izquierda" : "la esquina derecha");
+            lib_audio_notify(NOTIFY_OBSTACLE);
+        }
+        caida_anterior = caida;
+
+        /* El ciclo cuenta tambien el tiempo de las maniobras: dt sale del
+           reloj, no del periodo del lazo. */
+        double ahora = reloj_s();
+        if (avanzar_ciclo(rs, modo, ahora - t_anterior)) {
+            motores_detener();
+            lib_audio_notify(NOTIFY_CYCLE_END);
+        }
+        t_anterior = ahora;
 
         /* ── Detener motores inmediatamente al cambiar de modo ── */
         if (modo_anterior != modo) {
@@ -599,8 +729,12 @@ static void *autonomous_thread(void *arg) {
 
         // 3. Lógica reactiva, solo en modo autónomo
         if (modo == MODE_AUTONOMOUS) {
-            if (obstaculo) evadir(rs);
-            else           motores_avanzar(VEL_CRUCERO);
+            /* Con el ciclo completo el robot espera quieto hasta que el
+               usuario empiece otro desde el panel. */
+            if (ciclo_completo(rs)) motores_detener();
+            else if (caida)         evadir_caida(rs, caida);
+            else if (obstaculo)     evadir(rs);
+            else                    motores_avanzar(VEL_CRUCERO);
         }
 
         // Lazo de decisión a 10 Hz; el radar barre a su ritmo en librobot
@@ -651,10 +785,8 @@ int main(void) {
     if (lib_audio_init(NULL) < 0)  { fprintf(stderr, "[main] audio init failed\n");}
     if (auth_init()        < 0)  { fprintf(stderr, "[main] autorizacion inicial fallo\n");}
 
-    // Notificacion de encendido
-    lib_audio_notify(NOTIFY_STARTUP); 
-
-    // Iniciar en modo autonomo
+    // Iniciar en modo autonomo. Se fija antes de abrir el puerto para que un
+    // cambio de modo pedido desde el panel no quede pisado despues.
     {
         RobotState *rs = robot_state_get();
         if (rs) {
@@ -662,23 +794,15 @@ int main(void) {
             rs->mode = MODE_AUTONOMOUS;
             pthread_mutex_unlock(&rs->lock);
         }
-        printf("[main] Modo inicial: AUTONOMO\n");
-        lib_audio_notify(NOTIFY_AUTONOMOUS);
     }
 
-    lib_leds_sync_from_state();
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
 
-    // Inicializar Threads
-    pthread_t tid_uptime, tid_watchdog;
-    pthread_create(&tid_uptime,   NULL, uptime_thread,   NULL);
-    pthread_create(&tid_watchdog, NULL, watchdog_thread, NULL);
-
-    // --- INICIAR HILO DE NAVEGACIÓN AUTÓNOMA ---
-    pthread_t auto_tid;
-    pthread_create(&auto_tid, NULL, autonomous_thread, NULL);
-
+    /* El servidor HTTP se abre antes de los sonidos de inicio: cada
+       lib_audio_notify() bloquea hasta que termina el MP3 (unos 6 s entre los
+       dos), y el panel debe ser alcanzable cuanto antes. MHD atiende en sus
+       propios hilos, asi que no espera al main. */
     g_daemon = MHD_start_daemon(
         MHD_USE_THREAD_PER_CONNECTION | MHD_USE_INTERNAL_POLLING_THREAD,
         SERVER_PORT,
@@ -691,10 +815,6 @@ int main(void) {
 
     if (!g_daemon) {
         fprintf(stderr, "[main] fallo al iniciar el daemon en puerto %d\n", SERVER_PORT);
-        g_running = 0;
-        pthread_join(tid_uptime, NULL);
-        pthread_join(tid_watchdog, NULL);
-        pthread_join(auto_tid, NULL);
         auth_destroy();
         lib_audio_destroy();
         robot_shutdown();
@@ -706,6 +826,23 @@ int main(void) {
     printf("[server] Servidor escuchando en puerto %d\n\n", SERVER_PORT);
     printf("  Dev:               http://localhost:%d\n", SERVER_PORT);
     printf("  Red local:         http://<hostname -I>:%d\n",   SERVER_PORT);
+
+    // Notificacion de encendido
+    lib_audio_notify(NOTIFY_STARTUP);
+
+    printf("[main] Modo inicial: AUTONOMO\n");
+    lib_audio_notify(NOTIFY_AUTONOMOUS);
+
+    lib_leds_sync_from_state();
+
+    // Inicializar Threads
+    pthread_t tid_uptime, tid_watchdog;
+    pthread_create(&tid_uptime,   NULL, uptime_thread,   NULL);
+    pthread_create(&tid_watchdog, NULL, watchdog_thread, NULL);
+
+    // --- INICIAR HILO DE NAVEGACIÓN AUTÓNOMA ---
+    pthread_t auto_tid;
+    pthread_create(&auto_tid, NULL, autonomous_thread, NULL);
 
     while (g_running) sleep(1);
 

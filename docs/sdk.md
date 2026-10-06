@@ -161,6 +161,6 @@ comandos no existan **es** la comprobación.
 
 - [x] Procedimiento de generación, instalación y uso del SDK documentado
 - [x] Método de verificación de la compilación cruzada documentado (`file`, `readelf`, `log.do_compile`)
-- [ ] SDK generado con `bitbake -c populate_sdk robot-image` — **pendiente: requiere el host de build**
-- [ ] SDK instalado y probado en las máquinas del grupo — **pendiente**
-- [ ] Fragmento de `log.do_compile` guardado como evidencia — **pendiente**
+- [x] SDK generado con `bitbake -c populate_sdk robot-image` — [`evidencias/sdk-prueba.md`](evidencias/sdk-prueba.md)
+- [x] SDK instalado y probado en una máquina del grupo
+- [x] Fragmentos de `log.do_compile` guardados como evidencia — [`evidencias/`](evidencias/)

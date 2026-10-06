@@ -48,12 +48,20 @@ static struct {
     PlayCmd          cmd;
     char             cmd_filepath[512];
     int              cmd_track_id;
+    float            seek_req;        /* salto pedido en segundos, o -1 */
 
     // Estado actual
     LibAudioStatus   status;
     int              current_id;
     float            position_secs;
     int              volume;          
+
+    // Playlist persistente: ids en orden; pl_pos es la posicion que suena,
+    // o -1 si lo que suena es una pista suelta
+    int              playlist[LIB_AUDIO_TRACKS_MAX];
+    int              playlist_n;
+    int              pl_activa;
+    int              pl_pos;
 
     // PID del proceso de notificación activo
     // pid_t            notify_pid;
@@ -181,6 +189,189 @@ static int mp3_duration(const char *path)
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Playlist persistente
+═══════════════════════════════════════════════════════════ */
+
+/* Las dos se llaman con g.lock tomado. */
+static const LibAudioTrack *pista_por_id(int id)
+{
+    for (int i = 0; i < g.track_count; i++)
+        if (g.tracks[i].id == id) return &g.tracks[i];
+    return NULL;
+}
+
+/* Deja pedida la pista de la posicion pl_pos + 1 (circular). 0 si la playlist
+   quedo sin pistas validas. */
+static int pedir_siguiente_de_playlist(void)
+{
+    for (int intento = 0; intento < g.playlist_n; intento++) {
+        g.pl_pos = (g.pl_pos + 1) % g.playlist_n;
+        const LibAudioTrack *t = pista_por_id(g.playlist[g.pl_pos]);
+        if (!t) continue;
+        strncpy(g.cmd_filepath, t->filepath, sizeof(g.cmd_filepath) - 1);
+        g.cmd_filepath[sizeof(g.cmd_filepath) - 1] = '\0';
+        g.cmd_track_id = t->id;
+        g.cmd          = PCMD_PLAY;
+        return 1;
+    }
+    return 0;
+}
+
+static void ruta_playlist(char *out, size_t len)
+{
+    snprintf(out, len, "%s/%s", g.audio_dir, LIB_AUDIO_PLAYLIST_FILE);
+}
+
+/* Lee la playlist del disco y la traduce a ids. Sin archivo, todas las pistas
+   en orden. Se llama con g.lock tomado, despues de un escaneo. */
+static void cargar_playlist(void)
+{
+    char ruta[600];
+    ruta_playlist(ruta, sizeof(ruta));
+
+    g.playlist_n = 0;
+    FILE *f = fopen(ruta, "r");
+    if (!f) {
+        for (int i = 0; i < g.track_count; i++) g.playlist[g.playlist_n++] = g.tracks[i].id;
+        return;
+    }
+
+    char linea[LIB_AUDIO_NAME_MAX + 4];
+    while (fgets(linea, sizeof(linea), f) && g.playlist_n < LIB_AUDIO_TRACKS_MAX) {
+        linea[strcspn(linea, "\r\n")] = '\0';
+        if (!linea[0]) continue;
+        for (int i = 0; i < g.track_count; i++) {
+            if (strcmp(g.tracks[i].filename, linea) == 0) {
+                g.playlist[g.playlist_n++] = g.tracks[i].id;
+                break;
+            }
+        }
+        /* Un archivo que ya no esta se ignora: la playlist no se rompe por
+           borrar una cancion de la particion. */
+    }
+    fclose(f);
+}
+
+/* Escribe en un temporal y lo renombra: un corte de energia a mitad deja la
+   playlist vieja o la nueva, nunca una a medias. */
+static int guardar_playlist(void)
+{
+    char ruta[600], tmp[620];
+    ruta_playlist(ruta, sizeof(ruta));
+    snprintf(tmp, sizeof(tmp), "%s.tmp", ruta);
+
+    FILE *f = fopen(tmp, "w");
+    if (!f) {
+        fprintf(stderr, "[audio] No se pudo escribir '%s'\n", tmp);
+        return -1;
+    }
+    for (int i = 0; i < g.playlist_n; i++) {
+        const LibAudioTrack *t = pista_por_id(g.playlist[i]);
+        if (t) fprintf(f, "%s\n", t->filename);
+    }
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+    if (rename(tmp, ruta) != 0) {
+        fprintf(stderr, "[audio] No se pudo reemplazar '%s'\n", ruta);
+        unlink(tmp);
+        return -1;
+    }
+    return 0;
+}
+
+int lib_audio_playlist_get(int *ids, int max)
+{
+    if (!g.initialized || !ids || max <= 0) return 0;
+    pthread_mutex_lock(&g.lock);
+    int n = g.playlist_n < max ? g.playlist_n : max;
+    memcpy(ids, g.playlist, (size_t)n * sizeof(int));
+    pthread_mutex_unlock(&g.lock);
+    return n;
+}
+
+int lib_audio_playlist_set(const int *ids, int n)
+{
+    if (!g.initialized || n < 0 || n > LIB_AUDIO_TRACKS_MAX || (n > 0 && !ids)) return -1;
+
+    pthread_mutex_lock(&g.lock);
+    for (int i = 0; i < n; i++) {
+        if (!pista_por_id(ids[i])) {
+            pthread_mutex_unlock(&g.lock);
+            return -1;
+        }
+    }
+    if (n > 0) memcpy(g.playlist, ids, (size_t)n * sizeof(int));
+    g.playlist_n = n;
+
+    /* Si la playlist esta sonando, la posicion sigue a la pista actual; si
+       se la quito, la siguiente sera la primera de la lista nueva. */
+    if (g.pl_activa) {
+        g.pl_pos = -1;
+        for (int i = 0; i < n; i++)
+            if (g.playlist[i] == g.current_id) { g.pl_pos = i; break; }
+        if (n == 0) g.pl_activa = 0;
+    }
+    int r = guardar_playlist();
+    pthread_mutex_unlock(&g.lock);
+
+    printf("[audio] Playlist guardada: %d pista(s)\n", n);
+    return r;
+}
+
+int lib_audio_play_playlist(int pos)
+{
+    if (!g.initialized) return -1;
+    pthread_mutex_lock(&g.lock);
+    if (g.playlist_n == 0) {
+        pthread_mutex_unlock(&g.lock);
+        return -1;
+    }
+    if (pos < 0 || pos >= g.playlist_n) pos = 0;
+    g.pl_activa = 1;
+    g.pl_pos    = pos - 1;   /* pedir_siguiente avanza una */
+    int ok = pedir_siguiente_de_playlist();
+    if (ok) pthread_cond_signal(&g.cond);
+    else    g.pl_activa = 0;
+    pthread_mutex_unlock(&g.lock);
+    return ok ? 0 : -1;
+}
+
+int lib_audio_playlist_pos(void)
+{
+    pthread_mutex_lock(&g.lock);
+    int p = g.pl_activa ? g.pl_pos : -1;
+    pthread_mutex_unlock(&g.lock);
+    return p;
+}
+
+/* Aplica el salto pedido con lib_audio_seek(), si hay uno. Se llama con
+   g.lock tomado y lo devuelve tomado; lo suelta mientras mueve el
+   decodificador, que no toca el estado compartido. */
+static void aplicar_salto(mpg123_handle *mh, snd_pcm_t *pcm, long rate)
+{
+    if (g.seek_req < 0.0f) return;
+    float destino = g.seek_req;
+    g.seek_req = -1.0f;
+    pthread_mutex_unlock(&g.lock);
+
+    off_t muestra = mpg123_seek(mh, (off_t)(destino * (float)rate), SEEK_SET);
+    /* Lo que ya estaba en el buffer de ALSA es de la posicion vieja: se
+       descarta para que el salto se oiga en el acto. */
+    snd_pcm_drop(pcm);
+    snd_pcm_prepare(pcm);
+
+    pthread_mutex_lock(&g.lock);
+    if (muestra >= 0) {
+        g.position_secs = (float)muestra / (float)rate;
+        printf("[audio] Salto a %.1fs\n", g.position_secs);
+    } else {
+        fprintf(stderr, "[audio] No se pudo saltar a %.1fs: %s\n",
+                destino, mpg123_strerror(mh));
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
    Main Thread de reproducción principal
 ═══════════════════════════════════════════════════════════ */
 static void *playback_thread(void *arg)
@@ -200,6 +391,7 @@ static void *playback_thread(void *arg)
         strncpy(fp, g.cmd_filepath, sizeof(fp) - 1);
         fp[511] = '\0';
         g.cmd = PCMD_NONE;
+        g.seek_req = -1.0f;   /* un salto pedido para la pista anterior no aplica */
         pthread_mutex_unlock(&g.lock);
 
         if (cmd == PCMD_QUIT) break;
@@ -246,11 +438,15 @@ static void *playback_thread(void *arg)
         size_t        done;
         int           dec_err;
         int           stop_requested = 0;
+        int           siguiente = 0;      /* fin natural, sigue la playlist */
 
         while (!stop_requested) {
 
             // Verificar comando pendiente
             pthread_mutex_lock(&g.lock);
+
+            // SALTO desde la barra de progreso del panel
+            aplicar_salto(mh, pcm, rate);
 
             // PAUSA: suspender decodificación hasta RESUME / STOP
             if (g.cmd == PCMD_PAUSE) {
@@ -260,9 +456,13 @@ static void *playback_thread(void *arg)
                 snd_pcm_drop(pcm);   
                 printf("[audio] Pausado en %.1fs\n", g.position_secs);
 
+                /* En pausa tambien se puede saltar: se mueve el decodificador
+                   y se sigue en pausa, en la posicion nueva. */
                 while (g.cmd != PCMD_RESUME && g.cmd != PCMD_STOP &&
-                       g.cmd != PCMD_PLAY  && g.cmd != PCMD_QUIT)
-                    pthread_cond_wait(&g.cond, &g.lock);
+                       g.cmd != PCMD_PLAY  && g.cmd != PCMD_QUIT) {
+                    if (g.seek_req >= 0.0f) aplicar_salto(mh, pcm, rate);
+                    else                    pthread_cond_wait(&g.cond, &g.lock);
+                }
 
                 if (g.cmd == PCMD_RESUME) {
                     g.cmd    = PCMD_NONE;
@@ -299,6 +499,14 @@ static void *playback_thread(void *arg)
             if (dec_err == MPG123_DONE || done == 0) {
                 pthread_mutex_lock(&g.lock);
                 int sono = g.position_secs > 0.5f;
+                /* Reproduciendo la playlist: se pasa a la siguiente pista,
+                   salvo que el usuario ya haya pedido otra cosa. */
+                if (sono && g.pl_activa && g.playlist_n > 0 && g.cmd == PCMD_NONE &&
+                    pedir_siguiente_de_playlist()) {
+                    siguiente = 1;
+                    pthread_mutex_unlock(&g.lock);
+                    break;
+                }
                 pthread_mutex_unlock(&g.lock);
 
                 if (sono && mpg123_seek(mh, 0, SEEK_SET) >= 0) {
@@ -357,7 +565,7 @@ static void *playback_thread(void *arg)
         int switching = (g.cmd == PCMD_PLAY);
         pthread_mutex_unlock(&g.lock);
 
-        if (switching)
+        if (switching && !siguiente)
             snd_pcm_drop(pcm);  
         else
             snd_pcm_drain(pcm); 
@@ -385,6 +593,7 @@ int lib_audio_init(const char *audio_dir)
     g.volume     = 85;
     g.status     = LIB_AUDIO_STOPPED;
     g.current_id = -1;
+    g.seek_req   = -1.0f;
     // g.notify_pid = -1;
 
     mpg123_init();
@@ -505,9 +714,11 @@ int lib_audio_scan(void)
     pthread_mutex_lock(&g.lock);
     memcpy(g.tracks, found, (size_t)count * sizeof(LibAudioTrack));
     g.track_count = count;
+    cargar_playlist();
     pthread_mutex_unlock(&g.lock);
 
-    printf("[audio] Escaneo: %d pista(s) en '%s'\n", count, g.audio_dir);
+    printf("[audio] Escaneo: %d pista(s) en '%s', playlist de %d\n",
+           count, g.audio_dir, g.playlist_n);
     return count;
 }
 
@@ -545,6 +756,7 @@ int lib_audio_play(int track_id)
     g.cmd_filepath[sizeof(g.cmd_filepath) - 1] = '\0';
     g.cmd_track_id = track_id;
     g.cmd          = PCMD_PLAY;
+    g.pl_activa    = 0;          /* una pista suelta se repite en bucle */
     pthread_cond_signal(&g.cond);
     pthread_mutex_unlock(&g.lock);
     return 0;
@@ -554,7 +766,10 @@ void lib_audio_pause(void)
 {
     if (!g.initialized) return;
     pthread_mutex_lock(&g.lock);
-    if (g.status == LIB_AUDIO_PLAYING) {
+    /* Solo si no hay otro comando pendiente: una notificacion que llega justo
+       despues de un STOP (p. ej. el sonido del cambio a manual) no debe
+       pisarlo, o la musica se reanudaria al terminar la notificacion. */
+    if (g.status == LIB_AUDIO_PLAYING && g.cmd == PCMD_NONE) {
         g.cmd = PCMD_PAUSE;
         pthread_cond_signal(&g.cond);
     }
@@ -565,7 +780,7 @@ void lib_audio_resume(void)
 {
     if (!g.initialized) return;
     pthread_mutex_lock(&g.lock);
-    if (g.status == LIB_AUDIO_PAUSED) {
+    if (g.status == LIB_AUDIO_PAUSED && g.cmd == PCMD_NONE) {
         g.cmd = PCMD_RESUME;
         pthread_cond_signal(&g.cond);
     }
@@ -576,11 +791,32 @@ void lib_audio_stop(void)
 {
     if (!g.initialized) return;
     pthread_mutex_lock(&g.lock);
+    g.pl_activa = 0;
     if (g.status != LIB_AUDIO_STOPPED) {
         g.cmd = PCMD_STOP;
         pthread_cond_signal(&g.cond);
     }
     pthread_mutex_unlock(&g.lock);
+}
+
+int lib_audio_seek(float segundos)
+{
+    if (!g.initialized) return -1;
+    pthread_mutex_lock(&g.lock);
+    if (g.status == LIB_AUDIO_STOPPED || g.current_id < 0) {
+        pthread_mutex_unlock(&g.lock);
+        return -1;
+    }
+    /* Medio segundo antes del final como tope: saltar al final exacto
+       terminaria la pista en el acto. */
+    const LibAudioTrack *t = pista_por_id(g.current_id);
+    float tope = (t && t->duration_secs > 1) ? (float)t->duration_secs - 0.5f : segundos;
+    if (segundos > tope) segundos = tope;
+    if (segundos < 0.0f) segundos = 0.0f;
+    g.seek_req = segundos;
+    pthread_cond_signal(&g.cond);
+    pthread_mutex_unlock(&g.lock);
+    return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -639,9 +875,10 @@ void lib_audio_notify(NotificationEvent event)
         "notify_autonomous.mp3",
         "notify_obstacle.mp3",
         "notify_manual.mp3",
+        "notify_cycle_end.mp3",
     };
 
-    if ((unsigned int)event >= 4) return;
+    if ((unsigned int)event >= NOTIFY_COUNT) return;
 
     char filepath[640];
     snprintf(filepath, sizeof(filepath), "%s/%s", g.audio_dir, NAMES[event]);

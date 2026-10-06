@@ -10,7 +10,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SUMMARY = "Biblioteca dinamica de control del robot aspiradora (motores, radar, MPU-6050, LEDs, audio)"
-DESCRIPTION = "Abstrae el hardware del robot: PWM de los motores DC, el radar \
+DESCRIPTION = "Abstrae el hardware del robot: los motores DC, el radar \
 ultrasonico (HC-SR04 sobre un servo de 180 grados), el MPU-6050 por I2C, la \
 odometria, los cuatro LEDs indicadores y la reproduccion de MP3."
 SECTION = "libs"
@@ -44,6 +44,8 @@ SRC_URI = " \
     file://lib_leds.c;subdir=lib     \
     file://lib_leds.h;subdir=lib     \
     file://lib_audio.c;subdir=lib    \
+    file://lib_caida.c;subdir=lib    \
+    file://lib_caida.h;subdir=lib    \
     file://lib_audio.h;subdir=lib    \
     file://lib_odom.c;subdir=lib     \
     file://lib_odom.h;subdir=lib     \

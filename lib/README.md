@@ -6,7 +6,7 @@ directamente: todo pasa por esta biblioteca.
 | Módulo | Responsabilidad |
 |---|---|
 | `lib_robot.{c,h}`   | Fachada: abre `pigpiod` y arranca todo lo demás en orden |
-| `lib_motors.{c,h}`  | Motores DC vía PWM (avance, retroceso, giros, velocidad por motor) |
+| `lib_motors.{c,h}`  | Motores DC: avance, retroceso, giros y detención. Velocidad fija en el robot; PWM opcional al compilar |
 | `lib_sensors.{c,h}` | Lectura del HC-SR04 por GPIO (eco ultrasónico) |
 | `lib_servo.{c,h}`   | Servo de 180° que orienta el HC-SR04 |
 | `lib_radar.{c,h}`   | Radar: barrido del servo + HC-SR04 en un hilo propio, y tiempo antes de chocar |

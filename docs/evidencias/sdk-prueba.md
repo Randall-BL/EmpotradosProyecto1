@@ -58,5 +58,4 @@ binario se construye de forma nativa en el target.
 - [x] Verificado que compila para ARM y no para el host (`file` + fallo de ejecución en x86)
 - [x] Procedimiento documentado (`docs/sdk.md` + esta evidencia)
 
-Pendiente de la Pi: ejecutar el binario resultante en el target real
-(se cubrirá junto con el arranque de la imagen).
+La ejecución en el target real está en [`ejecucion-target.md`](ejecucion-target.md).

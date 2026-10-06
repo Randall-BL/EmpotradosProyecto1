@@ -44,6 +44,13 @@
 #define RADAR_ECHO 27
 #define SERVO_PIN  25
 
+/* Sensores infrarrojos de desnivel, en las esquinas delanteras del chasis.
+   En alto cuando no ven piso, como el TCRT5000 o el FC-51. */
+#define CAIDA_IZQ_PIN  4
+#define CAIDA_DER_PIN  8
+#define CAIDA_ADELANTE_CM 12.0
+#define CAIDA_LATERAL_CM   8.0
+
 /* Un SG90 a 5 V: unos 0.1 s cada 60 grados, y 500-2500 us de pulso para
    0-180 grados. Son las del servo "fisico", no las constantes de lib_servo. */
 #define SERVO_GRADOS_POR_S 600.0
@@ -161,8 +168,10 @@ static int entrada_l298n(int i) {
    que solo IN2 lo esta, y frenado el resto (las dos iguales). Con una sola
    entrada modulando por vez, el neto es la diferencia de los dos ciclos. */
 static void empujar_motores(void) {
-    mundo_set_motores(entrada_l298n(0) - entrada_l298n(1),
-                      entrada_l298n(2) - entrada_l298n(3));
+    /* Como en el robot armado: el motor izquierdo va a la salida B del L298N
+       (IN3/IN4) y el derecho a la A (IN1/IN2). */
+    mundo_set_motores(entrada_l298n(2) - entrada_l298n(3),
+                      entrada_l298n(0) - entrada_l298n(1));
 }
 
 /* ── API de pigpio ───────────────────────────────────────────────────────── */
@@ -268,8 +277,15 @@ int gpio_write(int pi, unsigned gpio, unsigned level) {
     return 0;
 }
 
+int set_pull_up_down(int pi, unsigned gpio, unsigned pud) {
+    (void)pi; (void)gpio; (void)pud;
+    return 0;
+}
+
 int gpio_read(int pi, unsigned gpio) {
     (void)pi;
+    if (gpio == CAIDA_IZQ_PIN) return mundo_sin_piso(CAIDA_ADELANTE_CM,  CAIDA_LATERAL_CM);
+    if (gpio == CAIDA_DER_PIN) return mundo_sin_piso(CAIDA_ADELANTE_CM, -CAIDA_LATERAL_CM);
     if (gpio != RADAR_ECHO) return 0;
     SensorSim *s = &g_sensor;
 

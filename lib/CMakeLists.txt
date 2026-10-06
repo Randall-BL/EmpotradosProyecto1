@@ -28,6 +28,7 @@ find_path(MPG123_INCLUDE mpg123.h)
 # Crear biblioteca dinamica
 add_library(robot SHARED
     lib_audio.c
+    lib_caida.c
     lib_imu.c
     lib_leds.c
     lib_motors.c
@@ -70,7 +71,7 @@ target_link_libraries(robot
 set_target_properties(robot PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
-    PUBLIC_HEADER "lib_audio.h;lib_imu.h;lib_leds.h;lib_motors.h;lib_odom.h;lib_radar.h;lib_robot.h;lib_sensors.h;lib_servo.h"
+    PUBLIC_HEADER "lib_audio.h;lib_caida.h;lib_imu.h;lib_leds.h;lib_motors.h;lib_odom.h;lib_radar.h;lib_robot.h;lib_sensors.h;lib_servo.h"
 )
 
 # Instalacion

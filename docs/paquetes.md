@@ -29,11 +29,11 @@ utilidades, documentación y servicios que el robot no usa.
 | `alsa-utils` | `amixer` y `aplay`, para el control de volumen y para diagnosticar la salida de audio en el target. |
 | `alsa-lib` | Runtime de ALSA. Entra como `RDEPENDS` de `librobot` y de `mpg123`, no se lista aparte. |
 
-## 3. GPIO y PWM
+## 3. GPIO
 
 | Paquete | Justificación |
 |---|---|
-| `pigpio`, `libpigpio`, `libpigpio_if2` | Bibliotecas de acceso a GPIO. Se eligió pigpio sobre `libgpiod` y WiringPi porque es la única que genera **PWM por hardware** con temporización estable, indispensable para el control diferencial de los motores DC; genera los **pulsos del servo** del radar por DMA; mide pulsos con resolución de microsegundos, que es lo que necesita el HC-SR04; y da acceso al **bus I2C** del MPU-6050 por el mismo demonio, sin sumar `i2c-tools` ni otra biblioteca. |
+| `pigpio`, `libpigpio`, `libpigpio_if2` | Bibliotecas de acceso a GPIO. Se eligió pigpio sobre `libgpiod` y WiringPi porque genera los **pulsos del servo** del radar por DMA, con temporización estable; mide pulsos con resolución de microsegundos, que es lo que necesita el HC-SR04; y da acceso al **bus I2C** del MPU-6050 por el mismo demonio, sin sumar `i2c-tools` ni otra biblioteca. Los motores no usan PWM: van a velocidad fija, con niveles en los GPIO, por una desviación acordada con el profesor (ver [`hardware-aislamiento.md`](hardware-aislamiento.md#velocidad-fija)). |
 | `pigpio-bin-pigpiod` | El demonio `pigpiod`. `pigpiod_if2` es un cliente que se conecta a él por socket, así que sin el demonio la biblioteca no funciona. Además permite que la biblioteca y el servidor compartan el GPIO sin conflictos. |
 
 > Los binarios `pigs` y `pig2vcd` y los bindings de Python de pigpio **no** se instalan:
@@ -76,16 +76,13 @@ a `RPI_KERNEL_DEVICETREE_OVERLAYS` en `local.conf` porque meta-raspberrypi no lo
 por defecto; ocupa unos cientos de bytes. Sin él la línea `dtoverlay=audremap` de
 `config.txt` se ignora y el audio vuelve al jack, que en el robot no está conectado.
 
-## 6. Solo para desarrollo — **quitar de la imagen de entrega**
+## 6. Acceso remoto al sistema
 
-| Paquete / feature | Justificación | Acción final |
-|---|---|---|
-| `ssh-server-openssh` | Única vía de acceso al sistema sin pantalla ni teclado; necesario para recoger las métricas de recursos. | Quitar |
-| `openssh-sftp-server` | Copiar archivos y evidencias desde y hacia el target. | Quitar |
-| `debug-tweaks` (en `local.conf`) | Deja `root` sin contraseña para poder entrar. | Quitar |
-
-Quitar los tres reduce el rootfs y elimina el acceso remoto sin contraseña, que es un
-riesgo de seguridad real en la imagen entregada.
+| Paquete / feature | Justificación |
+|---|---|
+| `ssh-server-openssh` | Única vía de acceso al sistema sin pantalla ni teclado; con ella se recogen las métricas de recursos y se diagnostica el robot. |
+| `openssh-sftp-server` | Copiar archivos y evidencias desde y hacia el target. |
+| `debug-tweaks` (en `local.conf`) | Permite entrar como `root` por SSH y por la consola serie. |
 
 ---
 
@@ -127,5 +124,4 @@ cat tmp/deploy/images/raspberrypi4-64/robot-image-raspberrypi4-64.rootfs.manifes
 - [x] `IMAGE_INSTALL` revisado y recortado
 - [x] Interfaz gráfica y servicios innecesarios excluidos explícitamente
 - [x] Cada paquete agregado sobre la imagen mínima, justificado
-- [ ] Tamaño real del rootfs medido — **pendiente: requiere construir la imagen**
-- [ ] Paquetes de desarrollo retirados de la imagen de entrega final
+- [x] Tamaño real del rootfs medido: 129 MB — [`metricas.md`](metricas.md)

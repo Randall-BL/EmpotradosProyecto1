@@ -1,7 +1,7 @@
 # Radar, MPU-6050, LEDs y salida de audio
 
-Montaje y acondicionamiento de todo lo que cuelga del riel lógico, más el servo del
-radar, que es un motor y vive en el riel de potencia. El pinout completo está en
+Montaje y acondicionamiento de todo lo que cuelga del dominio lógico, incluido el servo
+del radar. El pinout completo está en
 [`hardware-pinout.md`](hardware-pinout.md); cómo usa el software estas lecturas
 (barrido, velocidad, tiempo de choque, mapa), en
 [`navegacion-radar.md`](navegacion-radar.md).
@@ -29,10 +29,11 @@ frontales se proyecta con lo que avanza el robot (ver
 [`navegacion-radar.md`](navegacion-radar.md)), y con las lecturas a 60° y 120°, que
 también cubren el ancho del robot a poca distancia.
 
-> ⚠️ **Confirmar con el profesor.** El enunciado pide "al menos dos sensores de
-> proximidad para detección frontal y lateral". El radar cubre las dos detecciones,
-> pero con un solo sensor físico. Si la rúbrica cuenta sensores, el segundo HC-SR04 se
-> monta fijo al frente en los GPIO 22 y 10, que quedaron libres.
+> **Desviación acordada con el profesor.** El enunciado pide "al menos dos sensores de
+> proximidad para detección frontal y lateral". El robot lleva un solo HC-SR04, que
+> sobre el servo cubre las dos detecciones, y un MPU-6050 (giroscopio y acelerómetro).
+> Se le consultó al profesor y lo consideró suficiente: lo que busca es que el robot
+> tenga dos sensores. No se montó un segundo HC-SR04; los GPIO 22 y 10 quedaron libres.
 
 ### ⚠️ El pin `ECHO` saca 5 V — divisor obligatorio
 
@@ -82,17 +83,16 @@ como nivel alto sin problema: **no lleva divisor**.
 |---|---|
 | Modelo | SG90 (plástico) o **MG90S** (engranajes metálicos, recomendado: aguanta mejor el vaivén continuo) |
 | Recorrido | 180° |
-| Alimentación | **5 V desde el riel de potencia** (buck propio, ver [`hardware-alimentacion.md`](hardware-alimentacion.md)) |
-| Señal | pulsos de 500–2500 µs a 50 Hz, desde GPIO 25 **a través de un PC817** |
+| Alimentación | **5 V de la Raspberry Pi** (ver [`hardware-alimentacion.md`](hardware-alimentacion.md)) |
+| Señal | pulsos de 500–2500 µs a 50 Hz, **directo desde GPIO 25** |
 | Velocidad sin carga | ~0.1 s cada 60° a 5 V |
 | Consumo | 100–250 mA moviéndose; ~700 mA trabado |
 
-El servo es un motor con su propio driver: sus picos de corriente y su ruido de
-conmutación no pueden entrar al riel de la Raspberry Pi, que además ya está cerca de su
-tope de 3 A. Por eso se alimenta del dominio de potencia y su señal cruza la barrera
-óptica como las del L298N, en un quinto canal. Ese canal, a diferencia de los otros
-cuatro, **no invierte la señal**: ver
-[`hardware-aislamiento.md`](hardware-aislamiento.md).
+El servo comparte fuente y tierra con la Raspberry Pi, así que su señal no necesita
+optoacoplador: el pulso de 3.3 V del GPIO le basta como nivel alto. A cambio, sus picos
+de corriente entran al riel de 5 V de la Pi; el barrido en rampa y un capacitor en sus
+bornes los mantienen controlados (ver
+[`hardware-alimentacion.md`](hardware-alimentacion.md)).
 
 Los pulsos los genera `pigpiod` por DMA (`set_servo_pulsewidth`), no el proceso: no se
 deforman aunque la CPU esté ocupada con el audio o el servidor web.
@@ -182,7 +182,7 @@ magnitudes que el modelo de los motores no puede medir:
 
 | GY-521 | Raspberry Pi | Pin físico |
 |---|---|---|
-| `VCC` | **3V3** | 1 |
+| `VCC` | **5 V** (el módulo GY-521 trae regulador de 3.3 V) | 2 |
 | `GND` | GND (lógica) | 9 |
 | `SDA` | GPIO 2 (SDA1) | 3 |
 | `SCL` | GPIO 3 (SCL1) | 5 |
@@ -190,10 +190,11 @@ magnitudes que el modelo de los motores no puede medir:
 | `INT` | sin conectar: el software consulta a 50 Hz | — |
 | `XDA`, `XCL` | sin conectar | — |
 
-**Se alimenta a 3.3 V, no a 5 V.** El GY-521 trae regulador propio y acepta 5 V, pero
-según la revisión del módulo sus resistencias pull-up de SDA/SCL pueden quedar
-referidas a la entrada de alimentación: a 5 V pondrían 5 V en GPIO 2 y 3. A 3.3 V no
-hay revisión que pueda hacerlo.
+**Se alimenta de los 5 V de la Raspberry Pi.** El GY-521 trae regulador propio de
+3.3 V y acepta 5 V en `VCC`. Lo que hay que comprobar con el multímetro es que `SDA` y
+`SCL` no pasen de 3.3 V: en la mayoría de los módulos las resistencias de pull-up van a
+la salida del regulador, pero si en alguno fueran a la entrada pondrían 5 V en GPIO 2
+y 3, y ese módulo tendría que alimentarse a 3.3 V.
 
 No hacen falta pull-up externas: la Raspberry Pi trae 1.8 kΩ a 3.3 V en GPIO 2 y 3.
 
@@ -421,7 +422,7 @@ los de motor y lejos del cable del servo.
         │  (riel lógico)  │  GPIO 27 ◄── ECHO ┤HC-SR04│──[div 1k/2k]
         │                 │                   ┘ (sobre el servo)
         │                 │  GPIO  2 ◄─► SDA ┐        │
-        │                 │  GPIO  3 ──► SCL ┤MPU-6050│  VCC = 3V3
+        │                 │  GPIO  3 ──► SCL ┤MPU-6050│  VCC = 5 V
         │                 │                  ┘        │
         │                 │  GPIO 16 ──[220Ω]──► LED verde
         │                 │  GPIO 20 ──[ 68Ω]──► LED azul
@@ -430,17 +431,17 @@ los de motor y lejos del cable del servo.
         │                 │                           │
         │                 │  GPIO  5 ──[390Ω]──►┐ 4×  │
         │                 │  GPIO  6 ──[390Ω]──►│PC817│──► IN1–IN4 del L298N
-        │                 │  GPIO 23 ──[390Ω]──►│     │    (PWM, aislado)
+        │                 │  GPIO 23 ──[390Ω]──►│     │    (aislado)
         │                 │  GPIO 24 ──[390Ω]──►┘     │
-        │                 │  GPIO 25 ──[680Ω]──► PC817 ──► servo (aislado)
+        │                 │  GPIO 25 ──────────► señal del servo (5 V de la Pi)
         │                 │                           │
         │                 │  GPIO 18 ──[RC]──► PAM8403 ──► parlante 8 Ω
         │                 └───────────────────────────┘
         │
-   ┌────┴─────┐
-   │ Buck 5 V │◄── BMS ◄── pack 2S 18650
-   │  MP2307  │
-   └──────────┘
+   ┌────┴──────┐
+   │ Power bank│
+   │  USB 5 V  │
+   └───────────┘
 ```
 
 El dominio de potencia y el aislamiento están en
@@ -493,7 +494,7 @@ journalctl -u robot-server | grep imu          # "MPU-6050 listo" y el sesgo cal
 
 En el panel web, tarjeta de movimiento: con el robot quieto la velocidad marca 0 y la
 fuente dice **MPU**. Si dice **MOTORES**, el sensor no contestó: revisar SDA/SCL, `AD0`
-y que `VCC` esté en 3.3 V.
+y que `VCC` tenga 5 V.
 
 ### Audio
 
@@ -510,7 +511,7 @@ medio); si marca 0 V, el overlay no se cargó: revisar que `audremap.dtbo` esté
 `/boot/overlays/` y la línea `dtoverlay=audremap,pins_18_19` en `/boot/config.txt`.
 
 Con el robot navegando y el audio sonando a la vez, escuchar si aparece zumbido
-sincronizado con el PWM de los motores o con el vaivén del servo. Si aparece, revisar
+sincronizado con los arranques de los motores o con el vaivén del servo. Si aparece, revisar
 la separación física de los cables de audio y de motor.
 
 ---
@@ -520,12 +521,12 @@ la separación física de los cables de audio y de motor.
 - [x] Radar definido: HC-SR04 sobre servo de 180°, siete ángulos, montaje y geometría
 - [x] Divisor de tensión especificado para `ECHO` — **crítico para no dañar la Pi**
 - [x] Tasa de muestreo del barrido calculada (~5 lecturas/s, frente cada ~1.2 s)
-- [x] MPU-6050: conexión a 3.3 V, montaje y calibración definidos
+- [x] MPU-6050: módulo GY-521 alimentado a 5 V, montaje y calibración definidos
 - [x] LEDs, colores y resistencias calculados contra el presupuesto de corriente
 - [x] Salida de audio decidida (GPIO 18 + PAM8403) con el filtro calculado
 - [x] Diagrama eléctrico del dominio lógico
 - [x] Procedimientos de verificación
 - [x] Barrido, velocidad y tiempo de choque implementados en `librobot` y probados en el simulador
-- [ ] Confirmar con el profesor que el radar cumple "al menos dos sensores"
+- [x] Confirmado con el profesor: el radar y el MPU-6050 bastan para "al menos dos sensores" (desviación acordada)
 - [ ] Componentes conseguidos y montados — **pendiente**
 - [ ] Calibración del servo, del sensor y del montaje del MPU — **pendiente**

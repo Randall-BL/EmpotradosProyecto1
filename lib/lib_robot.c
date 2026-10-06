@@ -7,6 +7,7 @@
  */
 
 #include "lib_robot.h"
+#include "lib_caida.h"
 #include "lib_imu.h"
 #include "lib_leds.h"
 #include "lib_motors.h"
@@ -30,6 +31,11 @@ int robot_init(void) {
     }
 
     motores_init(g_pi);
+
+    /* Los sensores de desnivel son opcionales: sin ellos el robot navega
+       igual, solo que no se detiene ante una grada. */
+    if (caida_init(g_pi) < 0)
+        fprintf(stderr, "[librobot] sin deteccion de desnivel\n");
 
     /* Los LEDs son indicadores: si fallan, el robot igual navega. */
     if (lib_leds_init(g_pi) < 0)

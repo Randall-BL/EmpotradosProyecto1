@@ -55,16 +55,17 @@ dos entradas se activa y la otra queda en bajo; con velocidad 0 las dos quedan e
 el L298N **frena**. La inversión de los optoacopladores está compensada adentro
 (`OPTO_INVERTIDO`). `MOTOR_PWM_MAX` (255) es el tope de velocidad.
 
-> **Por ahora la velocidad es fija** (`MOTOR_VELOCIDAD_VARIABLE` en 0, en
+> **La velocidad es fija, sin PWM** (`MOTOR_VELOCIDAD_VARIABLE` en 0, en
 > `lib_motors.h`): cualquier velocidad distinta de cero lleva el motor al máximo,
 > `motores_get()` informa ±255 y `motores_curva()` gira sobre el eje, con una llanta
-> hacia adelante y la otra hacia atrás. Con 1 vuelve la PWM sobre `IN1`–`IN4`; por qué
-> se desactivó y qué cambiar para recuperarla está en
-> [`hardware-aislamiento.md`](hardware-aislamiento.md#por-ahora-velocidad-fija).
+> hacia adelante y la otra hacia atrás. Es una desviación del enunciado acordada con el
+> profesor; el motivo está en
+> [`hardware-aislamiento.md`](hardware-aislamiento.md#velocidad-fija). Con 1 la
+> biblioteca usa PWM sobre `IN1`–`IN4`, un modo que solo se probó en el simulador.
 
 | Función | Descripción |
 |---|---|
-| `void motores_set(int izq, int der)` | **Primitiva.** Velocidad de cada motor, −255..255; el signo da el sentido, la magnitud el PWM. Se satura. |
+| `void motores_set(int izq, int der)` | **Primitiva.** Velocidad de cada motor, −255..255; el signo da el sentido; la magnitud es el ciclo de PWM solo en el modo de velocidad variable. Se satura. |
 | `void motores_get(int *izq, int *der)` | Velocidad que recibe cada motor: la ordenada ya saturada, o ±255 con velocidad fija (entrada de la odometría). Punteros NULL permitidos. |
 | `void motores_detener(void)` | Frena ambos en seco (equivale a `motores_set(0,0)`). |
 | `void motores_avanzar(int v)` | `motores_set(v, v)`. |
@@ -240,9 +241,9 @@ tiempo de choque, no para posición absoluta. Seguro para varios hilos.
 | `void odom_get_velocidades(double *izq, double *der)` | Velocidad del modelo de cada llanta en cm/s. |
 | `int odom_usa_imu(void)` | ¿La última integración usó el MPU? |
 
-**Constantes a calibrar en campo:** `ODOM_VEL_MAX_CM_S` (cm/s a PWM máximo),
+**Constantes a calibrar en campo:** `ODOM_VEL_MAX_CM_S` (cm/s a velocidad máxima),
 `ODOM_ENTRE_EJES_CM` (separación de llantas), `ODOM_PWM_ARRANQUE` (PWM mínimo
-que vence la fricción) y `ODOM_TAU_FUSION_S` (cuánto se confía en el MPU).
+que vence la fricción; no interviene con velocidad fija) y `ODOM_TAU_FUSION_S` (cuánto se confía en el MPU).
 
 ---
 
@@ -261,11 +262,29 @@ robot tiene un solo parlante. Volumen 0–100.
 | `int lib_audio_get_tracks(LibAudioTrack *out, int max)` | Copia hasta `max` pistas; devuelve cuántas. |
 | `int lib_audio_play(int track_id)` | Reproduce la pista **en bucle** hasta `stop` u otro `play`. |
 | `void lib_audio_pause/resume/stop(void)` | Control de reproducción. |
+| `int lib_audio_seek(float segundos)` | Salta dentro de la pista actual, sonando o en pausa (en pausa sigue en pausa). Se recorta a medio segundo antes del final; −1 si no hay pista cargada. |
 | `void lib_audio_set_volume(int v)` / `int lib_audio_get_volume(void)` | Volumen 0–100. |
 | `LibAudioStatus lib_audio_get_status(void)` | `STOPPED` / `PLAYING` / `PAUSED`. |
 | `int lib_audio_get_current_id(void)` | Pista actual, o −1. |
 | `float lib_audio_get_position(void)` | Posición en segundos. |
-| `void lib_audio_notify(NotificationEvent e)` | Sonido de evento (`NOTIFY_STARTUP/AUTONOMOUS/OBSTACLE/MANUAL`). **Pausa la música, reproduce el aviso y la reanuda** — no la corta. |
+| `void lib_audio_notify(NotificationEvent e)` | Sonido de evento (`NOTIFY_STARTUP/AUTONOMOUS/OBSTACLE/MANUAL/CYCLE_END`). **Pausa la música, reproduce el aviso y la reanuda** — no la corta. Un `stop` pendiente no se pisa: la música no vuelve. |
+| `int lib_audio_playlist_get(int *ids, int max)` | Ids de la playlist persistente, en orden; devuelve cuántos copió. |
+| `int lib_audio_playlist_set(const int *ids, int n)` | Reemplaza la playlist y la guarda en `canciones/playlist.txt` (temporal + `rename`). −1 si un id no existe o no se pudo escribir. |
+| `int lib_audio_play_playlist(int pos)` | Recorre la playlist desde `pos`, en orden y en bucle. |
+| `int lib_audio_playlist_pos(void)` | Posición de la playlist que suena, o −1 si suena una pista suelta. |
+
+---
+
+## 10. Desnivel — `lib_caida.h`
+
+Dos sensores infrarrojos al piso (TCRT5000 o FC-51) en las esquinas delanteras, en
+GPIO 4 (izquierda) y 8 (derecha). Requerimiento opcional; ver
+[`opcionales.md`](opcionales.md).
+
+| Función | Descripción |
+|---|---|
+| `int caida_init(int pi)` | Configura los dos GPIO como entradas con pull-down: un módulo desconectado se lee como "hay piso". La llama `robot_init()`. |
+| `int caida_leer(void)` | Bits `CAIDA_IZQ` y `CAIDA_DER` de los sensores que no ven piso; 0 si hay piso bajo los dos. Cada sensor se lee dos veces, a 200 µs, para filtrar ruido. |
 
 ---
 

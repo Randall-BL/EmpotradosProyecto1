@@ -3,8 +3,8 @@
 #
 #  No existe receta de pigpio en poky ni en meta-raspberrypi, asi que la capa la
 #  aporta. Se elige pigpio sobre las alternativas (libgpiod, WiringPi) porque es
-#  la unica que genera PWM por hardware con temporizacion estable, requisito para
-#  el control diferencial de los motores DC, y porque su modelo cliente/servidor
+#  la unica que genera pulsos de servo y PWM con temporizacion estable y mide
+#  pulsos en microsegundos (radar: servo y HC-SR04), y porque su modelo cliente/servidor
 #  (pigpiod + pigpiod_if2) permite que varios procesos compartan el GPIO.
 #
 #  SRCREV fija un commit concreto: sin eso el build no seria reproducible.

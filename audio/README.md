@@ -10,6 +10,7 @@ Los cuatro eventos que exige el enunciado:
 | `notify_autonomous.mp3` | Inicio del modo autónomo |
 | `notify_obstacle.mp3`   | Obstáculo detectado |
 | `notify_manual.mp3`     | Cambio a modo manual |
+| `notify_cycle_end.mp3`  | Fin del ciclo de limpieza (opcional). Sintetizado con `scripts/generar_notificacion_ciclo.py` |
 
 ## Playlist (`canciones/`, versionada)
 
@@ -35,7 +36,9 @@ la canción favorita del profesor; cualquier otra grabación va en `music/`, que
 se versiona. Al no llevar prefijo numérico queda al final de la lista.
 
 Son cortos para no gastar espacio en la imagen: el reproductor repite la pista
-elegida en bucle hasta que se detiene o se elige otra. El prefijo numérico fija
+elegida en bucle hasta que se detiene o se elige otra. La playlist persistente, que se
+arma desde el panel, se guarda en `canciones/playlist.txt` dentro de la partición de la
+música y se reproduce en orden (ver `docs/opcionales.md`). El prefijo numérico fija
 el orden de la lista (`lib_audio_scan` ordena por nombre) y el panel web lo
 oculta, junto con los `_`.
 

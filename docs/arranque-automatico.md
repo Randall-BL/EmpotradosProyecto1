@@ -163,5 +163,6 @@ journalctl -b -p err                # solo errores del arranque
 - [x] `Restart=on-failure` configurado con `RestartSec` y límite de reintentos
 - [x] Ambas unidades validadas con `systemd-analyze verify`, sin advertencias
 - [x] Sin interfaz gráfica local en la imagen
-- [ ] Probado en el target: matar el proceso y verificar el reinicio — **pendiente: requiere la RPi 4**
-- [ ] Tiempo de arranque medido — **pendiente**
+- [x] Servicio activo en la Raspberry Pi 4 tras el arranque — [`evidencias/ejecucion-target.md`](evidencias/ejecucion-target.md)
+- [x] Reinicio ante fallo probado con las mismas directivas sobre el simulador — [`evidencias/systemd-reinicio.md`](evidencias/systemd-reinicio.md)
+- [x] Tiempo de arranque medido — [`metricas.md`](metricas.md)
