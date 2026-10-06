@@ -191,9 +191,9 @@
 
 ## 9. Requerimientos opcionales — (OPC)
 
-- [ ] Detección de desnivel / caída con sensores IR orientados hacia abajo + detención preventiva del robot
-- [ ] Notificación de fin de ciclo de limpieza (audio + mensaje en la interfaz), con tiempo o área configurable
-- [ ] Playlist persistente, almacenada en disco y editable desde la interfaz web
+- [x] Detección de desnivel / caída con sensores IR orientados hacia abajo + detención preventiva del robot (software; falta montar los sensores, ver `docs/opcionales.md`)
+- [x] Notificación de fin de ciclo de limpieza (audio + mensaje en la interfaz), con tiempo o área configurable
+- [x] Playlist persistente, almacenada en disco y editable desde la interfaz web
 
 ---
 

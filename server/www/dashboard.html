@@ -274,6 +274,32 @@
     .t-name { flex: 1; font-size: 11px; letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .t-dur  { font-size: 9px; color: var(--text); flex-shrink: 0; }
     .no-tracks { font-size: 10px; color: var(--bd2); letter-spacing: .1em; padding: 8px 0; }
+    /* Ciclo de limpieza */
+    .cyc-row { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+    .cyc-row select, .cyc-row input {
+      background: var(--sf2); color: var(--text); border: 1px solid var(--bd);
+      font-family: var(--mono); font-size: 12px; padding: 8px; min-width: 0;
+    }
+    .cyc-row select { flex: 1 1 140px; }
+    .cyc-row input  { width: 76px; }
+    .cyc-btn {
+      border: 1px solid var(--bd2); background: transparent; color: var(--text);
+      font-family: var(--mono); font-size: 11px; letter-spacing: .1em; padding: 8px 12px; cursor: pointer;
+    }
+    .cyc-btn:active { border-color: var(--cyan); color: var(--cyan); }
+    .cyc-txt  { font-size: 10px; letter-spacing: .08em; display: flex; justify-content: space-between; gap: 8px; }
+    .cyc-done { display: none; border: 1px solid var(--green); color: var(--green); padding: 8px; font-size: 11px; letter-spacing: .08em; }
+    .cyc-done.on { display: block; }
+
+    /* Playlist */
+    .pl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .pl-ctl  { display: flex; gap: 2px; flex-shrink: 0; }
+    .pl-ctl button, .t-add {
+      width: 30px; height: 30px; border: 1px solid var(--bd); background: transparent;
+      color: var(--text); font-family: var(--mono); font-size: 12px; cursor: pointer;
+    }
+    .pl-ctl button:active, .t-add:active { border-color: var(--amber); color: var(--amber); }
+    .pl-ctl button:disabled { opacity: .3; }
   </style>
 </head>
 <body>
@@ -323,6 +349,27 @@
 
     <!-- Control D-PAD -->
     <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--green)"></div>CICLO DE LIMPIEZA</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="cyc-row">
+          <select id="cyc-tipo" onchange="onCicloTipo()">
+            <option value="off">Sin límite</option>
+            <option value="tiempo">Por tiempo (min)</option>
+            <option value="area">Por área (m²)</option>
+          </select>
+          <input type="number" id="cyc-meta" min="0.1" step="0.5" value="5" aria-label="Meta del ciclo"/>
+          <button class="cyc-btn" onclick="aplicarCiclo()">APLICAR</button>
+        </div>
+        <div class="prog-row">
+          <div class="prog-bar"><div class="prog-fill" id="cyc-fill"></div></div>
+        </div>
+        <div class="cyc-txt"><span id="cyc-txt">Sin límite</span><span id="cyc-cnt">Completados: 0</span></div>
+        <div class="cyc-done" id="cyc-done">✔ CICLO COMPLETADO — el robot espera detenido.</div>
+        <button class="cyc-btn" onclick="nuevoCiclo()">↻ NUEVO CICLO</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>CONTROL DIRECCIONAL</div>
       <div class="card-body">
         <div class="dpad-wrap">
@@ -371,6 +418,11 @@
             <div class="led" id="led-obstacle"></div>
             <span class="led-lbl">Alerta obstáculo</span>
             <span class="led-stat" id="lt-obstacle">OK</span>
+          </div>
+          <div class="led-row">
+            <div class="led" id="led-caida"></div>
+            <span class="led-lbl">Desnivel (IR al piso)</span>
+            <span class="led-stat" id="lt-caida">PISO OK</span>
           </div>
         </div>
       </div>
@@ -475,6 +527,18 @@
     </div>
 
     <div class="card">
+      <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>PLAYLIST <span class="radar-ang" id="pl-count">0 PISTAS</span></div>
+      <div class="card-body">
+        <div class="pl-head">
+          <button class="cyc-btn" onclick="playPlaylist(0)">▶ REPRODUCIR PLAYLIST</button>
+        </div>
+        <div class="track-list" id="pl-list">
+          <p class="no-tracks" id="pl-empty">Playlist vacía: agregue canciones con + desde la lista.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-hdr"><div class="dot" style="color:var(--amber)"></div>LISTA DE CANCIONES</div>
       <div class="card-body">
         <div class="track-list" id="track-list">
@@ -515,6 +579,7 @@
 const S = {
   mode: 'autonomous', speed: 50, volume: 70,
   tracks: [], curTrack: null, playing: false, connected: false,
+  playlist: [], plPos: -1, cicloCompleto: false, cicloSync: false, caida: false,
 };
 
 /*═════════════════════════════════════════════ FUNCIONALIDADES ═══════════════════════════════════════════════════*/
@@ -836,8 +901,9 @@ function renderTracks() {
   S.tracks.forEach((t, i) => {
     const div = document.createElement('div');
     div.className = 'track' + (S.curTrack && S.curTrack.id === t.id ? ' active' : '');
-    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${trackTitle(t)}</span><span class="t-dur">${t.duracion || t.duration || ""}</span>`;
+    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${trackTitle(t)}</span><span class="t-dur">${t.duracion || t.duration || ""}</span><button class="t-add" title="Agregar a la playlist">+</button>`;
     div.onclick = () => selectTrack(t);
+    div.querySelector('.t-add').onclick = (e) => { e.stopPropagation(); addToPlaylist(t.id); };
     list.appendChild(div);
   });
 }
@@ -884,6 +950,108 @@ function onVolume(v) {
   apiFetch('/api/audio/volume', 'POST', { volume: parseInt(v) });
 }
 
+/* Playlist persistente: se guarda en la SD del robot en cada cambio */
+async function loadPlaylist() {
+  const d = await apiFetch('/api/audio/playlist');
+  if (d && Array.isArray(d.ids)) { S.playlist = d.ids; S.plPos = d.pos; renderPlaylist(); }
+}
+
+function savePlaylist() {
+  renderPlaylist();
+  apiFetch('/api/audio/playlist', 'POST', { ids: S.playlist });
+}
+
+function addToPlaylist(id)   { S.playlist.push(id); savePlaylist(); }
+function removeFromPlaylist(i) { S.playlist.splice(i, 1); savePlaylist(); }
+function movePlaylist(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= S.playlist.length) return;
+  [S.playlist[i], S.playlist[j]] = [S.playlist[j], S.playlist[i]];
+  savePlaylist();
+}
+
+function playPlaylist(i) {
+  if (!S.playlist.length) return;
+  const t = S.tracks.find(x => x.id === S.playlist[i]);
+  if (t) { S.curTrack = t; document.getElementById('np-title').textContent = trackTitle(t) + '  ☰'; }
+  S.playing = true; updatePlayBtn();
+  apiFetch('/api/audio/control', 'POST', { action: 'play_playlist', index: i });
+}
+
+function renderPlaylist() {
+  const list = document.getElementById('pl-list');
+  list.querySelectorAll('.track').forEach(e => e.remove());
+  document.getElementById('pl-empty').style.display = S.playlist.length ? 'none' : '';
+  document.getElementById('pl-count').textContent = S.playlist.length + (S.playlist.length === 1 ? ' PISTA' : ' PISTAS');
+  S.playlist.forEach((id, i) => {
+    const t = S.tracks.find(x => x.id === id);
+    const div = document.createElement('div');
+    div.className = 'track' + (i === S.plPos ? ' active' : '');
+    div.innerHTML = `<span class="t-num">${i+1}</span><span class="t-name">${t ? trackTitle(t) : 'Pista ' + id}</span>` +
+      `<span class="pl-ctl"><button title="Subir" ${i === 0 ? 'disabled' : ''}>▲</button>` +
+      `<button title="Bajar" ${i === S.playlist.length - 1 ? 'disabled' : ''}>▼</button>` +
+      `<button title="Quitar">✕</button></span>`;
+    div.onclick = () => playPlaylist(i);
+    const b = div.querySelectorAll('.pl-ctl button');
+    b[0].onclick = (e) => { e.stopPropagation(); movePlaylist(i, -1); };
+    b[1].onclick = (e) => { e.stopPropagation(); movePlaylist(i, +1); };
+    b[2].onclick = (e) => { e.stopPropagation(); removeFromPlaylist(i); };
+    list.appendChild(div);
+  });
+}
+
+/* Ciclo de limpieza */
+function onCicloTipo() {
+  const tipo = document.getElementById('cyc-tipo').value;
+  const meta = document.getElementById('cyc-meta');
+  meta.disabled = tipo === 'off';
+}
+
+function aplicarCiclo() {
+  const tipo = document.getElementById('cyc-tipo').value;
+  const v = parseFloat(document.getElementById('cyc-meta').value);
+  const body = { tipo };
+  if (tipo === 'tiempo') body.minutos = v;
+  if (tipo === 'area')   body.m2 = v;
+  if (tipo !== 'off' && !(v > 0)) { document.getElementById('sb-msg').textContent = '⚠ Meta del ciclo inválida'; return; }
+  apiFetch('/api/ciclo', 'POST', body).then(r => {
+    document.getElementById('sb-msg').textContent = r ? '● Ciclo configurado' : '⚠ No se pudo configurar el ciclo';
+  });
+}
+
+function nuevoCiclo() { apiFetch('/api/ciclo', 'POST', { accion: 'nuevo' }); }
+
+function fmtMin(s) { const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s % 60)).padStart(2, '0'); }
+
+function updateCiclo(c) {
+  if (!S.cicloSync) {        // la primera vez el formulario toma lo que tiene el robot
+    S.cicloSync = true;
+    document.getElementById('cyc-tipo').value = c.tipo;
+    if (c.tipo === 'tiempo') document.getElementById('cyc-meta').value = +(c.meta / 60).toFixed(2);
+    if (c.tipo === 'area')   document.getElementById('cyc-meta').value = c.meta;
+    onCicloTipo();
+  }
+  let txt = 'Sin límite';
+  if (c.tipo === 'tiempo') txt = `${fmtMin(c.segundos)} de ${fmtMin(c.meta)} en autónomo`;
+  if (c.tipo === 'area')   txt = `${c.area.toFixed(2)} de ${c.meta} m² recorridos`;
+  document.getElementById('cyc-txt').textContent = txt;
+  document.getElementById('cyc-cnt').textContent = 'Completados: ' + c.completados;
+  document.getElementById('cyc-fill').style.width = (c.progreso * 100).toFixed(1) + '%';
+  document.getElementById('cyc-done').classList.toggle('on', c.completo);
+  if (c.completo && !S.cicloCompleto)
+    document.getElementById('sb-msg').textContent = '✔ Ciclo de limpieza completado';
+  S.cicloCompleto = c.completo;
+}
+
+function updateCaida(c) {
+  const hay = c.izq || c.der;
+  const lado = c.izq && c.der ? 'AMBOS' : c.izq ? 'IZQ' : 'DER';
+  document.getElementById('led-caida').className = 'led ' + (hay ? 'on-danger' : '');
+  document.getElementById('lt-caida').textContent = hay ? '⚠ ' + lado : 'PISO OK';
+  if (hay && !S.caida) document.getElementById('sb-msg').textContent = '⚠ Desnivel al frente: el robot se detuvo';
+  S.caida = hay;
+}
+
 /* ═════════════════════════════════════════════ API ════════════════════════════════════════════════════════════════ */
 
 async function apiFetch(path, method = 'GET', body = null) {
@@ -910,6 +1078,8 @@ async function pollStatus() {
   if (data.sensors) updateSensors(data.sensors);
   if (data.radar)   updateRadar(data.radar);
   if (data.movimiento) updateMovimiento(data.movimiento);
+  if (data.ciclo) updateCiclo(data.ciclo);
+  if (data.caida) updateCaida(data.caida);
   if (data.map && data.map.celda_cm)
     document.getElementById('map-celda').textContent = `CELDA ${data.map.celda_cm} × ${data.map.celda_cm} CM`;
   if (data.uptime != null) {
@@ -929,6 +1099,20 @@ async function pollStatus() {
     const wasPlaying = S.playing;
     S.playing = (data.audio.status === 1);
     if (wasPlaying !== S.playing) updatePlayBtn();
+
+    // La playlist avanza sola: la pista activa sale del robot, no del clic
+    const cid = data.audio.current_track_id;
+    if (cid > 0 && (!S.curTrack || S.curTrack.id !== cid)) {
+      const t = S.tracks.find(x => x.id === cid);
+      if (t) {
+        S.curTrack = t;
+        document.getElementById('np-title').textContent = trackTitle(t) + (data.audio.playlist_pos >= 0 ? '  ☰' : '  ⟳');
+        document.getElementById('prog-dur').textContent = t.duracion || t.duration || '';
+        highlightTrack();
+      }
+    }
+    const plPos = data.audio.playlist_pos ?? -1;
+    if (plPos !== S.plPos) { S.plPos = plPos; renderPlaylist(); }
  
     //Barra de progreso
     const posSecs = data.audio.position ?? 0;
@@ -963,7 +1147,11 @@ async function pollStatus() {
 
 async function pollAudioList() {
   const data = await apiFetch('/api/audio/list');
-  if (data && Array.isArray(data.tracks)) { S.tracks = data.tracks; renderTracks(); }
+  if (data && Array.isArray(data.tracks)) {
+    const primera = !S.tracks.length;
+    S.tracks = data.tracks; renderTracks();
+    if (primera) loadPlaylist();
+  }
 }
 
 async function logout() { await apiFetch('/api/logout', 'POST'); window.location.href = '/'; }

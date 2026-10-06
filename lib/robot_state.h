@@ -89,6 +89,27 @@ typedef struct {
     int         track_count;
 } AudioState;
 
+// Ciclo de limpieza (opcional del enunciado): termina por tiempo en modo
+// autonomo o por area recorrida, segun lo configure el usuario desde el panel.
+typedef enum { CICLO_OFF = 0, CICLO_TIEMPO = 1, CICLO_AREA = 2 } CicloTipo;
+
+typedef struct {
+    CicloTipo tipo;
+    double    meta;              /* segundos (TIEMPO) o m2 (AREA) */
+    double    segundos;          /* en modo autonomo, en el ciclo actual */
+    int       visitadas_inicio;  /* celdas visitadas al empezar el ciclo */
+    double    area_m2;           /* recorrida en el ciclo actual */
+    int       completo;          /* 1: termino y el robot espera quieto */
+    unsigned  completados;       /* ciclos terminados desde el arranque */
+} CicloState;
+
+// Sensores infrarrojos de desnivel (opcional del enunciado)
+typedef struct {
+    int izq;                     /* 1: no hay piso bajo la esquina izquierda */
+    int der;
+    unsigned eventos;            /* desniveles detectados desde el arranque */
+} CaidaState;
+
 // Estados Globales
 typedef struct {
     OperationMode    mode;
@@ -98,6 +119,8 @@ typedef struct {
     MapState         map;
     RadarState       radar;
     MovimientoState  movimiento;
+    CicloState       ciclo;
+    CaidaState       caida;
     uint64_t         uptime_secs;
     pthread_mutex_t  lock;
 } RobotState;
@@ -106,5 +129,11 @@ typedef struct {
 int         robot_state_init(void);
 RobotState *robot_state_get(void);
 void        robot_state_destroy(void);
+
+/* Ciclo de limpieza. Las tres se llaman con rs->lock tomado. */
+int    robot_mapa_visitadas(const RobotState *rs);
+void   robot_ciclo_reiniciar(RobotState *rs);
+/* Avance del ciclo actual entre 0 y 1; 0 si el ciclo no tiene limite. */
+double robot_ciclo_progreso(const RobotState *rs);
 
 #endif

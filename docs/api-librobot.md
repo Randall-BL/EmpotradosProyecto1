@@ -266,7 +266,24 @@ robot tiene un solo parlante. Volumen 0–100.
 | `LibAudioStatus lib_audio_get_status(void)` | `STOPPED` / `PLAYING` / `PAUSED`. |
 | `int lib_audio_get_current_id(void)` | Pista actual, o −1. |
 | `float lib_audio_get_position(void)` | Posición en segundos. |
-| `void lib_audio_notify(NotificationEvent e)` | Sonido de evento (`NOTIFY_STARTUP/AUTONOMOUS/OBSTACLE/MANUAL`). **Pausa la música, reproduce el aviso y la reanuda** — no la corta. |
+| `void lib_audio_notify(NotificationEvent e)` | Sonido de evento (`NOTIFY_STARTUP/AUTONOMOUS/OBSTACLE/MANUAL/CYCLE_END`). **Pausa la música, reproduce el aviso y la reanuda** — no la corta. Un `stop` pendiente no se pisa: la música no vuelve. |
+| `int lib_audio_playlist_get(int *ids, int max)` | Ids de la playlist persistente, en orden; devuelve cuántos copió. |
+| `int lib_audio_playlist_set(const int *ids, int n)` | Reemplaza la playlist y la guarda en `canciones/playlist.txt` (temporal + `rename`). −1 si un id no existe o no se pudo escribir. |
+| `int lib_audio_play_playlist(int pos)` | Recorre la playlist desde `pos`, en orden y en bucle. |
+| `int lib_audio_playlist_pos(void)` | Posición de la playlist que suena, o −1 si suena una pista suelta. |
+
+---
+
+## 10. Desnivel — `lib_caida.h`
+
+Dos sensores infrarrojos al piso (TCRT5000 o FC-51) en las esquinas delanteras, en
+GPIO 4 (izquierda) y 8 (derecha). Requerimiento opcional; ver
+[`opcionales.md`](opcionales.md).
+
+| Función | Descripción |
+|---|---|
+| `int caida_init(int pi)` | Configura los dos GPIO como entradas con pull-down: un módulo desconectado se lee como "hay piso". La llama `robot_init()`. |
+| `int caida_leer(void)` | Bits `CAIDA_IZQ` y `CAIDA_DER` de los sensores que no ven piso; 0 si hay piso bajo los dos. Cada sensor se lee dos veces, a 200 µs, para filtrar ruido. |
 
 ---
 

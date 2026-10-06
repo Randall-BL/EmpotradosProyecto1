@@ -44,6 +44,13 @@
 #define RADAR_ECHO 27
 #define SERVO_PIN  25
 
+/* Sensores infrarrojos de desnivel, en las esquinas delanteras del chasis.
+   En alto cuando no ven piso, como el TCRT5000 o el FC-51. */
+#define CAIDA_IZQ_PIN  4
+#define CAIDA_DER_PIN  8
+#define CAIDA_ADELANTE_CM 12.0
+#define CAIDA_LATERAL_CM   8.0
+
 /* Un SG90 a 5 V: unos 0.1 s cada 60 grados, y 500-2500 us de pulso para
    0-180 grados. Son las del servo "fisico", no las constantes de lib_servo. */
 #define SERVO_GRADOS_POR_S 600.0
@@ -268,8 +275,15 @@ int gpio_write(int pi, unsigned gpio, unsigned level) {
     return 0;
 }
 
+int set_pull_up_down(int pi, unsigned gpio, unsigned pud) {
+    (void)pi; (void)gpio; (void)pud;
+    return 0;
+}
+
 int gpio_read(int pi, unsigned gpio) {
     (void)pi;
+    if (gpio == CAIDA_IZQ_PIN) return mundo_sin_piso(CAIDA_ADELANTE_CM,  CAIDA_LATERAL_CM);
+    if (gpio == CAIDA_DER_PIN) return mundo_sin_piso(CAIDA_ADELANTE_CM, -CAIDA_LATERAL_CM);
     if (gpio != RADAR_ECHO) return 0;
     SensorSim *s = &g_sensor;
 

@@ -86,6 +86,7 @@ motores de 60 rpm a 12 V y las ruedas de 30 mm, el real va a unos 5 cm/s.
 | #31 Documento de Diseño | La RAM y la CPU en la sección 5.4 |
 | #33 README | Métricas, fotos y video |
 | #34 Presentación | Ensayo completo de la demo y plan B: baterías de 9 V de repuesto y video de respaldo |
+| #35, #36, #37 Opcionales | Implementados (`docs/opcionales.md`). Falta montar los dos sensores IR de desnivel y probar los tres en el robot; después, cerrarlos |
 
 ---
 

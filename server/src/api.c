@@ -76,6 +76,45 @@ static int json_int(const char *json, const char *key, int *out)
     return 1;
 }
 
+// Numeros con decimales
+static int json_num(const char *json, const char *key, double *out)
+{
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *p = strstr(json, needle);
+    if (!p) return 0;
+    p += strlen(needle);
+    while (*p == ' ' || *p == ':') p++;
+    if (*p == '"') p++;
+    char *fin;
+    double v = strtod(p, &fin);
+    if (fin == p) return 0;
+    *out = v;
+    return 1;
+}
+
+// Arreglo de enteros: "key":[1,2,3]. Devuelve cuantos leyo, -1 si no esta.
+static int json_int_array(const char *json, const char *key, int *out, int max)
+{
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *p = strstr(json, needle);
+    if (!p) return -1;
+    p = strchr(p + strlen(needle), '[');
+    if (!p) return -1;
+    p++;
+    int n = 0;
+    while (*p && *p != ']') {
+        char *fin;
+        long v = strtol(p, &fin, 10);
+        if (fin == p) { p++; continue; }   /* comas y espacios */
+        if (n >= max) return -1;
+        out[n++] = (int)v;
+        p = fin;
+    }
+    return *p == ']' ? n : -1;
+}
+
 /* ═══════════════════════════════════════════════════════════
    POST /api/login
 ═══════════════════════════════════════════════════════════ */
@@ -183,6 +222,7 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
     int   real_status   = (int)lib_audio_get_status();
     int   real_track_id = lib_audio_get_current_id();
     float real_position = lib_audio_get_position();
+    int   real_pl_pos   = lib_audio_playlist_pos();
     /* Construir grid JSON y calcular estadisticas */
     char grid_json[MAP_ROWS * MAP_COLS * 3 + 128];
     int gn = 0;
@@ -225,6 +265,8 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
     }
     snprintf(radar_json + rn, sizeof(radar_json) - rn, "]");
 
+    static const char *TIPOS_CICLO[] = { "off", "tiempo", "area" };
+
     char buf[12288];
     snprintf(buf, sizeof(buf),
         "{"
@@ -255,7 +297,22 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
             "\"status\":%d,"
             "\"current_track_id\":%d,"
             "\"position\":%.1f,"
-            "\"volume\":%d"
+            "\"volume\":%d,"
+            "\"playlist_pos\":%d"
+          "},"
+          "\"ciclo\":{"
+            "\"tipo\":\"%s\","
+            "\"meta\":%.2f,"
+            "\"segundos\":%.1f,"
+            "\"area\":%.2f,"
+            "\"progreso\":%.3f,"
+            "\"completo\":%s,"
+            "\"completados\":%u"
+          "},"
+          "\"caida\":{"
+            "\"izq\":%s,"
+            "\"der\":%s,"
+            "\"eventos\":%u"
           "},"
           "\"map\":{"
             "\"celda_cm\":%d,"
@@ -279,7 +336,12 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
         rs->leds.manual    ? "true" : "false",
         rs->leds.obstacle  ? "true" : "false",
         real_status, real_track_id,
-        real_position, real_volume,
+        real_position, real_volume, real_pl_pos,
+        TIPOS_CICLO[rs->ciclo.tipo], rs->ciclo.meta, rs->ciclo.segundos,
+        rs->ciclo.area_m2, robot_ciclo_progreso(rs),
+        rs->ciclo.completo ? "true" : "false", rs->ciclo.completados,
+        rs->caida.izq ? "true" : "false", rs->caida.der ? "true" : "false",
+        rs->caida.eventos,
         MAP_CELDA_CM,
         rs->map.robot_x, rs->map.robot_y, rs->map.robot_heading,
         visited, obstacles, grid_json
@@ -323,6 +385,9 @@ enum MHD_Result api_set_mode(struct MHD_Connection *conn,
         rs->mode            = MODE_AUTONOMOUS;
         rs->leds.autonomous = 1;
         rs->leds.manual     = 0;
+        /* Pasar a autonomo desde el panel empieza un ciclo de limpieza nuevo,
+           tambien si el anterior ya habia terminado. */
+        robot_ciclo_reiniciar(rs);
         printf("[api] mode -> AUTONOMOUS\n");
         pthread_mutex_unlock(&rs->lock);          
         lib_audio_notify(NOTIFY_AUTONOMOUS);
@@ -347,6 +412,7 @@ enum MHD_Result api_move(struct MHD_Connection *conn,
 
     pthread_mutex_lock(&rs->lock);
     OperationMode current_mode = rs->mode;
+    int sin_piso = rs->caida.izq || rs->caida.der;
     pthread_mutex_unlock(&rs->lock);
 
     if (current_mode != MODE_MANUAL)
@@ -367,6 +433,12 @@ enum MHD_Result api_move(struct MHD_Connection *conn,
 
     // 2. Ejecutar comando de hardware utilizando la biblioteca de motores
     if (strcmp(direction, "forward") == 0 || strcmp(direction, "up") == 0) {
+        /* Con un desnivel al frente no se avanza, tampoco a mano: se puede
+           retroceder o girar para salir del borde. */
+        if (sin_piso) {
+            motores_detener();
+            return send_json(conn, 409, "{\"error\":\"Desnivel al frente\"}");
+        }
         motores_avanzar(pwm_speed);
     } else if (strcmp(direction, "backward") == 0 || strcmp(direction, "down") == 0) {
         motores_retroceder(pwm_speed);
@@ -436,6 +508,14 @@ enum MHD_Result api_audio_control(struct MHD_Connection *conn,
                              "{\"error\":\"Pista no encontrada\"}");
         printf("[api] audio -> PLAY  track_id=%d\n", track_id);
  
+    } else if (strcmp(action, "play_playlist") == 0) {
+        int index = 0;
+        json_int(body, "index", &index);
+        if (lib_audio_play_playlist(index) < 0)
+            return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                             "{\"error\":\"La playlist esta vacia\"}");
+        printf("[api] audio -> PLAYLIST desde %d\n", index);
+
     } else if (strcmp(action, "pause") == 0) {
         // Funcionalidad de pause
         lib_audio_pause();
@@ -481,5 +561,104 @@ enum MHD_Result api_audio_volume(struct MHD_Connection *conn,
     lib_audio_set_volume(vol);
     printf("[api] audio -> VOLUME %d%%\n", vol);
  
+    return send_json(conn, MHD_HTTP_OK, "{\"ok\":true}");
+}
+
+/* ═══════════════════════════════════════════════════════════
+    GET /api/audio/playlist
+    Ids de la playlist persistente, en orden
+═══════════════════════════════════════════════════════════ */
+enum MHD_Result api_audio_playlist_get(struct MHD_Connection *conn)
+{
+    int ids[LIB_AUDIO_TRACKS_MAX];
+    int n = lib_audio_playlist_get(ids, LIB_AUDIO_TRACKS_MAX);
+
+    char buf[LIB_AUDIO_TRACKS_MAX * 8 + 64];
+    int k = snprintf(buf, sizeof(buf), "{\"ids\":[");
+    for (int i = 0; i < n; i++)
+        k += snprintf(buf + k, sizeof(buf) - (size_t)k, "%s%d", i ? "," : "", ids[i]);
+    snprintf(buf + k, sizeof(buf) - (size_t)k, "],\"pos\":%d}", lib_audio_playlist_pos());
+    return send_json(conn, MHD_HTTP_OK, buf);
+}
+
+/* ═══════════════════════════════════════════════════════════
+    POST /api/audio/playlist   {"ids":[3,1,2]}
+    Reemplaza la playlist y la guarda en la SD
+═══════════════════════════════════════════════════════════ */
+enum MHD_Result api_audio_playlist_set(struct MHD_Connection *conn,
+                                        const char *body, size_t len)
+{
+    (void)len;
+    int ids[LIB_AUDIO_TRACKS_MAX];
+    int n = json_int_array(body ? body : "", "ids", ids, LIB_AUDIO_TRACKS_MAX);
+    if (n < 0)
+        return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                         "{\"error\":\"Se esperaba {\\\"ids\\\":[...]}\"}");
+    if (lib_audio_playlist_set(ids, n) < 0)
+        return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                         "{\"error\":\"Pista inexistente o no se pudo guardar\"}");
+    return send_json(conn, MHD_HTTP_OK, "{\"ok\":true}");
+}
+
+/* ═══════════════════════════════════════════════════════════
+    POST /api/ciclo
+    {"tipo":"tiempo","minutos":5}   termina tras 5 min en autonomo
+    {"tipo":"area","m2":4}          termina tras recorrer 4 m2
+    {"tipo":"off"}                  sin limite
+    {"accion":"nuevo"}              empieza otro ciclo con la misma meta
+    Configurar la meta tambien empieza un ciclo nuevo.
+═══════════════════════════════════════════════════════════ */
+enum MHD_Result api_ciclo(struct MHD_Connection *conn,
+                           const char *body, size_t len)
+{
+    (void)len;
+    if (!body) body = "";
+    RobotState *rs = robot_state_get();
+    if (!rs) return send_json(conn, 500, "{\"error\":\"State unavailable\"}");
+
+    char tipo[16] = {0}, accion[16] = {0};
+    json_str(body, "tipo",   tipo,   sizeof(tipo));
+    json_str(body, "accion", accion, sizeof(accion));
+
+    CicloTipo nuevo_tipo;
+    double    meta = 0.0;
+
+    if (strcmp(accion, "nuevo") == 0) {
+        pthread_mutex_lock(&rs->lock);
+        robot_ciclo_reiniciar(rs);
+        pthread_mutex_unlock(&rs->lock);
+        printf("[api] ciclo -> nuevo\n");
+        return send_json(conn, MHD_HTTP_OK, "{\"ok\":true}");
+    }
+
+    if (strcmp(tipo, "off") == 0) {
+        nuevo_tipo = CICLO_OFF;
+    } else if (strcmp(tipo, "tiempo") == 0) {
+        double min = 0.0;
+        if (!json_num(body, "minutos", &min) || min <= 0.0 || min > 600.0)
+            return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                             "{\"error\":\"minutos debe estar entre 0 y 600\"}");
+        nuevo_tipo = CICLO_TIEMPO;
+        meta = min * 60.0;
+    } else if (strcmp(tipo, "area") == 0) {
+        double m2 = 0.0;
+        if (!json_num(body, "m2", &m2) || m2 <= 0.0 || m2 > 1000.0)
+            return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                             "{\"error\":\"m2 debe estar entre 0 y 1000\"}");
+        nuevo_tipo = CICLO_AREA;
+        meta = m2;
+    } else {
+        return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                         "{\"error\":\"tipo debe ser off, tiempo o area\"}");
+    }
+
+    pthread_mutex_lock(&rs->lock);
+    rs->ciclo.tipo = nuevo_tipo;
+    rs->ciclo.meta = meta;
+    robot_ciclo_reiniciar(rs);
+    pthread_mutex_unlock(&rs->lock);
+
+    printf("[api] ciclo -> %s, meta %.1f %s\n", tipo, nuevo_tipo == CICLO_TIEMPO ? meta / 60.0 : meta,
+           nuevo_tipo == CICLO_TIEMPO ? "min" : nuevo_tipo == CICLO_AREA ? "m2" : "");
     return send_json(conn, MHD_HTTP_OK, "{\"ok\":true}");
 }

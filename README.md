@@ -53,6 +53,7 @@ flowchart TB
         SERVO["Servo del radar"]
         HC["HC-SR04<br/>divisor 1k/2k en ECHO"]
         MPU["MPU-6050 (GY-521)"]
+        IR["2 sensores IR al piso<br/>TCRT5000 / FC-51 a 3.3 V"]
         LED["4 LEDs indicadores"]
         AMP["Filtro RC + PAM8403"]
         SPK["Parlante 8 Ω"]
@@ -70,6 +71,7 @@ flowchart TB
     PI -- "5 V · GPIO 25" --> SERVO
     PI -- "GPIO 17 / 27" --- HC
     PI -- "I2C · GPIO 2 / 3" --- MPU
+    PI -- "GPIO 4 / 8" --- IR
     PI -- "GPIO 16 · 20 · 21 · 26" --> LED
     PI -- "GPIO 18 · PWM" --> AMP --> SPK
     PI -. "GPIO 5 · 6 · 23 · 24" .-> OPTO
@@ -87,6 +89,7 @@ Los esquemas eléctricos dibujados están en
 | HC-SR04 `TRIG` / `ECHO` | 17 / 27 | `ECHO` con divisor 1 kΩ / 2 kΩ: el sensor entrega 5 V |
 | MPU-6050 `SDA` / `SCL` | 2 / 3 | Módulo GY-521, alimentado de los 5 V de la Raspberry Pi |
 | LED encendido / autónomo / manual / obstáculo | 16 / 20 / 21 / 26 | 5 mA cada uno |
+| Sensores IR de desnivel izquierdo / derecho | 4 / 8 | Opcional. Módulos a 3.3 V, entradas con pull-down: sin módulo se lee "hay piso" |
 | Audio PWM | 18 | Overlay `audremap`, filtro RC y PAM8403 |
 
 El detalle —cálculos, listas de materiales y procedimientos de verificación— está en
@@ -440,9 +443,9 @@ La sesión caduca a los 10 minutos de inactividad. El panel tiene tres pestañas
 
 | Pestaña | Qué ofrece |
 |---|---|
-| **Control** | Botones de modo autónomo y manual, controles direccionales, velocidad y estado de los cuatro LEDs. Los motores van a velocidad fija, así que el control de velocidad no cambia la velocidad real |
+| **Control** | Botones de modo autónomo y manual, ciclo de limpieza (meta por tiempo o por área, progreso y aviso de fin), controles direccionales, velocidad, estado de los cuatro LEDs y de los sensores de desnivel. Los motores van a velocidad fija, así que el control de velocidad no cambia la velocidad real |
 | **Mapa** | La grilla de recorrido, el radar con las distancias a la izquierda, al frente y a la derecha, la velocidad que da el MPU-6050 y el tiempo antes de chocar, en tiempo real |
-| **Audio** | Lista de canciones, reproducir, pausar, detener y volumen |
+| **Audio** | Lista de canciones, reproducir, pausar, detener y volumen, y la playlist persistente: agregar con `+`, reordenar con ▲ ▼, quitar con ✕ y reproducirla completa |
 
 ### 6.3 Modos de operación
 
@@ -453,6 +456,17 @@ La sesión caduca a los 10 minutos de inactividad. El panel tiene tres pestañas
   presionados. En la PC también funcionan las flechas y `W` `A` `S` `D`; la barra
   espaciadora detiene. Si aparece un obstáculo al frente, el robot frena solo.
 
+**Desnivel (opcional).** Dos sensores infrarrojos en las esquinas delanteras miran al
+piso. Si uno deja de ver piso —el borde de una grada—, el robot frena en cualquier modo.
+En autónomo además retrocede y gira hacia el lado contrario (con los dos sensores, media
+vuelta); en manual se niega a avanzar (`409`) hasta que se retroceda o se gire.
+
+**Ciclo de limpieza (opcional).** Desde la pestaña Control se fija una meta: minutos en
+modo autónomo o metros cuadrados recorridos (celdas nuevas del mapa × 0.09 m²). Al
+cumplirla el robot se detiene, suena el aviso de fin de ciclo y el panel muestra
+"Ciclo completado". Sigue quieto hasta que se pulse **Nuevo ciclo** o se vuelva a pedir
+el modo autónomo.
+
 ### 6.4 Indicadores y sonidos
 
 | LED | Color | Significado |
@@ -460,15 +474,25 @@ La sesión caduca a los 10 minutos de inactividad. El panel tiene tres pestañas
 | Encendido | Verde | Sistema energizado y servidor activo |
 | Autónomo | Azul | Modo autónomo en curso |
 | Manual | Amarillo | Modo manual en curso |
-| Obstáculo | Rojo | Obstáculo detectado |
+| Obstáculo | Rojo | Obstáculo o desnivel detectado |
 
 Hay un sonido para cada evento: inicio del sistema, inicio del modo autónomo, obstáculo
-detectado y cambio a modo manual. El aviso pausa la música y la reanuda al terminar.
+o desnivel detectado, cambio a modo manual y fin del ciclo de limpieza. El aviso pausa la
+música y la reanuda al terminar.
 
 ### 6.5 Audio
 
-La playlist está en `/opt/robot/audio/canciones/`, en su propia partición. La pista
-elegida se repite hasta que se detiene o se elige otra. Para agregar música:
+Las canciones están en `/opt/robot/audio/canciones/`, en su propia partición. Una pista
+elegida suelta se repite hasta que se detiene o se elige otra.
+
+**Playlist persistente (opcional).** La lista ordenada que se arma en la pestaña Audio se
+guarda en `/opt/robot/audio/canciones/playlist.txt`, un nombre de archivo por línea, en
+la partición de la música: sobrevive a los reinicios. Se escribe en un temporal y se
+renombra, así un corte de energía no la deja a medias. "Reproducir playlist" recorre la
+lista en orden y vuelve a empezar al terminar. Sin archivo, la playlist son todas las
+canciones.
+
+Para agregar música:
 
 - **Antes de construir:** copiar los MP3 a `audio/music/` (no se versiona).
 - **Con el robot en marcha:** `scp cancion.mp3 root@<ip>:/opt/robot/audio/canciones/` y
@@ -496,8 +520,14 @@ Todos los endpoints salvo el login exigen la cookie de sesión.
 | `POST /api/mode` | `{"mode":"autonomous"}` o `"manual"` | Cambia de modo |
 | `POST /api/move` | `{"direction":"forward","speed":70}` | Mueve el robot, solo en modo manual. `direction`: `forward`, `backward`, `left`, `right`, `stop` |
 | `GET /api/audio/list` | — | Lista de pistas |
-| `POST /api/audio/control` | `{"action":"play","track_id":1}` | `play`, `pause`, `resume`, `stop` |
+| `POST /api/audio/control` | `{"action":"play","track_id":1}` | `play`, `pause`, `resume`, `stop`, o `play_playlist` con `"index"` |
 | `POST /api/audio/volume` | `{"volume":55}` | Volumen de 0 a 100 |
+| `GET /api/audio/playlist` | — | Ids de la playlist en orden y la posición que suena |
+| `POST /api/audio/playlist` | `{"ids":[3,1,9]}` | Reemplaza la playlist y la guarda en la SD |
+| `POST /api/ciclo` | `{"tipo":"tiempo","minutos":5}`, `{"tipo":"area","m2":4}`, `{"tipo":"off"}` o `{"accion":"nuevo"}` | Configura la meta del ciclo de limpieza o empieza uno nuevo |
+
+`GET /api/status` incluye además `ciclo` (tipo, meta, avance, `completo`) y `caida`
+(sensores izquierdo y derecho, y eventos).
 
 ### 6.8 Cambiar la configuración
 
@@ -539,10 +569,11 @@ La referencia completa, con tipos y ejemplos, está en
 | **Sensor** `lib_sensors.h` | `sensor_init()` · `sensor_leer_distancia()` |
 | **Servo** `lib_servo.h` | `servo_init()` · `servo_mover(grados)` · `servo_angulo()` · `servo_liberar()` |
 | **Radar** `lib_radar.h` | `radar_iniciar()` · `radar_detener()` · `radar_pausar()` · `radar_angulo_actual()` · `radar_lecturas()` · `radar_distancia(angulo)` · `radar_seq()` · `radar_barrido_completo()` · `radar_esperar_barrido()` · `radar_tiempo_choque()` · `radar_estado_choque()` · `radar_rayo()` |
+| **Desnivel** `lib_caida.h` | `caida_init()` · `caida_leer()` |
 | **MPU-6050** `lib_imu.h` | `imu_init()` · `imu_calibrar()` · `imu_leer()` · `imu_disponible()` · `imu_cerrar()` |
 | **LEDs** `lib_leds.h` | `lib_leds_init()` · `lib_leds_set(led, estado)` · `lib_leds_get(led)` · `lib_leds_sync_from_state()` · `lib_leds_destroy()` |
 | **Odometría** `lib_odom.h` | `odom_init()` · `odom_arrancar()` · `odom_parar()` · `odom_reset()` · `odom_update()` · `odom_get(x, y, rumbo)` · `odom_velocidad_cm_s()` · `odom_avance_cm()` · `odom_distancia_recorrida()` · `odom_get_velocidades()` · `odom_usa_imu()` |
-| **Audio** `lib_audio.h` | `lib_audio_init(dir)` · `lib_audio_destroy()` · `lib_audio_scan()` · `lib_audio_get_tracks()` · `lib_audio_play(id)` · `lib_audio_pause()` · `lib_audio_resume()` · `lib_audio_stop()` · `lib_audio_set_volume(v)` · `lib_audio_get_volume()` · `lib_audio_get_status()` · `lib_audio_get_current_id()` · `lib_audio_get_position()` · `lib_audio_notify(evento)` |
+| **Audio** `lib_audio.h` | `lib_audio_init(dir)` · `lib_audio_destroy()` · `lib_audio_scan()` · `lib_audio_get_tracks()` · `lib_audio_play(id)` · `lib_audio_pause()` · `lib_audio_resume()` · `lib_audio_stop()` · `lib_audio_set_volume(v)` · `lib_audio_get_volume()` · `lib_audio_get_status()` · `lib_audio_get_current_id()` · `lib_audio_get_position()` · `lib_audio_notify(evento)` · `lib_audio_playlist_get()` · `lib_audio_playlist_set()` · `lib_audio_play_playlist(pos)` · `lib_audio_playlist_pos()` |
 
 Ejemplo mínimo:
 
@@ -721,20 +752,24 @@ Método, herramientas y justificación completos en [`docs/metricas.md`](docs/me
 | Métrica | Referencia | Resultado | Herramienta |
 |---|---|---|---|
 | Rootfs | ≤ 200 MB | **129 MB** | `du` sobre el rootfs de la imagen construida; `df -k /` en el target |
-| Tiempo de arranque | ≤ 15 s | **17 s** | Relojes monotónicos de `systemd` y `journalctl -o short-monotonic` |
-| RAM en operación normal | — | **PENDIENTE** | `MemTotal − MemAvailable` de `/proc/meminfo`; `VmRSS` por proceso |
-| CPU en operación normal | — | **PENDIENTE** | Diferencia de `/proc/stat` y `/proc/PID/stat` en 60 s |
+| Tiempo de arranque | ≤ 15 s | **19.2 s** | Relojes monotónicos de `systemd` y `journalctl -o short-monotonic` |
+| RAM en operación normal | — | **97 MB** de 1845 MB; `robot-server` 5.2 MB | `MemTotal − MemAvailable` de `/proc/meminfo`; `VmRSS` por proceso |
+| CPU en operación normal | — | **3.6 %** de 4 núcleos; `robot-server` 4.5 % de un núcleo | Diferencia de `/proc/stat` y `/proc/PID/stat` en 60 s |
 
-> **PENDIENTE:** `./scripts/medir-metricas.sh <ip-del-robot>` toma las cuatro métricas
-> con navegación autónoma, audio y servidor web a la vez, e imprime la tabla.
+Medido el 5 de octubre de 2026 sobre la imagen final, con el robot armado en modo
+autónomo, música sonando y el panel consultando el estado cada 500 ms durante 60 s
+(`./scripts/medir-metricas.sh <ip-del-robot>`).
 
 **Rootfs.** Queda en el 65 % del presupuesto. Además, la tabla de particiones fija la
 partición raíz en 180 MiB: si la imagen creciera por encima, el build fallaría.
 
-**Arranque.** Excede la referencia en 2 s. `robot-server` espera a que la red esté
-operativa, y la asociación WPA2 más la concesión DHCP dominan ese tiempo; sin red el
-panel no es alcanzable, así que el servicio no estaría operativo. Ya se redujo desde
-130 s corrigiendo la configuración de red.
+**Arranque.** Excede la referencia en 4.2 s. `robot-server` espera a que la red esté
+operativa, y la búsqueda del punto de acceso WiFi se lleva casi 7 s; desde que hay red
+el servidor escucha en 1.5 s. Sin red el panel no es alcanzable, así que el servicio no
+estaría operativo. Ya se redujo desde 130 s corrigiendo la configuración de red.
+
+**RAM y CPU.** El sistema completo usa el 5 % de la RAM y el 3.6 % de la CPU; queda
+margen de sobra en la Raspberry Pi 4.
 
 ---
 
@@ -742,10 +777,13 @@ panel no es alcanzable, así que el servicio no estaría operativo. Ya se redujo
 
 | Resultado | Evidencia |
 |---|---|
-| La prueba de la biblioteca pasa sus 47 comprobaciones, en el host y compilada para ARM bajo `qemu-aarch64` | [`sim/README.md`](sim/README.md), [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
+| La prueba de la biblioteca pasa sus 49 comprobaciones, compilada para ARM bajo `qemu-aarch64` | [`sim/README.md`](sim/README.md), [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | Dos minutos en modo autónomo sobre el simulador: 18 evasiones y ningún choque | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | El radar mide los siete ángulos a menos de 2 cm de la distancia real | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | Odometría con MPU-6050: 5 % de error de posición y 0.4° de rumbo en un recorrido en L | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
+| Desnivel: en el simulador, que tiene una grada que el HC-SR04 no ve, tres minutos en autónomo con una detección, evasión y ninguna caída | [`docs/opcionales.md`](docs/opcionales.md) |
+| Ciclo de limpieza: con una meta de 12 s el robot se detuvo a los 12.5 s y sonó el aviso; pedir modo autónomo empezó otro | [`docs/opcionales.md`](docs/opcionales.md) |
+| Playlist: se guardó en disco, sobrevivió a un reinicio del servidor y se reprodujo en orden y en bucle | [`docs/opcionales.md`](docs/opcionales.md) |
 | El mapa crece en tiempo real: de 79 a 85 celdas visitadas en 6 s | [`docs/evidencias/servidor-web.md`](docs/evidencias/servidor-web.md) |
 | La autenticación rechaza credenciales inválidas y protege los endpoints (HTTP 401) | [`docs/evidencias/servidor-web.md`](docs/evidencias/servidor-web.md) |
 | Tras un `kill -9`, `systemd` reinicia el servidor solo: PID nuevo y `NRestarts=1` | [`docs/evidencias/systemd-reinicio.md`](docs/evidencias/systemd-reinicio.md) |
@@ -801,6 +839,7 @@ tocar el código de `lib/`. Ver [`sim/README.md`](sim/README.md) y
 | [`docs/metricas.md`](docs/metricas.md) | Métricas de eficiencia: método, resultados y justificación |
 | [`docs/api-librobot.md`](docs/api-librobot.md) | Referencia de la API pública de la biblioteca de control |
 | [`docs/navegacion-radar.md`](docs/navegacion-radar.md) | Radar, velocidad con el MPU-6050, tiempo antes de chocar, evasión y mapa |
+| [`docs/opcionales.md`](docs/opcionales.md) | Requerimientos opcionales: desnivel, fin de ciclo y playlist persistente |
 | [`docs/odometria.md`](docs/odometria.md) | Calibración en campo: motores, servo, MPU-6050, umbrales y odometría |
 | [`docs/arranque-automatico.md`](docs/arranque-automatico.md) | Unidades systemd, arranque automático y recuperación ante fallos |
 | [`docs/hardware-pinout.md`](docs/hardware-pinout.md) | Mapa de pines GPIO: referencia única del cableado |

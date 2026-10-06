@@ -28,6 +28,9 @@ Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 p
 | `SDA` | 2 | 3 | Bidireccional | `lib/lib_imu.h` (bus 1) |
 | `SCL` | 3 | 5 | Salida | `lib/lib_imu.h` (bus 1) |
 | `VCC` — 5 V (el GY-521 trae regulador de 3.3 V) | 5V | 2 | — | — |
+| **Sensores IR de desnivel (opcional)** — módulos a 3.3 V, entradas con pull-down ||||
+| Esquina delantera izquierda | 4 | 7 | Entrada | `lib/lib_caida.h` |
+| Esquina delantera derecha | 8 | 24 | Entrada | `lib/lib_caida.h` |
 | **LEDs indicadores** ||||
 | Sistema encendido | 16 | 36 | Salida | `lib/lib_leds.h` |
 | Modo autónomo | 20 | 38 | Salida | `lib/lib_leds.h` |
@@ -47,7 +50,7 @@ Solo los pines usados. `·` = pin libre.
                 3V3  ( 1) ( 2)  5V ─── MPU VCC, servo, HC-SR04, PAM8403
       MPU SDA ─(GPIO2)( 3) ( 4)  5V
       MPU SCL ─(GPIO3)( 5) ( 6)  GND ────── GND lógica
-            ·  GPIO4 ( 7) ( 8)  GPIO14  (UART TX, consola)
+     IR izq. ─(GPIO4)( 7) ( 8)  GPIO14  (UART TX, consola)
       MPU GND ─  GND ( 9) (10)  GPIO15  (UART RX, consola)
   TRIG radar ─(GPIO17)(11) (12)(GPIO18)─ audio PWM → PAM8403
   ECHO radar ─(GPIO27)(13) (14)  GND
@@ -55,7 +58,7 @@ Solo los pines usados. `·` = pin libre.
                  3V3 (17) (18)(GPIO24)─ IN4 motor der.
             · GPIO10 (19) (20)  GND
             ·  GPIO9 (21) (22)(GPIO25)─ servo del radar
-            · GPIO11 (23) (24)  GPIO8   ·
+            · GPIO11 (23) (24)(GPIO8)─ IR der.
                  GND (25) (26)  GPIO7   ·
                ID_SD (27) (28)  ID_SC
  IN1 motor iz─(GPIO5)(29) (30)  GND
@@ -142,7 +145,7 @@ de un GPIO, y no entra en esta cuenta.
 | GPIO 12, 13 | Liberados al dejar `ENA`/`ENB` con jumper. Son un par de PWM por hardware: sirven para un segundo servo o para pasar el audio a `pins_12_13` |
 | GPIO 19 | Toma la función PWM de audio con `audremap`; no se conecta, pero tampoco se reutiliza |
 | GPIO 22, 10, 9, 11 | Liberados por los sensores laterales. El profesor aceptó el radar junto con el MPU-6050, así que no se montó un segundo HC-SR04; habría ido en 22 (`TRIG`) y 10 (`ECHO`) |
-| GPIO 4, 7, 8 | Margen para los requerimientos opcionales (sensores de desnivel) |
+| GPIO 7 | Margen; 4 y 8 llevan los sensores de desnivel. SPI no está habilitado, así que 7 y 8 son GPIO comunes |
 
 ---
 

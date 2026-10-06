@@ -14,6 +14,11 @@
 // Configuracion
 #define LIB_AUDIO_DIR_DEFAULT   "./audio"   // directorio para guardar los tracks / audios  
 
+/* Playlist persistente, relativa a audio_dir. En la Raspberry cae en la
+   particion de la musica (ext4 de lectura y escritura), asi sobrevive a los
+   reinicios y no toca la particion raiz. Un nombre de archivo por linea. */
+#define LIB_AUDIO_PLAYLIST_FILE "canciones/playlist.txt"
+
 /* Salida PWM analogica de la RPi4 (card 1, "Headphones"). El overlay audremap
    la saca por GPIO 18 hacia el filtro RC y el amplificador PAM8403, en vez de
    por el jack de 3.5 mm. Ver docs/hardware-sensores.md. */
@@ -41,6 +46,8 @@ typedef enum {
     NOTIFY_AUTONOMOUS = 1,  
     NOTIFY_OBSTACLE   = 2, 
     NOTIFY_MANUAL     = 3, 
+    NOTIFY_CYCLE_END  = 4,   /* fin del ciclo de limpieza */
+    NOTIFY_COUNT
 } NotificationEvent;
 
 // Parametros de cada Audio
@@ -79,5 +86,31 @@ float          lib_audio_get_position  (void);
 
 // Notificaciones
 void lib_audio_notify(NotificationEvent event);
+
+/* ── Playlist persistente ─────────────────────────────────────────────────────
+ * Lista ordenada de pistas, editable desde la interfaz web. Se guarda por
+ * nombre de archivo en LIB_AUDIO_PLAYLIST_FILE, asi que sobrevive a los
+ * reinicios aunque cambien los ids. Sin archivo, la playlist son todas las
+ * pistas en el orden del escaneo.
+ *
+ * lib_audio_play() reproduce una pista suelta en bucle, como siempre;
+ * lib_audio_play_playlist() recorre la playlist en orden y vuelve a empezar al
+ * llegar al final.
+ */
+
+/** Copia los ids de la playlist, en orden. @return cuantos copio. */
+int lib_audio_playlist_get(int *ids, int max);
+
+/**
+ * @brief Reemplaza la playlist y la guarda en disco.
+ * @return 0 si se guardo; -1 si algun id no existe o no se pudo escribir.
+ */
+int lib_audio_playlist_set(const int *ids, int n);
+
+/** Reproduce la playlist desde la posicion @p pos (0 = la primera). */
+int lib_audio_play_playlist(int pos);
+
+/** Posicion de la playlist que suena, o -1 si no se esta reproduciendo la playlist. */
+int lib_audio_playlist_pos(void);
 
 #endif

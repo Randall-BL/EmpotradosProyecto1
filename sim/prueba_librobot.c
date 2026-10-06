@@ -26,6 +26,7 @@
 #include "lib_imu.h"
 #include "lib_radar.h"
 #include "lib_servo.h"
+#include "lib_caida.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -74,6 +75,11 @@ int main(void) {
     verificar("robot_init() abre la sesion con el hardware", robot_init() == 0);
     verificar("robot_activo() lo confirma", robot_activo() == 1);
     verificar("el MPU-6050 contesta en el bus I2C", imu_disponible() == 1);
+
+    titulo("Sensores de desnivel");
+    /* El robot arranca en el centro de la sala, lejos de la grada. */
+    verificar("sobre el piso ningun sensor marca desnivel", caida_leer() == 0);
+    verificar("en el centro de la sala hay piso", mundo_sin_piso(0.0, 0.0) == 0);
 
     titulo("MPU-6050");
     /* El sensor simulado trae un sesgo de fabrica (0.02 g y 1.5 grados/s);
