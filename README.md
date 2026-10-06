@@ -37,44 +37,43 @@ tiempo real. Todo el acceso al hardware pasa por una biblioteca dinámica propia
 
 ### 1.1 Hardware
 
-Un pack 2S de celdas 18650 alimenta dos rieles regulados por separado. Las cinco
-señales que cruzan del dominio lógico al de potencia —las cuatro entradas del puente H
-y la del servo— lo hacen por optoacopladores, y las dos tierras no se tocan en ningún
+Dos fuentes independientes: un power bank USB alimenta la Raspberry Pi y todo lo que
+trabaja a 5 V, y dos baterías alcalinas de 9 V en paralelo alimentan el puente H y los
+motores. Las cuatro señales que cruzan del dominio lógico al de potencia —las entradas
+del puente H— lo hacen por optoacopladores, y las dos tierras no se tocan en ningún
 punto.
 
 ```mermaid
 flowchart TB
-    BAT["Pack 2S 18650 · 7.4 V"] --> BMS["BMS 2S + fusible 5 A"]
+    PB["Power bank USB · 5 V"]
+    BAT["2 baterías de 9 V en paralelo"]
 
     subgraph LOG["Dominio lógico · GND_LOG"]
-        BUCK["Buck MP2307 · 5 V / 3 A"]
         PI["Raspberry Pi 4"]
+        SERVO["Servo del radar"]
         HC["HC-SR04<br/>divisor 1k/2k en ECHO"]
-        MPU["MPU-6050 · 3.3 V"]
+        MPU["MPU-6050 (GY-521)"]
         LED["4 LEDs indicadores"]
         AMP["Filtro RC + PAM8403"]
         SPK["Parlante 8 Ω"]
     end
 
-    OPTO{{"5 × PC817 · aislamiento óptico"}}
+    OPTO{{"4 × PC817 · aislamiento óptico"}}
 
     subgraph POT["Dominio de potencia · GND_POT"]
         L298["L298N"]
         MOT["2 motores DC"]
-        BUCK2["Buck MP2307 · 5 V"]
-        SERVO["Servo del radar"]
     end
 
-    BMS --> BUCK --> PI
-    BMS -- "7.4 V" --> L298 --> MOT
-    BMS -- "7.4 V" --> BUCK2 --> SERVO
+    PB -- "USB-C" --> PI
+    BAT -- "9 V" --> L298 --> MOT
+    PI -- "5 V · GPIO 25" --> SERVO
     PI -- "GPIO 17 / 27" --- HC
     PI -- "I2C · GPIO 2 / 3" --- MPU
     PI -- "GPIO 16 · 20 · 21 · 26" --> LED
     PI -- "GPIO 18 · PWM" --> AMP --> SPK
-    PI -. "GPIO 5 · 6 · 23 · 24 · 25" .-> OPTO
+    PI -. "GPIO 5 · 6 · 23 · 24" .-> OPTO
     OPTO -. "IN1–IN4" .-> L298
-    OPTO -. "pulsos" .-> SERVO
 ```
 
 Los esquemas eléctricos dibujados están en
@@ -84,9 +83,9 @@ Los esquemas eléctricos dibujados están en
 |---|---|---|
 | Motor izquierdo `IN1` / `IN2` | 5 / 6 | Vía optoacoplador; `ENA` con jumper en el L298N |
 | Motor derecho `IN3` / `IN4` | 23 / 24 | Vía optoacoplador; `ENB` con jumper |
-| Servo del radar | 25 | Vía optoacoplador en seguidor de emisor (no invierte) |
+| Servo del radar | 25 | Señal directa; se alimenta de los 5 V de la Raspberry Pi |
 | HC-SR04 `TRIG` / `ECHO` | 17 / 27 | `ECHO` con divisor 1 kΩ / 2 kΩ: el sensor entrega 5 V |
-| MPU-6050 `SDA` / `SCL` | 2 / 3 | Alimentado a 3.3 V |
+| MPU-6050 `SDA` / `SCL` | 2 / 3 | Módulo GY-521, alimentado de los 5 V de la Raspberry Pi |
 | LED encendido / autónomo / manual / obstáculo | 16 / 20 / 21 / 26 | 5 mA cada uno |
 | Audio PWM | 18 | Overlay `audremap`, filtro RC y PAM8403 |
 
@@ -96,6 +95,14 @@ El detalle —cálculos, listas de materiales y procedimientos de verificación�
 [`docs/hardware-alimentacion.md`](docs/hardware-alimentacion.md),
 [`docs/hardware-sensores.md`](docs/hardware-sensores.md) y
 [`docs/hardware-chasis.md`](docs/hardware-chasis.md).
+
+**Desviaciones acordadas con el profesor.** El diseño se aparta del enunciado en dos
+puntos, ambos consultados con el profesor:
+
+| Punto del enunciado | Lo que hace el robot | Motivo |
+|---|---|---|
+| Velocidad de los motores por PWM | Avanza, retrocede, gira y frena a velocidad fija, sin PWM | Los motores son lentos y de alto torque (60 rpm a 12 V) y trabajan a unos 9 V: con la tensión recortada por la PWM el robot no se mueve. Ver [`docs/hardware-aislamiento.md`](docs/hardware-aislamiento.md#velocidad-fija) |
+| Al menos dos sensores de proximidad | Un HC-SR04 sobre un servo, que cubre el frente y los lados, y un MPU-6050 | El profesor lo consideró suficiente: lo que busca es que el robot tenga dos sensores. Ver [`docs/hardware-sensores.md`](docs/hardware-sensores.md) |
 
 ### 1.2 Software
 
@@ -172,6 +179,7 @@ Cómo navega, cómo estima la velocidad y cómo construye el mapa:
 ├── sim/                    Simulador de hardware: prueba librobot y el servidor sin la Raspberry
 ├── scripts/                Grabado de la microSD, medición de métricas, generación de la playlist
 ├── docs/                   Documentación técnica y evidencias
+├── modelo-3d/              Carcasa impresa en 3D: modelo paramétrico (CadQuery), STL, STEP y vistas
 ├── documentación/          Documentos DI y AC, y diagramas de hardware (LaTeX y PDF)
 ├── CONTRIBUTING.md         Flujo de trabajo Git y convenciones de código
 ├── NOTICE.md               Atribución de software de terceros
@@ -194,7 +202,7 @@ Ubuntu 22.04 o 24.04, o Debian 12, de 64 bits.
 |---|---|---|
 | Espacio en disco | 100 GB | 150 GB |
 | RAM | 8 GB | 16 GB |
-| Primer build | unas 3 horas | menos con más núcleos |
+| Primer build | más de 5 horas | menos con más núcleos |
 
 ```bash
 sudo apt update
@@ -416,7 +424,7 @@ Sirve para iterar. Lo que se entrega es la imagen que produce `bitbake robot-ima
    enciende el **LED verde** y suena el aviso de inicio. Hay que dejarlo quieto en el
    piso durante ese primer segundo: el MPU-6050 se calibra al arrancar.
 3. Buscar la IP que tomó el robot en la lista de clientes del router o del punto de
-   acceso. Con la imagen de desarrollo también sirve la consola serie (115200 8N1) y
+   acceso. También sirve la consola serie (115200 8N1) y
    `ip a`.
 
 ### 6.2 Panel de control
@@ -432,7 +440,7 @@ La sesión caduca a los 10 minutos de inactividad. El panel tiene tres pestañas
 
 | Pestaña | Qué ofrece |
 |---|---|
-| **Control** | Botones de modo autónomo y manual, controles direccionales, velocidad y estado de los cuatro LEDs |
+| **Control** | Botones de modo autónomo y manual, controles direccionales, velocidad y estado de los cuatro LEDs. Los motores van a velocidad fija, así que el control de velocidad no cambia la velocidad real |
 | **Mapa** | La grilla de recorrido, el radar con las distancias a la izquierda, al frente y a la derecha, la velocidad que da el MPU-6050 y el tiempo antes de chocar, en tiempo real |
 | **Audio** | Lista de canciones, reproducir, pausar, detener y volumen |
 
@@ -577,7 +585,7 @@ está en [`docs/paquetes.md`](docs/paquetes.md).
 | `mpg123` | Decodificador MP3, el más liviano con API en C. GStreamer traería decenas de MB. |
 | `alsa-utils` | `amixer` para el control de volumen y `aplay` para diagnosticar la salida de audio. |
 | `alsa-lib` | Runtime de ALSA; entra como dependencia de `librobot` y `mpg123`. |
-| `pigpio`, `libpigpio`, `libpigpio_if2` | Acceso a GPIO con PWM y pulsos de servo de temporización estable, medición del eco en microsegundos e I2C. |
+| `pigpio`, `libpigpio`, `libpigpio_if2` | Acceso a GPIO con pulsos de servo de temporización estable, medición del eco en microsegundos e I2C. |
 | `pigpio-bin-pigpiod` | El demonio al que se conecta `librobot`. |
 | `wpa-supplicant` | Autenticación WPA2: la única forma de que un sistema headless se una solo a la red. |
 | `wireless-regdb-static` | Base regulatoria; sin ella el kernel restringe canales y potencia. |
@@ -591,9 +599,8 @@ está en [`docs/paquetes.md`](docs/paquetes.md).
 Los módulos de kernel se listan uno por uno porque el paquete `kernel-modules` completo
 sumaría decenas de MB de drivers que el robot no usa.
 
-**Solo para desarrollo:** `ssh-server-openssh`, `openssh-sftp-server` y `debug-tweaks`
-dan acceso al sistema sin pantalla y permiten recoger las métricas. Se retiran de la
-imagen de entrega.
+**Acceso remoto:** `ssh-server-openssh`, `openssh-sftp-server` y `debug-tweaks` dan
+acceso al sistema sin pantalla y permiten recoger las métricas y diagnosticar el robot.
 
 **Fuera a propósito:** entorno gráfico, driver VC4 y Mesa, GStreamer, Python 3,
 `i2c-tools`, nginx y lighttpd, Bluetooth y el paquete `kernel-modules` completo.
@@ -746,6 +753,18 @@ panel no es alcanzable, así que el servicio no estaría operativo. Ya se redujo
 | El Toolchain-SDK se genera, se instala y compila para ARM | [`docs/evidencias/sdk-prueba.md`](docs/evidencias/sdk-prueba.md) |
 | El arranque del servidor en la Raspberry Pi 4 bajó de 130 s a 17 s | Commit `5890dbb`, [`docs/metricas.md`](docs/metricas.md) |
 
+### Modelo físico
+
+Carcasa circular de 215 mm impresa en 3D, en dos piezas que cierran a presión. El diseño
+completo está en [`docs/hardware-chasis.md`](docs/hardware-chasis.md) y los archivos, en
+[`modelo-3d/`](modelo-3d/).
+
+| Carcasa armada | Por dentro |
+|---|---|
+| ![Carcasa armada](modelo-3d/vistas/vista_6_armada.png) | ![Vista explosionada](modelo-3d/vistas/succion_6_explosionada.png) |
+
+Las imágenes son vistas del modelo 3D.
+
 > **PENDIENTE:** fotos del robot armado y un video de la demostración (navegación
 > autónoma, modo manual, audio, LEDs y mapa), en `docs/evidencias/`.
 
@@ -786,9 +805,10 @@ tocar el código de `lib/`. Ver [`sim/README.md`](sim/README.md) y
 | [`docs/arranque-automatico.md`](docs/arranque-automatico.md) | Unidades systemd, arranque automático y recuperación ante fallos |
 | [`docs/hardware-pinout.md`](docs/hardware-pinout.md) | Mapa de pines GPIO: referencia única del cableado |
 | [`docs/hardware-aislamiento.md`](docs/hardware-aislamiento.md) | Etapa de potencia, optoacopladores y separación de tierras |
-| [`docs/hardware-alimentacion.md`](docs/hardware-alimentacion.md) | Batería, BMS y los dos rieles regulados |
+| [`docs/hardware-alimentacion.md`](docs/hardware-alimentacion.md) | Power bank para la lógica y baterías de 9 V para los motores |
 | [`docs/hardware-sensores.md`](docs/hardware-sensores.md) | Radar, MPU-6050, LEDs y audio con PAM8403 |
-| [`docs/hardware-chasis.md`](docs/hardware-chasis.md) | Diseño del modelo físico, tracción y montaje |
+| [`docs/hardware-chasis.md`](docs/hardware-chasis.md) | Carcasa impresa en 3D, tracción, succión y distribución interna |
+| [`modelo-3d/`](modelo-3d/) | Modelo paramétrico de la carcasa, piezas para imprimir y vistas |
 | [`docs/evidencias/`](docs/evidencias/) | Logs de compilación cruzada y evidencias de ejecución |
 | [`meta-robot/README.md`](meta-robot/README.md) | Contenido de la capa Yocto y cómo agregarla al build |
 
