@@ -129,8 +129,7 @@ Condiciones:
 - **Robot recién arrancado**, sin reiniciar el servicio a mano: el tiempo de arranque
   sale de los relojes de ese arranque.
 - **En el piso y con espacio libre:** el script lo pone en modo autónomo y se mueve.
-- La imagen con SSH (la de desarrollo). El servidor SSH se retira de la imagen de
-  entrega; ver [`paquetes.md`](paquetes.md).
+- El script entra por SSH, que la imagen trae; ver [`paquetes.md`](paquetes.md).
 
 ---
 
