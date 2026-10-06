@@ -8,12 +8,12 @@ la imagen del robot. Qué hace cada constante está explicado en
 
 ## 1. Velocidades de los motores (issue #15)
 
-> **Por ahora los motores van a velocidad fija** (`MOTOR_VELOCIDAD_VARIABLE` en 0,
-> en `lib/lib_motors.h`): cualquier velocidad es la máxima y los pasos 1 y 3 no
-> aplican. Lo que sí hay que medir es la velocidad a fondo, que es la
-> `ODOM_VEL_MAX_CM_S` de la sección 5. Si se recupera la PWM, antes de estos
-> pasos probar que el robot arranque con ciclos medios (ver
-> [`hardware-aislamiento.md`](hardware-aislamiento.md#por-ahora-velocidad-fija)).
+> **Los motores van a velocidad fija, sin PWM** (`MOTOR_VELOCIDAD_VARIABLE` en 0,
+> en `lib/lib_motors.h`): es una desviación acordada con el profesor, explicada en
+> [`hardware-aislamiento.md`](hardware-aislamiento.md#velocidad-fija). Cualquier
+> velocidad es la máxima y los pasos 1 y 3 no aplican: son para el modo con PWM,
+> que el robot no usa. Lo que sí hay que medir es la velocidad a fondo, que es la
+> `ODOM_VEL_MAX_CM_S` de la sección 5.
 
 El PWM es de 0–255, pero la velocidad real depende de la batería, el peso y la
 fricción. Objetivo: elegir una velocidad de crucero estable y una de giro que
@@ -28,8 +28,7 @@ no haga trompos.
 
 ## 2. Servo del radar
 
-Los pulsos que llevan el servo a 0° y 180° varían entre unidades, y el
-optoacoplador los alarga unas decenas de microsegundos. Se calibran moviendo el
+Los pulsos que llevan el servo a 0° y 180° varían entre unidades. Se calibran moviendo el
 servo a mano con `pigs` (que en desarrollo se agrega a la imagen, ver
 [`hardware-pinout.md`](hardware-pinout.md)), **con el servidor detenido** para
 que el barrido no pelee por el servo:
@@ -108,13 +107,16 @@ geometría del robot y a cuánto tarda en frenar.
 constantes del modelo (`lib/lib_odom.h`) hay que medirlas, porque en crucero la
 velocidad converge a la del modelo:
 
-- **`ODOM_VEL_MAX_CM_S`** — velocidad de una llanta a PWM 255. Medir avance en
-  línea recta a PWM máximo durante 5 s y dividir entre el tiempo.
+- **`ODOM_VEL_MAX_CM_S`** — velocidad de una llanta a fondo. Medir el avance en
+  línea recta durante 10 s y dividir entre el tiempo. El valor por defecto,
+  30 cm/s, es el del simulador: con los motores de 60 rpm a 12 V y las ruedas de
+  30 mm, el robot real va a unos 5 cm/s, así que hay que cambiarlo.
 - **`ODOM_ENTRE_EJES_CM`** — distancia entre el centro de las dos llantas, con
   regla. Con MPU el rumbo sale del giroscopio, pero sin él se usa esta.
 - **`ODOM_PWM_ARRANQUE`** — el PWM mínimo con el que las llantas empiezan a
   girar (por debajo, el motor zumba pero no mueve). Subir de 40 en 40 hasta que
-  el robot arranque.
+  el robot arranque. Solo cuenta en el modo con PWM: con velocidad fija no
+  interviene.
 - **`ODOM_TAU_FUSION_S`** — rara vez hace falta tocarla. Si la velocidad del
   panel deriva con el robot en crucero, bajarla; si no sigue las frenadas,
   subirla.

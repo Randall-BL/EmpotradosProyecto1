@@ -1,54 +1,49 @@
 # Sistema de alimentación
 
-Dos rieles regulados por separado desde una batería con protección. La Raspberry Pi
-nunca se alimenta directamente de la celda.
+Dos fuentes independientes, una por dominio: un **power bank USB** para la Raspberry Pi
+y todo lo que trabaja a 5 V, y **dos baterías alcalinas de 9 V en paralelo** para el
+puente H y los motores. Las dos fuentes no comparten ningún conductor.
 
 ---
 
-## Por qué no se conecta la batería directo
+## Por qué dos fuentes
 
-Una celda Li-Ion entrega **4.2 V cargada y 3.0 V descargada**. La Raspberry Pi 4
-requiere **5 V estables** y detecta caída de tensión (*undervoltage*) por debajo de
-4.63 V: reduce la frecuencia del SoC, corrompe la microSD y termina reiniciándose.
+La Raspberry Pi 4 requiere **5 V estables** y detecta caída de tensión (*undervoltage*)
+por debajo de 4.63 V: reduce la frecuencia del SoC, corrompe la microSD y termina
+reiniciándose. Alimentar la lógica y los motores del mismo punto mete el transitorio de
+arranque de los motores —cinco a ocho veces la corriente nominal— directamente en el
+riel de la Pi.
 
-Y aunque la tensión fuera correcta, alimentar la lógica y los motores del mismo punto
-mete el transitorio de arranque de los motores —cinco a ocho veces la corriente
-nominal— directamente en el riel de la Pi.
+Con una fuente para cada dominio ese transitorio no tiene por dónde llegar: las tierras
+`GND_LOG` y `GND_POT` quedan separadas desde la batería, no solo desde un regulador, y
+las únicas señales que cruzan lo hacen por los optoacopladores (ver
+[`hardware-aislamiento.md`](hardware-aislamiento.md)).
 
 ---
 
 ## Arquitectura
 
 ```
-   ┌─────────────┐
-   │  2S Li-Ion  │  2 × 18650 en serie
-   │   18650     │  7.4 V nominal · 6.0–8.4 V
-   └──────┬──────┘
-          │
-   ┌──────┴──────┐
-   │  BMS 2S     │  sobredescarga · sobrecarga · cortocircuito · balanceo
-   └──────┬──────┘
-          │
-          ├────────────────────────────────┐
-          │                                │
-   ┌──────┴───────┐                 ┌──────┴───────┐
-   │ Buck 5V / 3A │                 │   Directo    │
-   │ MP2307       │                 │   7.4 V      │
-   │ o LM2596     │                 │              │
-   └──────┬───────┘                 └──────┬───────┘
-          │                                │
-    RIEL LÓGICO                       RIEL POTENCIA
-    5 V · GND_LOG                     7.4 V · GND_POT
-          │                                ├──────────────────┐
-    ┌─────┴─────┐                    ┌─────┴─────┐     ┌──────┴───────┐
-    │ RPi 4     │                    │ L298N VS  │     │ Buck 5V      │
-    │ HC-SR04   │                    │ Motor izq │     │ MP2307       │
-    │ MPU-6050  │                    │ Motor der │     └──────┬───────┘
-    │ LEDs ×4   │                    └───────────┘            │
-    │ PAM8403   │                                       ┌─────┴─────┐
-    └───────────┘                                       │ Servo del │
-                                                        │ radar     │
-                                                        └───────────┘
+   ┌──────────────────┐                    ┌──────────────────────┐
+   │  Power bank USB  │                    │ 2 × batería de 9 V   │
+   │  5 V regulados   │                    │ alcalina, en paralelo│
+   └────────┬─────────┘                    └──────────┬───────────┘
+            │ USB-C                                   │ ~9 V
+     DOMINIO LÓGICO                            DOMINIO DE POTENCIA
+     5 V · GND_LOG                             9 V · GND_POT
+            │                                         │
+     ┌──────┴───────┐                          ┌──────┴───────┐
+     │ Raspberry Pi │                          │ L298N  (VS)  │
+     │      4       │                          │ regulador de │
+     └──────┬───────┘                          │ 5 V interno  │
+            │ pin de 5 V                       └──┬────────┬──┘
+     ┌──────┴────────────┐                        │        │
+     │ Servo del radar   │                 ┌──────┴───┐ ┌──┴───────────┐
+     │ HC-SR04           │                 │ Motor izq│ │ +5V_POT:     │
+     │ MPU-6050 (GY-521) │                 │ Motor der│ │ VSS y pull-up│
+     │ PAM8403 + parlante│                 └──────────┘ │ de los optos │
+     │ LEDs ×4 (GPIO)    │                              └──────────────┘
+     └───────────────────┘
 
            ╳  GND_LOG y GND_POT NO se unen
               (ver docs/hardware-aislamiento.md)
@@ -56,130 +51,74 @@ nominal— directamente en el riel de la Pi.
 
 ---
 
-## Batería: 2S en vez de 1S
+## Dominio lógico: power bank
 
-| | 1S (3.7 V) | **2S (7.4 V)** |
-|---|---|---|
-| Regulador para la Pi | Boost o buck-boost | **Buck** — más simple y eficiente |
-| Corriente de entrada a 15 W | ~4.5 A | **~2.2 A** |
-| Alimentación de motores | Necesita elevador aparte | **Directa** |
-| Pérdidas en cables | Altas | Bajas |
+El power bank entrega 5 V ya regulados por su salida USB y trae de fábrica el circuito
+de protección de su celda (sobrecarga, sobredescarga y cortocircuito). Por eso la
+Raspberry Pi nunca queda conectada directamente a una celda de Li-Ion, que es lo que el
+enunciado prohíbe, y el grupo no tuvo que armar ni ajustar un BMS ni un regulador.
 
-Con 1S hace falta un elevador de 3.7 V a 5 V que sostenga 3 A: son 4.5 A de entrada, y
-en el extremo descargado (3.0 V) más de 5 A. Los módulos MT3608 y XL6009 típicos no lo
-dan de forma sostenida, aunque su hoja de datos lo insinúe.
-
-Con 2S, un reductor a 5 V trabaja con holgura en todo el rango de descarga: incluso a
-6.0 V hay 1 V de margen sobre la salida, suficiente para un LM2596 y de sobra para un
-MP2307.
-
-**Especificación:** 2 × 18650 de al menos 2500 mAh y 10 A de descarga continua, en serie.
-
-> Celdas del mismo lote y con la misma carga inicial. Celdas dispares en serie se
-> desbalancean y el BMS termina cortando antes de tiempo.
-
----
-
-## BMS — no es opcional
-
-Un pack 2S sin BMS es un riesgo de incendio, no una simplificación de diseño.
-
-| Protección | Qué evita |
-|---|---|
-| Sobredescarga (corte a ~2.5 V/celda) | Daño permanente de la celda por descarga profunda |
-| Sobrecarga (corte a ~4.25 V/celda) | Fuga térmica durante la carga |
-| Cortocircuito | Corriente sin límite ante una falla de cableado |
-| Balanceo | Que una celda se descargue mucho más que la otra |
-
-**Especificación:** BMS 2S de 10 A o más, con balanceo.
-
-Muchos packs comerciales de 18650 ya lo traen integrado. Verificarlo antes de comprarlo
-aparte: se reconoce por la placa pequeña soldada entre las celdas y los terminales de
-salida.
-
----
-
-## Riel lógico: 5 V, 3 A
+La Raspberry Pi se alimenta por el **conector USB-C**, que pasa por la protección de
+entrada de la tarjeta. Del **pin de 5 V** del conector de 40 pines salen el servo del
+radar, el HC-SR04, el MPU-6050 y el amplificador con su parlante.
 
 | Consumidor | Corriente típica | Pico |
 |---|---|---|
-| Raspberry Pi 4 (sin periféricos) | 600–900 mA | 1.2 A |
 | Raspberry Pi 4 (WiFi + CPU al 100 %) | 1.2 A | **2.5 A** |
-| HC-SR04 del radar | 15 mA | 20 mA |
-| MPU-6050 | 4 mA | 4 mA |
-| 4 × LED a 5 mA (nunca más de 3 encendidos) | 15 mA | 15 mA |
+| Servo del radar (SG90/MG90S) | 100–250 mA moviéndose | ~700 mA trabado |
 | Amplificador PAM8403 + parlante de 8 Ω | 80 mA | 400 mA |
-| 5 × LED de optoacoplador | 20 mA | 23 mA |
-| **Total** | **~2.0 A** | **~3.0 A** |
+| HC-SR04 del radar | 15 mA | 20 mA |
+| 4 × LED a 5 mA (nunca más de 3 encendidos) | 15 mA | 15 mA |
+| 4 × LED de optoacoplador | 20 mA | 20 mA |
+| MPU-6050 | 4 mA | 4 mA |
+| **Total** | **~1.6 A** | **~3.7 A** |
 
-El pico de 3.0 A suma el peor caso de todo **a la vez**: la Pi con la CPU al 100 %, el
+El pico suma el peor caso de todo **a la vez**: la CPU al 100 %, el servo trabado y el
 amplificador a volumen máximo sobre un golpe de bajo. En la práctica no coinciden.
-El PAM8403 es clase D y rinde ~85 %: a volumen de conversación consume menos que el
-LM386 que reemplaza, pero sus picos son mayores. Con un parlante de **4 Ω** los picos
-llegan a ~750 mA y el total pasa de 3 A: por eso se especifica **8 Ω**. Si
-`vcgencmd get_throttled` marca subtensión con música fuerte, bajar el volumen máximo
-antes que cambiar el regulador.
 
-El servo **no** está en esta tabla: con picos de 700 mA y ruido de motor, va al riel de
-potencia (ver abajo).
+El **servo es el consumidor delicado** de este dominio: es un motor, y sus picos y su
+ruido entran al mismo riel de 5 V que alimenta la Raspberry Pi. Lo que lo mantiene
+controlado:
 
-**Especificación:** regulador reductor de 5 V con **3 A de salida continua**.
+- el barrido usa una rampa a un tercio de la velocidad del servo, así que no arranca de
+  golpe en cada paso;
+- conviene un capacitor de 470 µF en los bornes del servo, lo más cerca posible;
+- si con música fuerte la Raspberry Pi marca subtensión, se baja el volumen máximo.
 
-| Módulo | Tipo | Corriente | Nota |
-|---|---|---|---|
-| **MP2307** | Conmutado síncrono | 3 A | Recomendado. ~93 % de eficiencia |
-| LM2596 | Conmutado | 3 A | Funciona. Más caliente, ~80 %, necesita disipador |
-| AMS1117 | Lineal | 1 A | **No sirve.** Disiparía 2.4 W como calor y no da la corriente |
-
-En el módulo hay que **ajustar el potenciómetro a 5.0 V con el multímetro antes de
-conectar la Pi**. Vienen ajustados de fábrica en cualquier valor, a veces 12 V.
-
-### Autonomía estimada
-
-```
-Energía útil del pack:  2500 mAh × 7.4 V × 0.85 (BMS + margen)  ≈ 15.7 Wh
-Consumo del riel lógico: 2.0 A × 5 V / 0.93 (eficiencia)        ≈ 10.8 W
-Consumo de motores:      ~0.5 A × 7.4 V en navegación           ≈  3.7 W
-Servo del radar:         ~0.2 A × 5 V / 0.93 en vaivén continuo ≈  1.1 W
-                                                        Total  ≈ 15.6 W
-
-Autonomía ≈ 15.7 Wh / 15.6 W ≈ 60 minutos
-```
-
-Suficiente para la demostración con margen. Aun así, **el plan B incluye un pack
-cargado de repuesto** (issue #34).
+El MPU-6050 va en un módulo **GY-521**, que trae su propio regulador de 3.3 V y acepta
+5 V en `VCC`; que el bus I2C siga en 3.3 V se comprueba midiendo `SDA` y `SCL` (ver
+[`hardware-sensores.md`](hardware-sensores.md)).
 
 ---
 
-## Riel de potencia: 7.4 V directo
+## Dominio de potencia: dos baterías de 9 V
 
-Los motores DC del kit trabajan típicamente entre 6 y 12 V. El L298N cae unos **2 V**
-entre `VS` y la salida por su topología de transistores bipolares, así que con `VS` a
-7.4 V los motores reciben cerca de **5.4 V**. Es adecuado para motores de 6 V nominales.
+Dos baterías alcalinas de 9 V (las cuadradas, formato PP3) conectadas **en paralelo**:
+la tensión sigue siendo de 9 V y la corriente se reparte entre las dos. Alimentan
+directamente la entrada `VS` del L298N.
 
-Si el kit trae motores de 12 V, hay dos caminos: subir a 3S (11.1 V) —revisando que el
-buck de 5 V lo tolere— o aceptar que girarán más lento. **Decidir cuando el kit esté en
-mano.**
+El L298N cae unos **2 V** entre `VS` y la salida por su topología de transistores
+bipolares, así que los motores reciben cerca de **7 V**. Los motores son lentos y de alto
+torque (60 rpm a 12 V), con rango de 6 a 12 V, y a esa tensión mueven el robot solo si la reciben
+completa: por eso van a velocidad fija, sin PWM (ver
+[`hardware-aislamiento.md`](hardware-aislamiento.md#velocidad-fija)).
 
-`VSS` (los 5 V de la lógica interna del L298N) sale del regulador interno del módulo con
-el jumper puesto, válido mientras `VS ≤ 12 V`. **Nunca de los 5 V de la Raspberry Pi**:
-eso anula el aislamiento (ver [`hardware-aislamiento.md`](hardware-aislamiento.md)).
+`VSS` (los 5 V de la lógica interna del L298N) y los pull-up de los optoacopladores
+salen del **regulador interno del módulo L298N**, con su jumper puesto, válido mientras
+`VS ≤ 12 V`. **Nunca de los 5 V de la Raspberry Pi**: eso uniría las dos tierras y
+anularía el aislamiento.
 
-### El servo del radar: 5 V propios
+### Limitación: la autonomía
 
-El servo (SG90/MG90S) trabaja entre 4.8 y 6 V: los 7.4–8.4 V del pack lo queman, así que
-necesita un regulador. Tampoco puede colgarse de:
+Una alcalina de 9 V tiene poca capacidad (del orden de 500 mAh) y una resistencia
+interna alta: bajo la corriente de los motores su tensión cae y se agota pronto. Dos en
+paralelo reparten la corriente y alargan la duración, pero siguen siendo la parte del
+robot que primero se descarga. Para la demostración conviene llevar baterías de
+repuesto (issue #34).
 
-- **los 5 V de la Raspberry Pi**: sus picos de ~700 mA cuando se traba y el ruido de su
-  motor irían directo al riel lógico, que ya está en su tope de 3 A, y la señal dejaría
-  de estar aislada;
-- **el regulador interno del L298N**: es un 78M05 de 500 mA que ya alimenta la lógica
-  del driver, los pull-up de los optoacopladores y los jumpers de `ENA`/`ENB`; un pico
-  del servo haría caer `VSS` y el L298N podría soltar los motores.
-
-Se usa **un segundo módulo MP2307 ajustado a 5.0 V**, conectado al riel de potencia y
-referido a `GND_POT`. Es el mismo módulo del riel lógico: una sola referencia en la lista
-de materiales, y 3 A es holgura de sobra para un servo de 700 mA de pico.
+Al ser alcalinas no llevan BMS: no se recargan, y las dos deben ser **del mismo tipo y
+estar igual de nuevas**, porque una gastada en paralelo con una nueva se descarga sobre
+la otra.
 
 ---
 
@@ -187,15 +126,13 @@ de materiales, y 3 A es holgura de sobra para un servo de 700 mA de pico.
 
 | Dónde | Componente | Para qué |
 |---|---|---|
-| Entrada del buck de 5 V | 470 µF electrolítico | Absorbe el transitorio de la batería |
-| Salida del buck de 5 V | 220 µF + 100 nF | Sostiene el pico de arranque de la Pi |
 | `VS` del L298N | 100 µF + 100 nF | Absorbe el pico de arranque de los motores |
-| El HC-SR04 | 100 nF | Ruido del pulso de disparo |
 | Bornes del servo | 470 µF / 10 V + 100 nF | Absorbe el pico de arranque en cada paso del barrido |
+| El HC-SR04 | 100 nF | Ruido del pulso de disparo |
 | `VDD` del PAM8403 | 100 µF + 100 nF | El clase D consume a pulsos |
 
 Los electrolíticos van **con la polaridad correcta y lo más cerca posible del punto que
-desacoplan**. Un capacitor a diez centímetros por un cable largo no desacopla nada.
+desacoplan**.
 
 ---
 
@@ -203,19 +140,13 @@ desacoplan**. Un capacitor a diez centímetros por un cable largo no desacopla n
 
 | Tramo | Calibre | Motivo |
 |---|---|---|
-| Batería → BMS → reguladores | **AWG 18** | Hasta 3 A continuos |
-| Riel de potencia → L298N → motores | **AWG 20** | Corriente de arranque |
-| Regulador 5 V → Raspberry Pi | **AWG 20**, lo más corto posible | La caída en el cable cuenta contra el margen de 4.63 V |
+| Baterías de 9 V → L298N → motores | **AWG 20** | Corriente de arranque |
+| Power bank → Raspberry Pi | Cable USB-C corto y de buena calidad | La caída en el cable cuenta contra el margen de 4.63 V |
 | Señales de sensores y LEDs | AWG 24 / Dupont | Corriente despreciable |
-
-Alimentar la Pi por el **conector USB-C**, no por los pines 2 y 4 del header: el USB-C
-pasa por la protección de entrada de la tarjeta, y los pines no.
 
 Los cables de motor van **trenzados entre sí** y separados de los cables de señal. Un
 par trenzado cancela buena parte del campo magnético que de otro modo se acopla a las
 líneas de `ECHO`.
-
-Un **interruptor principal** en la salida del BMS, accesible sin desarmar el chasis.
 
 ---
 
@@ -223,91 +154,51 @@ Un **interruptor principal** en la salida del BMS, accesible sin desarmar el cha
 
 | Cantidad | Componente | Especificación |
 |---|---|---|
-| 2 | Celda 18650 | ≥ 2500 mAh, ≥ 10 A de descarga |
-| 1 | Portapilas 2S 18650 | Con terminales soldables |
-| 1 | Módulo BMS 2S | ≥ 10 A, con balanceo |
-| 2 | Módulo buck 5 V | MP2307, 3 A — uno para el riel lógico, otro para el servo |
-| 1 | Interruptor SPST | ≥ 5 A |
-| 1 | Portafusible + fusible 5 A | En serie con el positivo del pack |
-| 1 | Conector de carga | Según el cargador del pack |
-| 1 | Capacitor 470 µF / 25 V | Entrada del buck |
+| 1 | Power bank USB | Salida de 5 V, con su cable USB-C |
+| 2 | Batería alcalina de 9 V | Del mismo tipo y estado, en paralelo |
+| 2 | Broche para batería de 9 V | Con cables rojo y negro |
 | 1 | Capacitor 470 µF / 10 V | Bornes del servo |
-| 1 | Capacitor 220 µF / 10 V | Salida del buck |
+| 1 | Capacitor 100 µF / 25 V | `VS` del L298N |
 | 2 | Capacitor 100 nF cerámico | Desacople |
-| — | Cable AWG 18 y AWG 20 | Rojo y negro |
+| — | Cable AWG 20 | Rojo y negro |
 
 ---
 
-## Verificación — **antes de conectar la Raspberry Pi**
+## Verificación
 
-### Paso 1 — Pack y BMS, sin carga
-
-| Punto | Esperado |
-|---|---|
-| Salida del pack (cargado) | 8.2–8.4 V |
-| Tensión de cada celda | Diferencia < 0.05 V entre ambas |
-| Salida del BMS | Igual a la del pack |
-
-Una diferencia mayor a 0.1 V entre celdas indica desbalance: cargarlas por separado
-antes de armar el pack.
-
-### Paso 2 — Reguladores en vacío
-
-| Punto | Esperado |
-|---|---|
-| Salida del buck de 5 V | **5.00 V ± 0.10 V** — ajustar con el potenciómetro |
-| Salida del buck del servo | **5.00 V ± 0.10 V** — ajustar **antes** de conectar el servo |
-| Riel de potencia | 7.4 V nominal |
-
-### Paso 3 — Reguladores con carga
-
-Con una carga resistiva equivalente (por ejemplo 2.5 Ω / 10 W para simular 2 A):
-
-| Punto | Esperado |
-|---|---|
-| Salida del buck de 5 V bajo 2 A | **≥ 4.90 V** |
-| Temperatura del regulador tras 5 min | < 60 °C al tacto |
-
-Si cae por debajo de 4.9 V con carga, el módulo no da la corriente. Cambiarlo antes de
-conectar la Pi: la Raspberry Pi 4 corrompe la microSD cuando entra en *undervoltage*.
-
-### Paso 4 — Aislamiento entre rieles
+### Paso 1 — Aislamiento entre dominios, todo desenergizado
 
 | Entre | Esperado |
 |---|---|
 | `GND_LOG` y `GND_POT` | **Circuito abierto** |
-| `+5V_LOG` y riel de potencia | **Circuito abierto** |
+| Pin de 5 V de la Raspberry Pi y `VS` del L298N | **Circuito abierto** |
 
-### Paso 5 — Ya con la Pi conectada
+### Paso 2 — Dominio de potencia solo
+
+Con las baterías de 9 V conectadas y la Raspberry Pi apagada:
+
+| Punto | Esperado |
+|---|---|
+| `VS` del L298N | Alrededor de 9 V con baterías nuevas |
+| `+5V_POT` (salida de 5 V del L298N) | 5 V ± 0.25 V |
+| Entradas `IN1`–`IN4` con los optos en reposo | ~5 V: los motores quedan frenados |
+
+### Paso 3 — Ya con la Raspberry Pi encendida
+
+Con el robot navegando y reproduciendo audio a la vez, que es el peor caso de consumo,
+la Raspberry Pi no debe reiniciarse ni registrar subtensión:
 
 ```bash
-vcgencmd get_throttled
+dmesg | grep -i voltage        # no debe imprimir nada
 ```
-
-`throttled=0x0` significa alimentación correcta. Cualquier bit encendido indica
-subtensión, presente o pasada:
-
-| Bit | Significado |
-|---|---|
-| 0 | Subtensión **ahora** |
-| 16 | Hubo subtensión desde el arranque |
-| 1 / 17 | Límite de frecuencia por subtensión |
-
-Conviene medirlo con el robot navegando y reproduciendo audio a la vez, que es el peor
-caso de consumo.
 
 ---
 
 ## Estado
 
-- [x] Topología definida: 2S + BMS + dos rieles regulados por separado
-- [x] Servo del radar en el riel de potencia, con su propio buck de 5 V
-- [x] Elección de 2S sobre 1S justificada con números
-- [x] Presupuesto de corriente del riel lógico calculado (~2.0 A típico, ~3.0 A pico)
-- [x] Regulador especificado (MP2307, 3 A) con las alternativas descartadas y por qué
-- [x] Autonomía estimada: ~60 minutos
-- [x] Lista de materiales y calibres de cable
-- [x] Procedimiento de verificación con multímetro, en cinco pasos
-- [ ] Componentes conseguidos y pack armado — **pendiente**
-- [ ] Verificación de los cinco pasos ejecutada y registrada
-- [ ] `vcgencmd get_throttled` en operación real
+- [x] Topología definida: power bank para el dominio lógico y dos baterías de 9 V en paralelo para el de potencia
+- [x] Servo, HC-SR04, MPU-6050 y amplificador en los 5 V de la Raspberry Pi
+- [x] `VSS` y pull-up de los optos desde el regulador interno del L298N
+- [x] Tierras separadas desde la fuente
+- [x] Procedimiento de verificación
+- [x] Robot armado y alimentado con esta topología

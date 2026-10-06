@@ -132,7 +132,7 @@ cualquiera de dos cosas:
 
 | Vía | Umbral | Cuándo es la que dispara |
 |---|---|---|
-| **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | En movimiento: a 30 cm/s —la velocidad fija de ahora— salta a ~36 cm de la pared, antes que la distancia |
+| **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | En movimiento: a 30 cm/s —la velocidad fija del modelo— salta a ~36 cm de la pared, antes que la distancia |
 | **Distancia** | alguna lectura del cono frontal (60°, 90°, 120°) < `DIST_OBSTACULO_CM` (20 cm) | Robot quieto o muy lento, donde no hay tiempo de choque, y obstáculos que el sensor ve en diagonal |
 
 Del cono frontal solo cuentan lecturas de menos de 2 s **tomadas mirando hacia donde
@@ -189,7 +189,7 @@ servo (600°/s), el HC-SR04 midiendo hacia donde apunta el servo en el instante 
 disparo, el MPU-6050 con sesgo de fábrica y la inercia de las llantas.
 
 `sim/prueba_librobot` — **47/47**, compilado para ARM y ejecutado con `qemu-aarch64`.
-Estos números son con PWM (motores a 200/255); con la velocidad fija de ahora la prueba
+Estos números son con PWM (motores a 200/255); con la velocidad fija que usa el robot la prueba
 también pasa 47/47, con el robot a 28 cm/s:
 
 | Prueba | Resultado |
