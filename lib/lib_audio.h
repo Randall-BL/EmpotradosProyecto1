@@ -75,6 +75,14 @@ void lib_audio_pause  (void);
 void lib_audio_resume (void);
 void lib_audio_stop   (void);
 
+/**
+ * @brief Salta a @p segundos dentro de la pista actual, sonando o en pausa.
+ * Se recorta a la duracion de la pista. En pausa queda en pausa, en la
+ * posicion nueva.
+ * @return 0 si quedo pedido, -1 si no hay pista cargada.
+ */
+int  lib_audio_seek   (float segundos);
+
 // Volumen: 0-100
 void lib_audio_set_volume(int vol);
 int  lib_audio_get_volume(void);

@@ -48,6 +48,7 @@ static struct {
     PlayCmd          cmd;
     char             cmd_filepath[512];
     int              cmd_track_id;
+    float            seek_req;        /* salto pedido en segundos, o -1 */
 
     // Estado actual
     LibAudioStatus   status;
@@ -344,6 +345,32 @@ int lib_audio_playlist_pos(void)
     return p;
 }
 
+/* Aplica el salto pedido con lib_audio_seek(), si hay uno. Se llama con
+   g.lock tomado y lo devuelve tomado; lo suelta mientras mueve el
+   decodificador, que no toca el estado compartido. */
+static void aplicar_salto(mpg123_handle *mh, snd_pcm_t *pcm, long rate)
+{
+    if (g.seek_req < 0.0f) return;
+    float destino = g.seek_req;
+    g.seek_req = -1.0f;
+    pthread_mutex_unlock(&g.lock);
+
+    off_t muestra = mpg123_seek(mh, (off_t)(destino * (float)rate), SEEK_SET);
+    /* Lo que ya estaba en el buffer de ALSA es de la posicion vieja: se
+       descarta para que el salto se oiga en el acto. */
+    snd_pcm_drop(pcm);
+    snd_pcm_prepare(pcm);
+
+    pthread_mutex_lock(&g.lock);
+    if (muestra >= 0) {
+        g.position_secs = (float)muestra / (float)rate;
+        printf("[audio] Salto a %.1fs\n", g.position_secs);
+    } else {
+        fprintf(stderr, "[audio] No se pudo saltar a %.1fs: %s\n",
+                destino, mpg123_strerror(mh));
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════
    Main Thread de reproducción principal
 ═══════════════════════════════════════════════════════════ */
@@ -364,6 +391,7 @@ static void *playback_thread(void *arg)
         strncpy(fp, g.cmd_filepath, sizeof(fp) - 1);
         fp[511] = '\0';
         g.cmd = PCMD_NONE;
+        g.seek_req = -1.0f;   /* un salto pedido para la pista anterior no aplica */
         pthread_mutex_unlock(&g.lock);
 
         if (cmd == PCMD_QUIT) break;
@@ -417,6 +445,9 @@ static void *playback_thread(void *arg)
             // Verificar comando pendiente
             pthread_mutex_lock(&g.lock);
 
+            // SALTO desde la barra de progreso del panel
+            aplicar_salto(mh, pcm, rate);
+
             // PAUSA: suspender decodificación hasta RESUME / STOP
             if (g.cmd == PCMD_PAUSE) {
                 g.cmd    = PCMD_NONE;
@@ -425,9 +456,13 @@ static void *playback_thread(void *arg)
                 snd_pcm_drop(pcm);   
                 printf("[audio] Pausado en %.1fs\n", g.position_secs);
 
+                /* En pausa tambien se puede saltar: se mueve el decodificador
+                   y se sigue en pausa, en la posicion nueva. */
                 while (g.cmd != PCMD_RESUME && g.cmd != PCMD_STOP &&
-                       g.cmd != PCMD_PLAY  && g.cmd != PCMD_QUIT)
-                    pthread_cond_wait(&g.cond, &g.lock);
+                       g.cmd != PCMD_PLAY  && g.cmd != PCMD_QUIT) {
+                    if (g.seek_req >= 0.0f) aplicar_salto(mh, pcm, rate);
+                    else                    pthread_cond_wait(&g.cond, &g.lock);
+                }
 
                 if (g.cmd == PCMD_RESUME) {
                     g.cmd    = PCMD_NONE;
@@ -558,6 +593,7 @@ int lib_audio_init(const char *audio_dir)
     g.volume     = 85;
     g.status     = LIB_AUDIO_STOPPED;
     g.current_id = -1;
+    g.seek_req   = -1.0f;
     // g.notify_pid = -1;
 
     mpg123_init();
@@ -761,6 +797,26 @@ void lib_audio_stop(void)
         pthread_cond_signal(&g.cond);
     }
     pthread_mutex_unlock(&g.lock);
+}
+
+int lib_audio_seek(float segundos)
+{
+    if (!g.initialized) return -1;
+    pthread_mutex_lock(&g.lock);
+    if (g.status == LIB_AUDIO_STOPPED || g.current_id < 0) {
+        pthread_mutex_unlock(&g.lock);
+        return -1;
+    }
+    /* Medio segundo antes del final como tope: saltar al final exacto
+       terminaria la pista en el acto. */
+    const LibAudioTrack *t = pista_por_id(g.current_id);
+    float tope = (t && t->duration_secs > 1) ? (float)t->duration_secs - 0.5f : segundos;
+    if (segundos > tope) segundos = tope;
+    if (segundos < 0.0f) segundos = 0.0f;
+    g.seek_req = segundos;
+    pthread_cond_signal(&g.cond);
+    pthread_mutex_unlock(&g.lock);
+    return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════

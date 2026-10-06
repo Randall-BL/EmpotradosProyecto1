@@ -239,6 +239,10 @@
     .prog-row { display: flex; align-items: center; gap: 8px; }
     .prog-t   { font-size: 9px; color: var(--text); min-width: 30px; }
     .prog-bar { flex: 1; height: 4px; background: var(--bd); border-radius: 2px; cursor: pointer; }
+    /* La barra de la cancion se puede tocar para saltar: 4 px visibles, pero
+       el padding transparente le da 24 px de area de toque. */
+    .prog-bar.seek { height: 24px; padding: 10px 0; background: var(--bd); background-clip: content-box; touch-action: none; }
+    .prog-bar.seek .prog-fill { height: 4px; }
     .prog-fill { height: 100%; background: var(--amber); border-radius: 2px; width: 0%; }
 
     .transport { display: flex; justify-content: center; align-items: center; gap: 10px; }
@@ -511,7 +515,7 @@
         </div>
         <div class="prog-row">
           <span class="prog-t" id="prog-cur">0:00</span>
-          <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+          <div class="prog-bar seek" id="prog-bar" title="Tocar para adelantar o retroceder"><div class="prog-fill" id="prog-fill"></div></div>
           <span class="prog-t" id="prog-dur">0:00</span>
         </div>
         <div class="transport">
@@ -938,6 +942,26 @@ function stopAudio() {
   apiFetch('/api/audio/control', 'POST', { action: 'stop' });
 }
 
+/* Barra de progreso: tocar o hacer clic salta a ese punto de la cancion. */
+function durActual() {
+  if (!S.curTrack) return 0;
+  const p = (S.curTrack.duracion || S.curTrack.duration || '0:00').split(':');
+  return parseInt(p[0] || 0) * 60 + parseInt(p[1] || 0);
+}
+
+function seekDesde(clientX) {
+  const dur = durActual();
+  if (!dur || !S.curTrack) return;
+  const r = document.getElementById('prog-bar').getBoundingClientRect();
+  const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+  const pos = frac * dur;
+  // Se mueve la barra en el acto; el siguiente sondeo trae la posicion real
+  S.seekHasta = Date.now() + 1500;
+  document.getElementById('prog-fill').style.width = (frac * 100).toFixed(1) + '%';
+  document.getElementById('prog-cur').textContent = Math.floor(pos / 60) + ':' + String(Math.floor(pos % 60)).padStart(2, '0');
+  apiFetch('/api/audio/control', 'POST', { action: 'seek', position: +pos.toFixed(1) });
+}
+
 function updatePlayBtn() {
   const btn = document.getElementById('play-btn');
   btn.textContent = S.playing ? '⏸' : '▶';
@@ -1114,8 +1138,10 @@ async function pollStatus() {
     const plPos = data.audio.playlist_pos ?? -1;
     if (plPos !== S.plPos) { S.plPos = plPos; renderPlaylist(); }
  
-    //Barra de progreso
+    //Barra de progreso. Justo despues de un salto se deja la que puso el
+    //usuario, para que no vuelva atras con un sondeo que llego tarde.
     const posSecs = data.audio.position ?? 0;
+    if (S.seekHasta && Date.now() < S.seekHasta) return;
  
     // Obtener duración de la pista actual
     let durSecs = 0;
@@ -1170,6 +1196,7 @@ window.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', () => { if (S.connected) initRadar(); });
   pollAudioList();
   setInterval(pollAudioList, 10000);
+  document.getElementById('prog-bar').addEventListener('pointerdown', e => { e.preventDefault(); seekDesde(e.clientX); });
 });
 </script>
 </body>

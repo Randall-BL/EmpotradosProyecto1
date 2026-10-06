@@ -262,6 +262,7 @@ robot tiene un solo parlante. Volumen 0–100.
 | `int lib_audio_get_tracks(LibAudioTrack *out, int max)` | Copia hasta `max` pistas; devuelve cuántas. |
 | `int lib_audio_play(int track_id)` | Reproduce la pista **en bucle** hasta `stop` u otro `play`. |
 | `void lib_audio_pause/resume/stop(void)` | Control de reproducción. |
+| `int lib_audio_seek(float segundos)` | Salta dentro de la pista actual, sonando o en pausa (en pausa sigue en pausa). Se recorta a medio segundo antes del final; −1 si no hay pista cargada. |
 | `void lib_audio_set_volume(int v)` / `int lib_audio_get_volume(void)` | Volumen 0–100. |
 | `LibAudioStatus lib_audio_get_status(void)` | `STOPPED` / `PLAYING` / `PAUSED`. |
 | `int lib_audio_get_current_id(void)` | Pista actual, o −1. |

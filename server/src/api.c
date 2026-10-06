@@ -516,6 +516,17 @@ enum MHD_Result api_audio_control(struct MHD_Connection *conn,
                              "{\"error\":\"La playlist esta vacia\"}");
         printf("[api] audio -> PLAYLIST desde %d\n", index);
 
+    } else if (strcmp(action, "seek") == 0) {
+        // Salto desde la barra de progreso del panel
+        double pos = -1.0;
+        if (!json_num(body, "position", &pos) || pos < 0.0)
+            return send_json(conn, MHD_HTTP_BAD_REQUEST,
+                             "{\"error\":\"position debe ser >= 0\"}");
+        if (lib_audio_seek((float)pos) < 0)
+            return send_json(conn, 409,
+                             "{\"error\":\"No hay una pista sonando\"}");
+        printf("[api] audio -> SEEK %.1fs\n", pos);
+
     } else if (strcmp(action, "pause") == 0) {
         // Funcionalidad de pause
         lib_audio_pause();
