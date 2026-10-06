@@ -45,12 +45,39 @@ SONDEO=""
 
 api() { curl -s -m 5 -b "$CK" -H 'Content-Type: application/json' "$@"; }
 
-# Pase lo que pase, el robot queda detenido.
+login() {
+    curl -s -m 5 -c "$CK" -o /dev/null -w '%{http_code}' -X POST "$URL/api/login" \
+        -H 'Content-Type: application/json' \
+        -d "{\"username\":\"$USUARIO\",\"password\":\"$CLAVE\"}"
+}
+
+# Manda una orden y la reintenta hasta que el servidor conteste 200. Si la
+# sesion ya no vale (401), vuelve a iniciarla.
+orden() {
+    local ruta="$1" cuerpo="$2" codigo=000
+    for _ in 1 2 3 4 5; do
+        codigo="$(api -o /dev/null -w '%{http_code}' -X POST "$URL$ruta" -d "$cuerpo" || true)"
+        [ "$codigo" = "200" ] && return 0
+        [ "$codigo" = "401" ] && login >/dev/null || true
+        sleep 1
+    done
+    echo "AVISO: $ruta $cuerpo no se aplico (ultimo HTTP $codigo)." >&2
+    return 1
+}
+
+# Pase lo que pase, el robot queda detenido. Se comprueba al final: un robot
+# que sigue navegando despues de medir es peligroso.
 limpiar() {
     [ -n "$SONDEO" ] && kill "$SONDEO" 2>/dev/null || true
-    api -X POST "$URL/api/audio/control" -d '{"action":"stop"}'   >/dev/null 2>&1 || true
-    api -X POST "$URL/api/mode"          -d '{"mode":"manual"}'   >/dev/null 2>&1 || true
-    api -X POST "$URL/api/move"          -d '{"direction":"stop"}' >/dev/null 2>&1 || true
+    wait 2>/dev/null || true
+    orden /api/audio/control '{"action":"stop"}'   || true
+    orden /api/mode          '{"mode":"manual"}'   || true
+    orden /api/move          '{"direction":"stop"}' || true
+    estado="$(api "$URL/api/status" 2>/dev/null || true)"
+    case "$estado" in
+        *'"mode":"manual"'*'"status":0'*) echo "Robot en modo manual, detenido y sin musica." >&2 ;;
+        *) echo "AVISO: no se pudo confirmar que el robot quedara detenido. Detengalo desde el panel." >&2 ;;
+    esac
     rm -f "$CK"
 }
 trap limpiar EXIT
@@ -60,9 +87,7 @@ read -r -p "Escriba SI para continuar: " resp
 [ "$resp" = "SI" ] || { echo "Cancelado." >&2; exit 1; }
 
 # ── Escenario de operacion normal ────────────────────────────────────────────
-codigo="$(curl -s -m 5 -c "$CK" -o /dev/null -w '%{http_code}' -X POST "$URL/api/login" \
-    -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$USUARIO\",\"password\":\"$CLAVE\"}")"
+codigo="$(login)"
 [ "$codigo" = "200" ] || { echo "El login en $URL fallo (HTTP $codigo)." >&2; exit 1; }
 
 api -X POST "$URL/api/mode"          -d '{"mode":"autonomous"}'           >/dev/null
