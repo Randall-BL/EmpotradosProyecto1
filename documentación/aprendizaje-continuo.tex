@@ -55,7 +55,13 @@ autónomo con reproducción de audio y control remoto\par}
 \vspace{3.2cm}
 {\large\bfseries Integrantes\par}
 \vspace{0.2cm}
-{\large \pendiente{nombres y carnés de los cuatro integrantes}\par}
+{\large
+\begin{tabular}{ll}
+Randall Bolaños López & 2019043784 \\
+Aldo Alessandro Bagliano Gómez & 2020018456 \\
+Yendry Badilla Gutierrez & 2016113047 \\
+Christopher David Rodriguez Cordero & 2022040771 \\
+\end{tabular}\par}
 \vspace{1.6cm}
 {\large\bfseries Profesor\par}
 \vspace{0.2cm}
@@ -88,9 +94,10 @@ describe es el que dejó evidencia.
 El proyecto pide construir un sistema operativo a la medida, una biblioteca
 de control, un servidor web y un modelo físico con su electrónica de
 potencia. Al inicio, el grupo tenía experiencia en programación en C, en
-Linux como usuario y en electrónica digital básica. No había construido una
-imagen con Yocto, ni diseñado una etapa de potencia aislada, ni integrado un
-sensor inercial.
+Linux como usuario y en electrónica digital básica, y parte del grupo ya
+había trabajado con electrónica de potencia. No había construido una imagen
+con Yocto, ni integrado un sensor inercial, ni diseñado piezas para
+impresión 3D.
 
 A eso se suma el cambio tecnológico. Las herramientas del proyecto cambian
 más rápido que la documentación que las explica: la sintaxis de Yocto varió
@@ -123,14 +130,17 @@ en microsegundos, I2C. & Motores, servo, HC-SR04 y MPU-6050. \\
 Electrónica de potencia & Aislamiento óptico, separación de tierras,
 tiempos de conmutación de un optoacoplador, caída de un puente bipolar. & La
 nota de seguridad del enunciado es de lectura obligatoria. \\
-Baterías de Li-Ion & Rango de tensión de una celda, función del BMS,
-dimensionamiento de un reductor. & Fuente portátil sin dañar el equipo
+Alimentación portátil & Rango de tensión de una celda de Li-Ion, función
+del BMS, comportamiento de una batería bajo la corriente de un motor. & Fuente portátil sin dañar el equipo
 prestado. \\
 Estimación de estado & Integración de un acelerómetro y su deriva, filtro
 complementario, corrección de velocidad cero. & Odometría y mapa sin
 encoders. \\
 Servidor HTTP en C & \id{libmicrohttpd}, sesiones, resumen de contraseñas. &
 Control remoto con autenticación. \\
+Diseño mecánico & Modelado de las piezas para impresión 3D, montaje de los
+motores y las llantas, distribución del peso. & El modelo físico tiene su
+propio rubro en la evaluación. \\
 \bottomrule
 \end{longtable}
 
@@ -155,7 +165,7 @@ Control remoto con autenticación. \\
   \item \textbf{Desconfiar del mensaje de error.} Varias veces el mensaje
         apuntaba a una causa falsa.
   \item \textbf{Paciencia con ciclos lentos.} La primera construcción de la
-        imagen toma unas tres horas; un error de configuración se paga caro.
+        imagen tomó más de cinco horas; un error de configuración se paga caro.
   \item \textbf{Responsabilidad sobre equipo ajeno.} Un cable mal puesto
         destruye una tarjeta que no es del grupo.
   \item \textbf{Documentar mientras se trabaja}, no al final.
@@ -199,12 +209,20 @@ el estado del proyecto para los cuatro integrantes y dejaron el rastro de
 cada decisión. \\
 LaTeX con TikZ y CircuiTikZ & Los diagramas de hardware viven como texto en
 el repositorio y se revisan como cualquier otro cambio. \\
+Asistentes de inteligencia artificial generativa & Se usaron en cuatro
+tareas: generar los diagramas, apoyar el diseño de las piezas 3D, redactar
+la documentación y diagnosticar los fallos de la construcción con Yocto.
+Acortaron el camino entre un mensaje de error y su causa, y permitieron
+probar más variantes de un diseño en menos tiempo. \\
 \bottomrule
 \end{longtable}
 
-\pendiente{si el grupo usó asistentes de inteligencia artificial generativa
-u otras tecnologías emergentes, describir aquí para qué se usaron y cómo se
-verificó lo que produjeron}
+\paragraph{Cómo se verificó lo que produjo la inteligencia artificial.} Nada
+de lo que propuso un asistente se dio por bueno sin comprobarlo. Los arreglos
+de Yocto se validaron construyendo la imagen y probándola en la Raspberry
+Pi; los diseños 3D, imprimiéndolos, montándolos en el robot y corrigiéndolos;
+y la documentación y los diagramas, leyéndolos entre los integrantes del
+grupo contra el robot real.
 
 % ===========================================================================
 \section{AC3 --- Estrategias implementadas}
@@ -215,21 +233,22 @@ Ante un problema, la primera consulta fue la documentación oficial, la hoja
 de datos o el código fuente, antes que un foro.
 
 El caso más claro fue el fallo de descarga del kernel. BitBake reportaba que
-una revisión no existía en la rama. Leyendo el código del \emph{fetcher} se
-encontró que ejecuta \id{git branch --contains} descartando la salida de
-error, y que las versiones recientes de git abortan ese comando en el
-repositorio espejo. El mensaje era falso; la causa y la solución quedaron
-documentadas en \id{docs/yocto-setup.md}.
+una revisión no existía en la rama. Con ayuda de un asistente de inteligencia
+artificial se rastreó la causa hasta el código del \emph{fetcher}: ejecuta
+\id{git branch --contains} descartando la salida de error, y las versiones
+recientes de git abortan ese comando en el repositorio espejo. El grupo
+comprobó la solución construyendo la imagen. El mensaje era falso; la causa
+y la solución quedaron documentadas en \id{docs/yocto-setup.md}.
 
 \subsection{Construir de menor a mayor}
 
 Cada capa se validó antes de montar la siguiente: primero
 \id{core-image-minimal}, para comprobar el BSP, el WiFi y el audio; luego la
 imagen del proyecto. En el hardware se siguió el mismo orden, con los
-procedimientos de cinco pasos de \id{docs/hardware-aislamiento.md} y
-\id{docs/hardware-alimentacion.md}: aislamiento sin energía, riel de potencia
-solo, optoacopladores con fuente de banco, riel lógico solo, y la Raspberry
-Pi de última.
+procedimientos de verificación de \id{docs/hardware-aislamiento.md} y
+\id{docs/hardware-alimentacion.md}: aislamiento sin energía, dominio de
+potencia solo, optoacopladores con fuente de banco, dominio lógico solo, y
+la Raspberry Pi de última.
 
 \subsection{Simular para no depender del hardware}
 
@@ -242,7 +261,7 @@ con 47 comprobaciones.
 \subsection{Escribir para entender}
 
 Cada decisión de diseño se documentó en el momento de tomarla, con la
-alternativa descartada y el motivo. La carpeta \id{docs/} tiene trece
+alternativa descartada y el motivo. La carpeta \id{docs/} tiene catorce
 documentos técnicos escritos durante el desarrollo, no después. Explicar por
 escrito por qué 390\,$\Omega$ y no 220\,$\Omega$ obliga a hacer la cuenta.
 
@@ -254,8 +273,9 @@ escrito por qué 390\,$\Omega$ y no 220\,$\Omega$ obliga a hacer la cuenta.
         \emph{Documentación y entrega final} (6 de octubre).
   \item Un tablero de proyecto con tres columnas mostró en todo momento qué
         estaba pendiente, en curso y terminado.
+  \item El trabajo se repartió por áreas entre los cuatro integrantes.
   \item Cada integrante trabajó en su rama; los cambios entraron a
-        \id{develop} y a \id{main} por Pull Request (20 integrados).
+        \id{develop} y a \id{main} por Pull Request (más de 20 integrados).
 \end{itemize}
 
 \subsection{Medir antes y después}
@@ -272,9 +292,17 @@ verificaciones automáticas donde existían: \id{systemd-analyze verify}
 detectó una directiva ubicada en la sección equivocada que \id{systemd}
 ignoraba sin avisar.
 
+\subsection{Apoyarse en asistentes de inteligencia artificial, verificando}
+
+Los asistentes de inteligencia artificial se usaron como un compañero de
+consulta: para interpretar un fallo de la construcción con Yocto, para
+proponer un diagrama o una pieza, o para redactar un documento. La regla fue
+que la respuesta es una hipótesis: se compila, se imprime o se lee antes de
+aceptarla.
+
 \subsection{Búsqueda bibliográfica}
 
-Las hojas de datos del PC817, el L298N, el MPU-6050, el PAM8403 y el MP2307
+Las hojas de datos del PC817, el L298N, el MPU-6050 y el PAM8403
 fueron la base de los cálculos de \id{docs/hardware-*.md}: corriente del LED
 del optoacoplador, relación de transferencia de corriente, caída del puente,
 ganancia del amplificador.
@@ -289,11 +317,13 @@ ganancia del amplificador.
 \endhead
 Ir a la fuente primaria & Resolvió problemas que ninguna búsqueda habría
 resuelto, como el del \emph{fetcher}. Lo aprendido se sostiene al cambiar de
-versión. & Es lenta. Leer el código de BitBake tomó horas que un foro, de
-haber tenido la respuesta, habría ahorrado. \\
-Construir de menor a mayor & Ningún componente se dañó. Cada fallo quedó
-acotado a la última capa agregada. & Pospone los problemas de integración:
-los que solo aparecen con todo junto se descubren tarde. \\
+versión. & Es lenta. Llegar hasta el código de BitBake tomó horas, aun con
+ayuda de un asistente de inteligencia artificial. \\
+Construir de menor a mayor & Cada fallo quedó acotado a la última capa
+agregada. & Pospone los problemas de integración: los que solo aparecen con
+todo junto se descubren tarde. Tampoco evitó perder una tarjeta: una
+Raspberry Pi dejó de funcionar durante el desarrollo, se presume que por su
+antigüedad, y el profesor la reemplazó. \\
 Simular & El software avanzó semanas antes de tener el robot: biblioteca,
 servidor, navegación y mapa se probaron sin hardware. & El simulador solo
 contiene lo que el grupo supo modelar. No modela el tiempo de apagado del
@@ -311,8 +341,14 @@ armado. \\
 Medir antes y después & Convirtió una impresión en un dato: 130\,s a 17\,s.
 & Las métricas de eficiencia se dejaron para el final, cuando ya había poco
 margen para actuar sobre ellas. \\
-Revisión entre pares & Los Pull Requests dejaron el rastro de cada cambio. &
-Bajo presión de tiempo, varios se aprobaron sin una revisión a fondo. \\
+Revisión entre pares & Los Pull Requests se revisaron antes de integrarse y
+dejaron el rastro de cada cambio. & La revisión del código no alcanza lo que
+solo aparece en el hardware: el problema de la PWM pasó todas las revisiones
+y se descubrió en la placa. \\
+Asistentes de inteligencia artificial & Aceleraron el diagnóstico de los
+fallos de Yocto, los diagramas, las piezas 3D y la documentación. & No
+ahorran la comprobación: cada respuesta hubo que compilarla, imprimirla o
+leerla, y eso también toma tiempo. \\
 \bottomrule
 \end{longtable}
 
@@ -325,8 +361,13 @@ Bajo presión de tiempo, varios se aprobaron sin una revisión a fondo. \\
         la placa, no la reemplaza.
   \item \textbf{Aclarar las ambigüedades del enunciado al inicio.} La
         decisión de cubrir las detecciones frontal y lateral con un solo
-        sensor sobre un servo dependía de una interpretación que convenía
-        confirmar con el profesor antes de diseñar alrededor de ella.
+        sensor sobre un servo dependía de una interpretación. El profesor la
+        aceptó, igual que la velocidad fija de los motores, pero convenía
+        consultarlo antes de diseñar alrededor de ella y no al final.
+  \item \textbf{Cerrar el diseño mecánico antes de comprar.} El chasis se
+        rehízo, y con él hubo que cambiar los motores y descartar los
+        primeros. Un prototipo temprano de la parte mecánica habría evitado
+        esa compra.
   \item \textbf{Preparar el host de construcción desde el primer día.} Los
         cuelgues por falta de memoria costaron días que una máquina adecuada,
         o la regulación por presión desde el inicio, habrían evitado.
@@ -340,14 +381,13 @@ Bajo presión de tiempo, varios se aprobaron sin una revisión a fondo. \\
 
 Las estrategias cumplieron su propósito: el grupo terminó el proyecto
 dominando herramientas que al inicio no conocía, y lo aprendido quedó escrito
-de forma que otro grupo podría reproducirlo. La lección que se repite es que
+de forma que otro grupo podría reproducirlo. Lo que más costó fueron tres
+cosas: Yocto, por sus fallos de construcción y sus ciclos largos; el diseño
+mecánico, que hubo que rehacer; y la electrónica, hasta lograr que la
+alimentación y los motores movieran el robot. La lección que se repite es que
 las estrategias que más enseñaron ---leer la fuente, documentar, simular---
 son también las más costosas en tiempo, y que ninguna sustituye el contacto
 temprano con el hardware real.
-
-\pendiente{revisar el documento entre los cuatro integrantes, en especial
-el punto de partida de la sección 2.1 y esta evaluación: deben reflejar la
-experiencia real del grupo}
 
 % ===========================================================================
 \section{Conclusiones}
