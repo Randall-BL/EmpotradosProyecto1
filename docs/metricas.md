@@ -43,6 +43,14 @@ panel consultando `/api/status` cada 500 ms durante 60 s:
 | RAM de `pigpiod` (RSS) | 1.3 MB | idem |
 | Temperatura del SoC | 38.5 C | `/sys/class/thermal/thermal_zone0/temp` |
 
+**Repetición con los requerimientos opcionales (6 de octubre de 2026).** Misma prueba
+sobre la imagen que agrega la detección de desnivel, el ciclo de limpieza y la playlist
+persistente: RAM 97 MB (`robot-server` 5.4 MB), CPU 3.3 % de los núcleos (`robot-server`
+4.2 % de un núcleo, `pigpiod` 9.2 %). Los opcionales no cambian el consumo. El arranque
+dio 26.8 s porque el primer intento de asociación con el hotspot falló a los 17.1 s y el
+segundo entró a los 25.1 s: el tiempo hasta que el servidor escucha varía entre 19 y
+27 s según la WiFi, y desde que hay red el servidor tarda 1.5 s.
+
 `pigpiod` (9.7 % de un núcleo) es el que más CPU usa: muestrea los GPIO cada 5 µs para
 medir el eco del HC-SR04 y generar el pulso del servo. Durante la ventana el radar
 detectó obstáculos y el robot evadió varias veces; el contador de throttling del

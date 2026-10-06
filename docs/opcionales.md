@@ -159,11 +159,27 @@ sensores de desnivel y pasa las 49.
 
 ---
 
-## 5. Pendiente en el robot
+## 5. Verificado en el robot (6 de octubre de 2026)
+
+- **Playlist:** se guardó en la SD (`03 → 01 → 02`), se reordenó desde el panel mientras
+  sonaba (`03 → 02 → 01`) y, al terminar la primera pista, pasó sola a la siguiente del
+  orden nuevo:
+  ```
+  [141.86] [api] audio -> PLAYLIST desde 0
+  [141.86] [audio] Reproduciendo id=3 './audio/canciones/03_Canon_en_Re.mp3'
+  [151.54] [audio] Playlist guardada: 3 pista(s)
+  [151.90] [audio] Reproduciendo id=2 './audio/canciones/02_Para_Elisa.mp3'
+  ```
+- **Detener con un aviso de por medio:** `STOP` y el cambio a manual llegaron con 30 ms
+  de diferencia y la música no se reanudó.
+- **Sensores de desnivel:** el servidor los inicializa en GPIO 4 y 8.
+
+## 6. Pendiente en el robot
 
 - [ ] Montar y cablear los dos módulos IR (sección 1) y ajustar su umbral.
 - [ ] Asomar cada esquina al borde de una mesa, en manual y en autónomo, y ver que el
       robot frena y que el panel marca el lado correcto.
 - [ ] Ciclo por tiempo de 1 min: el robot se detiene, suena el aviso y aparece el mensaje.
-- [ ] Armar una playlist, reiniciar la Raspberry y comprobar que sigue ahí. Escuchar que
-      pasa sola a la siguiente canción.
+- [x] Armar una playlist y escuchar que pasa sola a la siguiente canción.
+- [ ] Reiniciar la Raspberry y comprobar que la playlist sigue ahí (el journal debe decir
+      `playlist de 3`).

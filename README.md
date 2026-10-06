@@ -83,8 +83,8 @@ Los esquemas eléctricos dibujados están en
 
 | Función | GPIO (BCM) | Nota |
 |---|---|---|
-| Motor izquierdo `IN1` / `IN2` | 5 / 6 | Vía optoacoplador; `ENA` con jumper en el L298N |
-| Motor derecho `IN3` / `IN4` | 23 / 24 | Vía optoacoplador; `ENB` con jumper |
+| Motor derecho `IN1` / `IN2` (salida A) | 5 / 6 | Vía optoacoplador; `ENA` con jumper en el L298N |
+| Motor izquierdo `IN3` / `IN4` (salida B) | 23 / 24 | Vía optoacoplador; `ENB` con jumper |
 | Servo del radar | 25 | Señal directa; se alimenta de los 5 V de la Raspberry Pi |
 | HC-SR04 `TRIG` / `ECHO` | 17 / 27 | `ECHO` con divisor 1 kΩ / 2 kΩ: el sensor entrega 5 V |
 | MPU-6050 `SDA` / `SCL` | 2 / 3 | Módulo GY-521, alimentado de los 5 V de la Raspberry Pi |
@@ -520,7 +520,7 @@ Todos los endpoints salvo el login exigen la cookie de sesión.
 | `POST /api/mode` | `{"mode":"autonomous"}` o `"manual"` | Cambia de modo |
 | `POST /api/move` | `{"direction":"forward","speed":70}` | Mueve el robot, solo en modo manual. `direction`: `forward`, `backward`, `left`, `right`, `stop` |
 | `GET /api/audio/list` | — | Lista de pistas |
-| `POST /api/audio/control` | `{"action":"play","track_id":1}` | `play`, `pause`, `resume`, `stop`, o `play_playlist` con `"index"` |
+| `POST /api/audio/control` | `{"action":"play","track_id":1}` | `play`, `pause`, `resume`, `stop`, `play_playlist` con `"index"`, o `seek` con `"position"` en segundos (la barra de progreso del panel) |
 | `POST /api/audio/volume` | `{"volume":55}` | Volumen de 0 a 100 |
 | `GET /api/audio/playlist` | — | Ids de la playlist en orden y la posición que suena |
 | `POST /api/audio/playlist` | `{"ids":[3,1,9]}` | Reemplaza la playlist y la guarda en la SD |
@@ -573,7 +573,7 @@ La referencia completa, con tipos y ejemplos, está en
 | **MPU-6050** `lib_imu.h` | `imu_init()` · `imu_calibrar()` · `imu_leer()` · `imu_disponible()` · `imu_cerrar()` |
 | **LEDs** `lib_leds.h` | `lib_leds_init()` · `lib_leds_set(led, estado)` · `lib_leds_get(led)` · `lib_leds_sync_from_state()` · `lib_leds_destroy()` |
 | **Odometría** `lib_odom.h` | `odom_init()` · `odom_arrancar()` · `odom_parar()` · `odom_reset()` · `odom_update()` · `odom_get(x, y, rumbo)` · `odom_velocidad_cm_s()` · `odom_avance_cm()` · `odom_distancia_recorrida()` · `odom_get_velocidades()` · `odom_usa_imu()` |
-| **Audio** `lib_audio.h` | `lib_audio_init(dir)` · `lib_audio_destroy()` · `lib_audio_scan()` · `lib_audio_get_tracks()` · `lib_audio_play(id)` · `lib_audio_pause()` · `lib_audio_resume()` · `lib_audio_stop()` · `lib_audio_set_volume(v)` · `lib_audio_get_volume()` · `lib_audio_get_status()` · `lib_audio_get_current_id()` · `lib_audio_get_position()` · `lib_audio_notify(evento)` · `lib_audio_playlist_get()` · `lib_audio_playlist_set()` · `lib_audio_play_playlist(pos)` · `lib_audio_playlist_pos()` |
+| **Audio** `lib_audio.h` | `lib_audio_init(dir)` · `lib_audio_destroy()` · `lib_audio_scan()` · `lib_audio_get_tracks()` · `lib_audio_play(id)` · `lib_audio_pause()` · `lib_audio_resume()` · `lib_audio_stop()` · `lib_audio_seek(segundos)` · `lib_audio_set_volume(v)` · `lib_audio_get_volume()` · `lib_audio_get_status()` · `lib_audio_get_current_id()` · `lib_audio_get_position()` · `lib_audio_notify(evento)` · `lib_audio_playlist_get()` · `lib_audio_playlist_set()` · `lib_audio_play_playlist(pos)` · `lib_audio_playlist_pos()` |
 
 Ejemplo mínimo:
 
