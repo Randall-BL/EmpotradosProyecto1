@@ -118,7 +118,7 @@ los cuatro deben leerlo completo.
 
 ## 6. Evidencias por capturar en el robot
 
-- [ ] Guardar en `docs/evidencias/ejecucion-target.md` la salida de:
+- [x] Guardar en `docs/evidencias/ejecucion-target.md` la salida de:
       ```bash
       uname -a
       systemctl status robot-server
@@ -127,7 +127,7 @@ los cuatro deben leerlo completo.
       which gcc make cmake          # los tres deben fallar
       vcgencmd get_throttled        # si esta en la imagen; navegando con audio debe dar 0x0
       ```
-- [ ] Regenerar `binarios-target.md` con los comandos de *Cómo reproducirlo* de
+- [x] Regenerar `binarios-target.md` con los comandos de *Cómo reproducirlo* de
       [`docs/evidencias/README.md`](docs/evidencias/README.md).
 - [ ] Repetir `sim/construir_arm.sh` y actualizar `ejecucion-cruzada-qemu.md`: la
       captura guardada es de cuando la prueba tenía 18 comprobaciones, hoy son 47.

@@ -631,18 +631,17 @@ De [`binarios-target.md`](docs/evidencias/binarios-target.md):
 ```
 librobot.so.1.0.0: ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV), dynamically linked, …
 robot-server: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked,
-              interpreter /usr/lib/ld-linux-aarch64.so.1, for GNU/Linux 5.15.0, not stripped
+              interpreter /usr/lib/ld-linux-aarch64.so.1, for GNU/Linux 5.15.0, stripped
 
   NEEDED               libmicrohttpd.so.12
   NEEDED               librobot.so.1
-  NEEDED               libpigpiod_if2.so.1
+  NEEDED               libm.so.6
   NEEDED               libc.so.6
   NEEDED               ld-linux-aarch64.so.1
 ```
 
-> **PENDIENTE:** la captura es del 8 de setiembre. Después el servidor dejó de enlazar
-> `libpigpiod_if2` (ver [`server/src/CMakeLists.txt`](server/src/CMakeLists.txt));
-> regenerar `binarios-target.md` con la imagen final.
+El servidor no enlaza `libpigpiod_if2`: el acceso a GPIO queda dentro de `librobot.so.1`.
+Los binarios analizados tienen el mismo md5 que los que corren en la Raspberry Pi 4.
 
 Un binario compilado con el SDK no corre en el host
 ([`sdk-prueba.md`](docs/evidencias/sdk-prueba.md)):
@@ -683,15 +682,27 @@ habilitado y activo desde la receta: [`docs/qemu.md`](docs/qemu.md).
 
 ### 9.4 Ejecución en la Raspberry Pi 4
 
-> **PENDIENTE:** guardar en `docs/evidencias/` la salida de estos comandos en el robot y
-> enlazarla aquí.
+Salida completa en [`ejecucion-target.md`](docs/evidencias/ejecucion-target.md),
+capturada el 5 de octubre de 2026:
 
-```bash
-uname -a                                 # kernel y arquitectura aarch64
-systemctl status robot-server            # habilitado y activo
-ls -l /usr/lib/librobot.so*              # la biblioteca instalada por la receta
-journalctl -u robot-server -b | head -n 30
-which gcc make cmake                     # los tres fallan: nada se compila en el target
+```
+$ uname -a
+Linux raspberrypi4-64 6.6.63-v8 #1 SMP PREEMPT Fri Dec  6 10:10:05 UTC 2024 aarch64 GNU/Linux
+
+$ systemctl status robot-server
+● robot-server.service - Servidor de control del robot aspiradora
+     Loaded: loaded (/usr/lib/systemd/system/robot-server.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-10-05 22:30:23 UTC; 25min ago
+
+$ ls -l /usr/lib/librobot.so*
+lrwxrwxrwx    1 root     root            17 Mar  9  2018 /usr/lib/librobot.so.1 -> librobot.so.1.0.0
+-rwxr-xr-x    1 root     root         67528 Mar  9  2018 /usr/lib/librobot.so.1.0.0
+
+$ journalctl -u robot-server -b -o short-monotonic | grep -m1 "Servidor escuchando"
+[   24.703636] raspberrypi4-64 robot-server[270]: [server] Servidor escuchando en puerto 8080
+
+$ which gcc make cmake; echo $?
+1
 ```
 
 ---
