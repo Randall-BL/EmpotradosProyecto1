@@ -643,6 +643,13 @@ static int avanzar_ciclo(RobotState *rs, OperationMode modo, double dt) {
     return termino;
 }
 
+/* 1 si los dos motores empujan hacia adelante. */
+static int avanzando(void) {
+    int izq, der;
+    motores_get(&izq, &der);
+    return izq > 0 && der > 0;
+}
+
 static int ciclo_completo(RobotState *rs) {
     pthread_mutex_lock(&rs->lock);
     int c = rs->ciclo.completo;
@@ -675,8 +682,14 @@ static void *autonomous_thread(void *arg) {
         /* 2. El sonido y la detencion son de la APARICION del obstaculo, en
            cualquier modo: tambien frenan al usuario que maneja a mano. Al
            despejarse el camino solo se apaga el LED. */
+        /* Solo se frena si el robot va hacia adelante: el obstaculo y el
+           desnivel estan al frente, y cortar un retroceso o un giro impediria
+           justamente alejarse de ellos. El panel manda la orden una vez al
+           presionar, asi que un freno a destiempo dejaba el robot quieto. */
+        int va_adelante = avanzando();
+
         if (obstaculo && !obstaculo_anterior) {
-            motores_detener();
+            if (va_adelante) motores_detener();
             lib_audio_notify(NOTIFY_OBSTACLE);
         }
         obstaculo_anterior = obstaculo;
@@ -685,7 +698,7 @@ static void *autonomous_thread(void *arg) {
            robot freno por algo que tiene delante. */
         int caida = g_caida;
         if (caida && !caida_anterior) {
-            motores_detener();
+            if (va_adelante) motores_detener();
             pthread_mutex_lock(&rs->lock);
             rs->caida.eventos++;
             pthread_mutex_unlock(&rs->lock);

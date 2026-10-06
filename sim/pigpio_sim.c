@@ -168,8 +168,10 @@ static int entrada_l298n(int i) {
    que solo IN2 lo esta, y frenado el resto (las dos iguales). Con una sola
    entrada modulando por vez, el neto es la diferencia de los dos ciclos. */
 static void empujar_motores(void) {
-    mundo_set_motores(entrada_l298n(0) - entrada_l298n(1),
-                      entrada_l298n(2) - entrada_l298n(3));
+    /* Como en el robot armado: el motor izquierdo va a la salida B del L298N
+       (IN3/IN4) y el derecho a la A (IN1/IN2). */
+    mundo_set_motores(entrada_l298n(2) - entrada_l298n(3),
+                      entrada_l298n(0) - entrada_l298n(1));
 }
 
 /* ── API de pigpio ───────────────────────────────────────────────────────── */

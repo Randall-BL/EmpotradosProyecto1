@@ -19,13 +19,21 @@
    que la velocidad sigue al ciclo de trabajo. Sin ella, la entrada activa
    queda fija en alto y el motor va al maximo. */
 
-/* Motor Izquierdo (A) */
+/* Salida A del L298N */
 #define IN1  5
 #define IN2  6
 
-/* Motor Derecho (B) */
+/* Salida B del L298N */
 #define IN3 23
 #define IN4 24
+
+/* Que motor quedo en cada salida del L298N en el robot armado: el derecho en
+   la A (IN1/IN2) y el izquierdo en la B (IN3/IN4). Con la asignacion al reves
+   el robot avanza y retrocede bien, pero cada giro sale hacia el otro lado. */
+#define IZQ_AVANCE    IN3
+#define IZQ_RETROCESO IN4
+#define DER_AVANCE    IN1
+#define DER_RETROCESO IN2
 
 #define PWM_FREQ 1000
 
@@ -106,8 +114,8 @@ void motores_set(int vel_izq, int vel_der) {
     vel_izq = efectiva(vel_izq);
     vel_der = efectiva(vel_der);
 
-    motor(IN1, IN2, vel_izq);
-    motor(IN3, IN4, vel_der);
+    motor(IZQ_AVANCE, IZQ_RETROCESO, vel_izq);
+    motor(DER_AVANCE, DER_RETROCESO, vel_der);
 
     g_vel_izq = vel_izq;
     g_vel_der = vel_der;

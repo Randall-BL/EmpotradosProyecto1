@@ -13,10 +13,10 @@ Numeración **BCM** (la que usa pigpio), con el pin físico del conector de 40 p
 
 | Función | BCM | Pin físico | Dirección | Definido en |
 |---|---|---|---|---|
-| **Motor izquierdo (A)** — vía optoacoplador; `ENA` con jumper en el L298N ||||
+| **Motor derecho (salida A del L298N)** — vía optoacoplador; `ENA` con jumper ||||
 | `IN1` — avance | 5 | 29 | Salida | `lib/lib_motors.c` |
 | `IN2` — retroceso | 6 | 31 | Salida | `lib/lib_motors.c` |
-| **Motor derecho (B)** — vía optoacoplador; `ENB` con jumper en el L298N ||||
+| **Motor izquierdo (salida B del L298N)** — vía optoacoplador; `ENB` con jumper ||||
 | `IN3` — avance | 23 | 16 | Salida | `lib/lib_motors.c` |
 | `IN4` — retroceso | 24 | 18 | Salida | `lib/lib_motors.c` |
 | **Radar: servo de 180°** — señal directa, alimentado de los 5 V de la Pi ||||
@@ -54,15 +54,15 @@ Solo los pines usados. `·` = pin libre.
       MPU GND ─  GND ( 9) (10)  GPIO15  (UART RX, consola)
   TRIG radar ─(GPIO17)(11) (12)(GPIO18)─ audio PWM → PAM8403
   ECHO radar ─(GPIO27)(13) (14)  GND
-            · GPIO22 (15) (16)(GPIO23)─ IN3 motor der.
-                 3V3 (17) (18)(GPIO24)─ IN4 motor der.
+            · GPIO22 (15) (16)(GPIO23)─ IN3 motor izq.
+                 3V3 (17) (18)(GPIO24)─ IN4 motor izq.
             · GPIO10 (19) (20)  GND
             ·  GPIO9 (21) (22)(GPIO25)─ servo del radar
             · GPIO11 (23) (24)(GPIO8)─ IR der.
                  GND (25) (26)  GPIO7   ·
                ID_SD (27) (28)  ID_SC
- IN1 motor iz─(GPIO5)(29) (30)  GND
- IN2 motor iz─(GPIO6)(31) (32)  GPIO12  ·
+ IN1 motor de─(GPIO5)(29) (30)  GND
+ IN2 motor de─(GPIO6)(31) (32)  GPIO12  ·
             · GPIO13 (33) (34)  GND
 2º canal audio (libre)(GPIO19)(35) (36)(GPIO16)─ LED encendido
 LED obstáculo─(GPIO26)(37) (38)(GPIO20)─ LED autónomo
