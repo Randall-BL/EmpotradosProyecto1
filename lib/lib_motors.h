@@ -21,15 +21,14 @@
 /**
  * 1: la velocidad es variable, con PWM sobre IN1-IN4.
  * 0: cada entrada es un nivel fijo, y cualquier velocidad distinta de cero
- *    lleva el motor al maximo. Es lo que se usa por ahora.
+ *    lleva el motor al maximo. Es lo que usa el robot.
  *
- * Por que 0: a 1 kHz, el PC817 con pull-up de 4.7 kOhm tarda decenas de
- * microsegundos en apagarse y le recorta a cada ciclo parte del tiempo en
- * que el motor recibe tension. Sumado a los ~2 V que cae el L298N, a
- * velocidades medias el motor no llega a la tension de arranque y no se
- * mueve. Para recuperar la velocidad variable: bajar PWM_FREQ (lib_motors.c)
- * a 100 Hz, o el pull-up a 1 kOhm, y poner esto en 1. Ver
- * docs/hardware-aislamiento.md.
+ * Por que 0: los motores son lentos (60 rpm a 12 V) y trabajan a unos 9 V.
+ * Con PWM de 1 kHz no se movieron: el L298N cae ~2 V, y el PC817 con pull-up
+ * de 4.7 kOhm tarda decenas de microsegundos en apagarse y le recorta a cada
+ * ciclo parte del tiempo en que el motor recibe tension. Se consulto con el
+ * profesor y se acordo dejar la velocidad fija, sin PWM, como desviacion del
+ * enunciado. Ver docs/hardware-aislamiento.md.
  */
 #ifndef MOTOR_VELOCIDAD_VARIABLE
 #define MOTOR_VELOCIDAD_VARIABLE 0

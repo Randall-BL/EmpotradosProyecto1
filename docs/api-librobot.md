@@ -55,16 +55,17 @@ dos entradas se activa y la otra queda en bajo; con velocidad 0 las dos quedan e
 el L298N **frena**. La inversión de los optoacopladores está compensada adentro
 (`OPTO_INVERTIDO`). `MOTOR_PWM_MAX` (255) es el tope de velocidad.
 
-> **Por ahora la velocidad es fija** (`MOTOR_VELOCIDAD_VARIABLE` en 0, en
+> **La velocidad es fija, sin PWM** (`MOTOR_VELOCIDAD_VARIABLE` en 0, en
 > `lib_motors.h`): cualquier velocidad distinta de cero lleva el motor al máximo,
 > `motores_get()` informa ±255 y `motores_curva()` gira sobre el eje, con una llanta
-> hacia adelante y la otra hacia atrás. Con 1 vuelve la PWM sobre `IN1`–`IN4`; por qué
-> se desactivó y qué cambiar para recuperarla está en
-> [`hardware-aislamiento.md`](hardware-aislamiento.md#por-ahora-velocidad-fija).
+> hacia adelante y la otra hacia atrás. Es una desviación del enunciado acordada con el
+> profesor; el motivo está en
+> [`hardware-aislamiento.md`](hardware-aislamiento.md#velocidad-fija). Con 1 la
+> biblioteca usa PWM sobre `IN1`–`IN4`, un modo que solo se probó en el simulador.
 
 | Función | Descripción |
 |---|---|
-| `void motores_set(int izq, int der)` | **Primitiva.** Velocidad de cada motor, −255..255; el signo da el sentido, la magnitud el PWM. Se satura. |
+| `void motores_set(int izq, int der)` | **Primitiva.** Velocidad de cada motor, −255..255; el signo da el sentido; la magnitud es el ciclo de PWM solo en el modo de velocidad variable. Se satura. |
 | `void motores_get(int *izq, int *der)` | Velocidad que recibe cada motor: la ordenada ya saturada, o ±255 con velocidad fija (entrada de la odometría). Punteros NULL permitidos. |
 | `void motores_detener(void)` | Frena ambos en seco (equivale a `motores_set(0,0)`). |
 | `void motores_avanzar(int v)` | `motores_set(v, v)`. |
@@ -240,9 +241,9 @@ tiempo de choque, no para posición absoluta. Seguro para varios hilos.
 | `void odom_get_velocidades(double *izq, double *der)` | Velocidad del modelo de cada llanta en cm/s. |
 | `int odom_usa_imu(void)` | ¿La última integración usó el MPU? |
 
-**Constantes a calibrar en campo:** `ODOM_VEL_MAX_CM_S` (cm/s a PWM máximo),
+**Constantes a calibrar en campo:** `ODOM_VEL_MAX_CM_S` (cm/s a velocidad máxima),
 `ODOM_ENTRE_EJES_CM` (separación de llantas), `ODOM_PWM_ARRANQUE` (PWM mínimo
-que vence la fricción) y `ODOM_TAU_FUSION_S` (cuánto se confía en el MPU).
+que vence la fricción; no interviene con velocidad fija) y `ODOM_TAU_FUSION_S` (cuánto se confía en el MPU).
 
 ---
 

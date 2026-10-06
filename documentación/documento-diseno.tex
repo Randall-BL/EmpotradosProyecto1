@@ -88,7 +88,13 @@ autónomo con reproducción de audio y control remoto\par}
 \vspace{3.2cm}
 {\large\bfseries Integrantes\par}
 \vspace{0.2cm}
-{\large \pendiente{nombres y carnés de los cuatro integrantes}\par}
+{\large
+\begin{tabular}{ll}
+Randall Bolaños López & 2019043784 \\
+Aldo Alessandro Bagliano Gómez & 2020018456 \\
+Yendry Badilla Gutierrez & 2016113047 \\
+Christopher David Rodriguez Cordero & 2022040771 \\
+\end{tabular}\par}
 \vspace{1.6cm}
 {\large\bfseries Profesor\par}
 \vspace{0.2cm}
@@ -137,7 +143,7 @@ por separado:
         entregan 16\,mA por pin y 50\,mA en total, y no toleran más de
         3.3\,V.
   \item \textbf{Dominios eléctricos incompatibles.} La lógica trabaja a
-        3.3\,V y miliamperios; los motores, a 7.4\,V con picos de varias
+        3.3\,V y miliamperios; los motores, a 9\,V con picos de varias
         veces su corriente nominal. Deben convivir sin compartir tierra.
   \item \textbf{Concurrencia.} Navegar, medir, reproducir audio y atender la
         interfaz ocurren a la vez, y ninguna tarea puede degradar la
@@ -222,9 +228,9 @@ concentrar el tiempo en el núcleo obligatorio.
 \toprule
 \textbf{Riesgo} & \textbf{Requerimiento que se deriva} \\
 \midrule
-Incendio o fuga térmica de las celdas de Li-Ion & BMS con protección de
-sobrecarga, sobredescarga, cortocircuito y balanceo; fusible en serie con el
-pack; nunca alimentar la Raspberry directo de la celda. \\
+Incendio o fuga térmica de una celda de Li-Ion & Toda celda de Li-Ion debe
+llevar protección de sobrecarga, sobredescarga y cortocircuito; nunca
+alimentar la Raspberry directo de la celda. \\
 Daño al equipo prestado & Aislamiento óptico entre la lógica y la etapa de
 potencia, con tierras separadas; ninguna señal de 5\,V llega a un GPIO. \\
 Golpes a personas u objetos & Freno automático ante un obstáculo también en
@@ -233,8 +239,7 @@ durante el arranque. \\
 Cables en las llantas & Ruteo fijo del cableado, sin tramos sueltos a menos
 de 1\,cm de una llanta. \\
 Acceso no autorizado por la red & Inicio de sesión obligatorio; el demonio
-de GPIO solo escucha en la interfaz local; sin acceso remoto sin contraseña
-en la imagen de entrega. \\
+de GPIO solo escucha en la interfaz local. \\
 Nivel sonoro & Volumen ajustable desde la interfaz y potencia máxima acotada
 por el divisor de entrada del amplificador. \\
 \bottomrule
@@ -244,15 +249,15 @@ por el divisor de entrada del amplificador. \\
 \subsection{Costos}
 
 La Raspberry Pi 4 y su kit los presta el curso, de modo que el costo para el
-grupo es el del modelo físico. La tabla es la estimación con que se planeó la
-compra, por bloques.
+grupo es el del modelo físico. La compra se planeó con una estimación por
+bloques:
 
 \begin{center}
 \begin{tabular}{L{6.6cm}C{3.2cm}}
 \toprule
 \textbf{Bloque} & \textbf{Estimación (USD)} \\
 \midrule
-Alimentación portátil (pack 2S, BMS, reguladores, fusible, interruptor) & 25--45 \\
+Alimentación portátil (baterías, protección y regulación) & 25--45 \\
 Circuitería y sensores (optoacopladores, servo, pasivos, placas) & 9--17 \\
 Etapa de audio (PAM8403, parlante, filtro) & 5--12 \\
 Chasis y acabado & 10--25 \\
@@ -262,25 +267,50 @@ Chasis y acabado & 10--25 \\
 \end{tabular}
 \end{center}
 
-\pendiente{sustituir la estimación por el costo real, con las facturas de la
-compra}
-
 El requerimiento que se fijó fue mantenerse dentro de ese intervalo y
 aprovechar primero lo que el grupo ya tenía: un sensor ultrasónico, un
 MPU-6050 y un driver L298N.
 
+El gasto real del grupo fue el siguiente. Las compras se hicieron en
+colones y se expresan en dólares a un tipo de cambio aproximado de 500
+colones por dólar:
+
+\begin{center}
+\begin{tabular}{L{9.4cm}C{3.2cm}}
+\toprule
+\textbf{Gasto} & \textbf{Costo (USD)} \\
+\midrule
+Dos motores y un ventilador del primer diseño, que se descartaron al
+rehacerlo & 24 \\
+Dos motores para el diseño final, los que lleva el robot & 16 \\
+Impresión 3D de las piezas del robot & 50 \\
+Aspiradora robot usada, para hacerle ingeniería inversa & 20 \\
+Optoacopladores, placas y otros componentes & 10 \\
+Otros gastos relacionados & 14 \\
+\midrule
+\textbf{Total} & \textbf{134} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+De ese total, 90 USD quedaron en el robot (motores, impresión 3D,
+circuitería y otros gastos) y 44 USD fueron costo de aprendizaje: los
+motores y el ventilador del primer diseño, que se dejaron de usar cuando el
+diseño se rehízo, y la aspiradora que se desarmó para estudiarla. La
+comparación con la estimación está en la sección~\ref{sec:costo}.
+
 \subsection{Impacto ambiental}
 
 \begin{itemize}
-  \item \textbf{Baterías.} Las celdas de Li-Ion son el componente de mayor
-        impacto. Se exige que sean recargables y desmontables, y que al final
-        de su vida se entreguen a un gestor de residuos electrónicos.
+  \item \textbf{Baterías.} Son el componente de mayor impacto. Se prefieren
+        recargables, deben poder desmontarse, y al final de su vida se
+        entregan a un gestor de residuos electrónicos.
   \item \textbf{Residuos electrónicos.} El montaje debe permitir reutilizar
         los módulos: conectores desconectables y nada pegado de forma
         permanente a la Raspberry Pi, que se devuelve al curso.
-  \item \textbf{Consumo.} Menos consumo es más autonomía con el mismo pack y
-        menos ciclos de carga: se prefieren reguladores conmutados y
-        amplificación clase D.
+  \item \textbf{Consumo.} Menos consumo es más autonomía con las mismas
+        baterías: se prefiere amplificación clase D y un sistema operativo
+        sin servicios de más.
   \item \textbf{Compras.} Reutilizar el inventario del grupo antes que
         comprar componentes nuevos.
 \end{itemize}
@@ -375,18 +405,30 @@ del tiempo antes de chocar (sección~\ref{sec:creativo}).
 \textbf{Soc.} & \textbf{Total} \\
 \midrule
 Una celda (1S) con elevador a 5\,V & 2 & 4 & 4 & 2 & 2.80 \\
-\textbf{Pack 2S con BMS y reductores} & 5 & 3 & 3 & 5 & \textbf{4.20} \\
-Powerbank USB y batería aparte para motores & 3 & 3 & 2 & 4 & 3.05 \\
+Pack 2S de Li-Ion con BMS y reductores & 3 & 3 & 4 & 3 & 3.15 \\
+\textbf{Power bank USB y baterías de 9\,V para los motores} & 4 & 4 & 2 & 5 &
+\textbf{3.90} \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
 Con una celda, entregar 15\,W a 5\,V pide cerca de 4.5\,A de entrada, y más
 de 5\,A con la celda descargada: los elevadores MT3608 y XL6009 no lo
-sostienen, y una caída de tensión corrompe la microSD. El powerbank resuelve
-la lógica pero obliga a un segundo pack para los motores y deja de ser una
-sola fuente regulada por separado. Con 2S, un reductor trabaja con holgura en
-todo el rango de descarga (6.0--8.4\,V) y los motores se alimentan directo.
+sostienen, y una caída de tensión corrompe la microSD.
+
+El pack 2S alimenta todo desde una sola fuente y es recargable, pero obliga
+al grupo a armar y ajustar el BMS, el fusible y dos reductores antes de
+conectar un equipo prestado. Además, los reductores comunes no son aislados:
+con los dos rieles colgando del mismo pack, las tierras de la lógica y de los
+motores quedan unidas por el retorno, que es justo lo que el enunciado pide
+evitar.
+
+El power bank entrega 5\,V ya regulados y trae de fábrica la protección de su
+celda. Con las baterías de los motores aparte, los dos dominios no comparten
+ningún conductor y la separación de tierras viene dada por la propia fuente.
+Las baterías de 9\,V se consiguen en cualquier comercio. Su debilidad es
+ambiental y de autonomía: son alcalinas desechables y de poca capacidad, y
+por eso esa alternativa tiene la nota ambiental más baja.
 
 \subsection{Salida de audio}
 
@@ -438,7 +480,7 @@ dinámica de la velocidad, que además habilita el tiempo antes de chocar.
 \textbf{Decisión} & \textbf{Elegida} & \textbf{Alternativas y motivo} \\
 \midrule
 \endhead
-Aislamiento & Cinco PC817 & El DRV8871 acepta 3.3\,V pero comparte tierra:
+Aislamiento & Cuatro PC817 & El DRV8871 acepta 3.3\,V pero comparte tierra:
 no aísla y se descartó. El ADuM1401 aísla cuatro canales en un chip, pero es
 más caro y difícil de conseguir. \\
 Acceso a GPIO & \id{pigpio} & \id{libgpiod} y WiringPi no generan PWM ni
@@ -450,8 +492,10 @@ Decodificador MP3 & \id{mpg123} & GStreamer trae decenas de MB de plugins
 para el mismo resultado. \\
 Imagen base & \id{core-image-minimal} & \id{core-image-base} y
 \id{full-cmdline} arrastran utilidades y servicios que el robot no usa. \\
-Chasis & Circular & El rectangular es más fácil de cortar, pero se traba en
-las esquinas al girar; el circular rota sobre su eje sin barrer área extra. \\
+Chasis & Circular, impreso en 3D & El rectangular aprovecha mejor el
+espacio, pero se traba en las esquinas al girar; el circular rota sobre su
+eje sin barrer área extra. La impresión 3D permite integrar los apoyos de
+cada componente y el cierre a presión en la misma pieza. \\
 Algoritmo de cobertura & Aleatorio con rebote & Espiral y zig-zag dependen
 de una odometría precisa; el rebote tolera el error acumulado y saca partido
 de las siete direcciones del radar. \\
@@ -463,45 +507,37 @@ de las siete direcciones del radar. \\
 
 \subsection{Arquitectura de hardware}
 
-Un pack 2S alimenta dos rieles regulados por separado. Las cinco señales que
-cruzan del dominio lógico al de potencia ---las cuatro entradas del puente H
-y la del servo--- lo hacen por optoacopladores, y las dos tierras no se
-tocan en ningún punto.
+Dos fuentes independientes alimentan los dos dominios: un power bank USB, la
+Raspberry Pi y todo lo que trabaja a 5\,V; dos baterías alcalinas de 9\,V en
+paralelo, el puente H y los motores. Las cuatro señales que cruzan del
+dominio lógico al de potencia ---las entradas del puente H--- lo hacen por
+optoacopladores, y las dos tierras no se tocan en ningún punto.
 
 \begin{figure}[h]
 \centering
 \resizebox{\linewidth}{!}{%
 \begin{tikzpicture}
-  \node[blkn] (bat)  at (0,0)       {Pack 2S 18650\\7.4\,V};
-  \node[blkn] (bms)  at (3.1,0)     {BMS 2S\\fusible 5\,A};
-
-  \node[blkl] (buck) at (6.5,1.7)   {Buck MP2307\\5\,V / 3\,A};
+  \node[blkl] (pb)   at (6.5,1.7)   {Power bank USB\\5\,V};
   \node[blkl] (pi)   at (10.0,1.7)  {Raspberry Pi 4\\\texttt{robot-image}};
-  \node[blkl] (per)  at (14.0,1.7)  {HC-SR04 $\cdot$ MPU-6050\\4 LEDs $\cdot$ PAM8403};
+  \node[blkl] (per)  at (14.3,1.7)  {Servo $\cdot$ HC-SR04 $\cdot$ MPU-6050\\4 LEDs $\cdot$ PAM8403};
 
-  \node[blkn] (opto) at (10.0,0)    {5 $\times$ PC817};
+  \node[blkn] (opto) at (10.0,0)    {4 $\times$ PC817};
 
+  \node[blkp] (bat)  at (6.5,-1.7)  {2 baterías de 9\,V\\en paralelo};
   \node[blkp] (l298) at (10.0,-1.7) {L298N\\(\texttt{ENA}/\texttt{ENB} con jumper)};
-  \node[blkp] (mot)  at (14.0,-1.7) {2 motores DC};
-  \node[blkp] (bk2)  at (6.5,-3.4)  {Buck MP2307\\5\,V (servo)};
-  \node[blkp] (srv)  at (14.0,-3.4) {Servo del radar};
+  \node[blkp] (mot)  at (14.3,-1.7) {2 motores DC};
 
-  \draw[ln] (bat) -- (bms);
-  \draw[ln] (bms.east) -- ++(0.5,0) |- (buck.west);
-  \draw[ln] (bms.east) -- ++(0.5,0) |- (l298.west);
-  \draw[ln] (bms.east) -- ++(0.5,0) |- (bk2.west);
-  \draw[ln] (buck) -- (pi);
+  \draw[ln] (pb) -- (pi);
   \draw[ln] (pi) -- (per);
   \draw[ln,dashed] (pi) -- (opto);
   \draw[ln,dashed] (opto) -- node[right,font=\scriptsize]{\texttt{IN1}--\texttt{IN4}} (l298);
-  \draw[ln,dashed] (opto.east) -- (16.2,0) |- node[pos=0.25,right,font=\scriptsize]{pulsos} (srv.east);
+  \draw[ln] (bat) -- (l298);
   \draw[ln] (l298) -- (mot);
-  \draw[ln] (bk2) -- (srv);
 
   \begin{scope}[on background layer]
-    \node[draw=cLog,dashed,rounded corners,fit=(buck)(pi)(per),inner sep=7pt,
+    \node[draw=cLog,dashed,rounded corners,fit=(pb)(pi)(per),inner sep=7pt,
           label={[font=\scriptsize\bfseries,text=cLog]above:Dominio lógico --- GND\_LOG}] {};
-    \node[draw=cPot,dashed,rounded corners,fit=(l298)(mot)(bk2)(srv),inner sep=7pt,
+    \node[draw=cPot,dashed,rounded corners,fit=(bat)(l298)(mot),inner sep=7pt,
           label={[font=\scriptsize\bfseries,text=cPot]below:Dominio de potencia --- GND\_POT}] {};
   \end{scope}
 \end{tikzpicture}}
@@ -510,39 +546,44 @@ cruzan la barrera óptica. Los esquemas eléctricos completos están en
 \texttt{hardware-diagramas.pdf}.}
 \end{figure}
 
-\paragraph{Alimentación.} Dos celdas 18650 en serie con BMS de balanceo y un
-fusible de 5\,A. El riel lógico sale de un reductor MP2307 ajustado a 5.0\,V
-(3\,A, $\approx$ 93\,\% de eficiencia) y alimenta la Raspberry Pi por USB-C,
-el sensor, el MPU-6050, los LEDs y el amplificador: 2.0\,A típicos y 3.0\,A
-de pico. El riel de potencia lleva los 7.4\,V directo al L298N. El servo
-tiene su propio reductor de 5\,V en el dominio de potencia, porque sus picos
-de 700\,mA no caben ni en el riel lógico ni en el regulador interno del
-L298N. Autonomía estimada: 60 minutos. Detalle en
-\id{docs/hardware-alimentacion.md}.
+\paragraph{Alimentación.} Un power bank USB alimenta la Raspberry Pi por
+USB-C. Del pin de 5\,V de la Pi salen el servo, el HC-SR04, el MPU-6050 y el
+amplificador: unos 1.6\,A típicos. El dominio de potencia son dos baterías
+alcalinas de 9\,V en paralelo, conectadas directo a la entrada del L298N; el
+regulador de 5\,V del propio módulo alimenta su lógica y los pull-up de los
+optoacopladores. El L298N cae unos 2\,V, así que a los motores les llegan
+cerca de 7\,V. Detalle en \id{docs/hardware-alimentacion.md}.
 
-\paragraph{Aislamiento.} Un PC817 por señal. Resistencia de entrada de
-390\,$\Omega$, que fija 5\,mA por canal: con cuatro canales son 20\,mA, y
-junto con los LEDs y el servo el conector entrega 39\,mA de los 50\,mA que
-admite. El L298N lleva los jumpers \id{ENA} y \id{ENB} puestos y se controla
+\paragraph{Aislamiento.} Un PC817 por entrada del puente H. Resistencia de
+entrada de 390\,$\Omega$, que fija 5\,mA por canal: con cuatro canales son
+20\,mA, y junto con los LEDs el conector entrega 37\,mA de los 50\,mA que
+admite. El servo no cruza la barrera: pertenece al dominio lógico y su señal
+sale directo del GPIO 25. El L298N lleva los jumpers \id{ENA} y \id{ENB} puestos y se controla
 solo con \id{IN1}--\id{IN4}, lo que ahorra dos optoacopladores y 10\,mA.
 Detalle en \id{docs/hardware-aislamiento.md}.
 
 \paragraph{Sensado.} Un HC-SR04 sobre un servo de 180° en el borde frontal,
 con el eje 10\,cm por delante del centro. El pin \id{ECHO} entrega 5\,V y
 pasa por un divisor de 1\,k$\Omega$ y 2\,k$\Omega$ (3.33\,V) antes del GPIO.
-El MPU-6050 va entre las dos llantas, alimentado a 3.3\,V para que sus
-resistencias de pull-up nunca pongan 5\,V en el bus I2C. Detalle en
+El MPU-6050 va entre las dos llantas, en un módulo GY-521 alimentado de los
+5\,V de la Raspberry Pi: el módulo trae su propio regulador de 3.3\,V.
+Detalle en
 \id{docs/hardware-sensores.md}.
 
 \paragraph{Indicadores y audio.} Cuatro LEDs de colores distintos a 5\,mA,
 con la resistencia calculada para cada color. El audio sale por PWM en el
 GPIO 18 (overlay \id{audremap}), pasa por un filtro RC con corte en 19\,kHz y
-entra al PAM8403, alimentado del riel lógico para que el ruido de los motores
+entra al PAM8403, alimentado de los 5\,V de la Raspberry Pi para que el ruido de los motores
 no llegue al parlante.
 
-\paragraph{Modelo físico.} Chasis circular de 22--25\,cm en dos niveles, con
-la batería al centro y abajo para bajar el centro de gravedad, el eje de
-tracción ligeramente adelante del centro y una rueda loca atrás. Detalle en
+\paragraph{Modelo físico.} Carcasa circular de 215\,mm de diámetro y 45\,mm
+de alto, impresa en 3D en dos piezas que cierran a presión con cuatro
+pestañas, sin tornillos. El diámetro es el máximo que admite la cama de la
+impresora. Dos ruedas impresas de 30\,mm entran a presión en el eje de los
+motores, 12\,mm por delante del centro, y una bola de 16\,mm sirve de apoyo
+atrás; el piso queda a 8\,mm del suelo. Al frente, una campana lleva el aire
+desde una boca de 70\,$\times$\,12\,mm hasta el ventilador de succión. El
+modelo es paramétrico (CadQuery) y está en \id{modelo-3d/}; el detalle, en
 \id{docs/hardware-chasis.md}.
 
 \subsection{Arquitectura de software}
@@ -629,12 +670,11 @@ En modo manual la misma detección actúa como freno de seguridad.
         la tendencia lenta ($\tau = 1$\,s); con los motores detenidos la
         velocidad se fuerza a cero. Así el sesgo del acelerómetro no se
         acumula.
-  \item \textbf{El canal del servo no invierte.} Los cuatro canales del
-        puente H van en emisor común, que invierte la señal, y la inversión
-        se compensa en un único punto de \id{lib_motors.c}. Para el servo eso
-        no sirve: en reposo el GPIO queda en bajo, y un canal inversor le
-        entregaría un nivel alto permanente que lo llevaría contra su tope.
-        Su canal se armó en seguidor de emisor, que no invierte.
+  \item \textbf{La inversión se compensa en un solo punto.} Los cuatro
+        canales del puente H van en emisor común, que invierte la señal. La
+        inversión se compensa en un único lugar de \id{lib_motors.c}, y el
+        simulador invierte igual que la placa: si alguien quita la
+        compensación, la prueba falla.
   \item \textbf{El reposo es seguro.} Con los GPIO en bajo, las cuatro
         entradas del L298N quedan en alto por sus resistencias: con el puente
         habilitado eso es freno, no movimiento.
@@ -655,16 +695,18 @@ En modo manual la misma detección actúa como freno de seguridad.
 \toprule
 \textbf{Aspecto} & \textbf{Respuesta del diseño} \\
 \midrule
-Seguridad & BMS, fusible, dos rieles, aislamiento óptico con tierras
-separadas, divisor en \id{ECHO}, MPU-6050 a 3.3\,V, freno en reposo y freno
+Seguridad & Power bank con la protección de su celda de fábrica, dos fuentes
+independientes, aislamiento óptico con tierras separadas, divisor en
+\id{ECHO}, freno en reposo y freno
 automático en modo manual, \id{pigpiod} con \id{-l} (solo interfaz local),
 inicio de sesión obligatorio. \\
 Costo & Se reutilizó el sensor, el MPU-6050 y el L298N del grupo. El radar
 evitó comprar dos sensores; el MPU-6050 evitó los encoders; el PAM8403
 reemplazó ocho componentes discretos. \\
-Ambiental & Reguladores conmutados y amplificador clase D; módulos con
-conectores desconectables y reutilizables; celdas recargables y
-desmontables. \\
+Ambiental & Amplificador clase D; módulos con conectores desconectables y
+reutilizables; power bank recargable. Las baterías de 9\,V son alcalinas
+desechables: es el punto débil del diseño, y al agotarse se llevan a un punto
+de recolección. \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -700,10 +742,12 @@ R1 & Dos minutos en modo autónomo sobre el simulador: 18 evasiones y ningún
 choque. Prueba de campo en un área delimitada. & Cumple &
 \ruta{docs/navegacion-radar.md} \\
 R2 & Barrido completo contra el mundo simulado: los siete ángulos a menos de
-2\,cm de la distancia real, a 5 lecturas por segundo. & Cumple &
+2\,cm de la distancia real, a 5 lecturas por segundo. Un HC-SR04 sobre el
+servo y un MPU-6050. & Cumple, con desviación acordada &
 \ruta{sim/prueba_librobot.c} \\
-R3 & Avance, retroceso, giros y saturación verificados en el simulador;
-sentido de giro confirmado con el robot elevado. & Cumple &
+R3 & Avance, retroceso, giros y detención verificados en el simulador;
+sentido de giro confirmado con el robot elevado. Velocidad fija, sin PWM. &
+Cumple, con desviación acordada &
 \ruta{docs/evidencias/ejecucion-cruzada-qemu.md} \\
 R4 & Cada LED cambia de estado al ordenarlo y sigue al modo activo. & Cumple
 & \ruta{docs/evidencias/servidor-web.md} \\
@@ -739,35 +783,58 @@ R19 & Ver la sección~\ref{sec:metricas}. & Ver tabla & \ruta{docs/metricas.md} 
 \bottomrule
 \end{longtable}
 
-\pendiente{R3: confirmar el estado final de la velocidad variable; ver el
-hallazgo 3 de la sección~\ref{sec:hallazgos}}
+\paragraph{Desviaciones acordadas con el profesor.} En dos requerimientos el
+diseño se aparta de la letra del enunciado. Ambos casos se consultaron con el
+profesor.
+
+\begin{itemize}
+  \item \textbf{R3, velocidad sin PWM.} El robot avanza, retrocede, gira
+        hacia los dos lados y se detiene, que es el control diferencial que
+        se pide. Lo que no usa es PWM: los motores van a velocidad fija. Son
+        motorreductores lentos y de alto torque (30\,rpm a 6\,V y 60\,rpm
+        a 12\,V; 110 y 200\,oz-in a rotor bloqueado) que trabajan a unos
+        9\,V, lo que da la batería. Con ruedas de 30\,mm el robot avanza a
+        unos 5\,cm/s;
+        con la tensión recortada por la PWM el robot no se mueve (hallazgo 3
+        de la sección~\ref{sec:hallazgos}). Se acordó con el profesor que la
+        PWM no era necesaria.
+  \item \textbf{R2, sensores.} El robot lleva un solo sensor de proximidad,
+        un HC-SR04 que sobre el servo cubre las detecciones frontal y
+        lateral, y un MPU-6050 que aporta el giroscopio. El profesor lo
+        consideró suficiente: lo que busca es que el robot tenga dos
+        sensores.
+\end{itemize}
 
 \subsection{Validación de la seguridad}
 
 Antes de conectar la Raspberry Pi se ejecutaron, en orden, los procedimientos
-de cinco pasos de \id{docs/hardware-aislamiento.md} y
-\id{docs/hardware-alimentacion.md}. Los criterios de aceptación:
+de verificación de \id{docs/hardware-aislamiento.md} y
+\id{docs/hardware-alimentacion.md}. Todas las verificaciones pasaron:
 
 \begin{center}
-\begin{tabularx}{\linewidth}{Y L{5.6cm}}
+\begin{tabularx}{\linewidth}{Y L{4.6cm}C{1.8cm}}
 \toprule
-\textbf{Verificación} & \textbf{Criterio} \\
+\textbf{Verificación} & \textbf{Criterio} & \textbf{Resultado} \\
 \midrule
 Continuidad entre \id{GND_LOG} y \id{GND_POT}, todo desenergizado &
-Circuito abierto ($>$ 1\,M$\Omega$) \\
-Diferencia de tensión entre las dos celdas & Menor a 0.05\,V \\
-Salida del reductor de 5\,V en vacío y con 2\,A de carga &
-5.00 $\pm$ 0.10\,V y $\geq$ 4.90\,V \\
-Salida del divisor de \id{ECHO} al disparar el sensor & 3.3\,V como máximo \\
+Circuito abierto ($>$ 1\,M$\Omega$) & Pasó \\
+Continuidad entre el pin de 5\,V de la Raspberry Pi y \id{VS} del L298N &
+Circuito abierto & Pasó \\
+Salida de 5\,V del L298N, que alimenta \id{VSS} y los pull-up de los
+optoacopladores & 5 $\pm$ 0.25\,V & Pasó \\
 Entradas del L298N con los optoacopladores en reposo &
-$\approx$ 5\,V: motores frenados \\
-Salida del canal del servo con el GPIO en bajo & $\approx$ 0\,V \\
-\id{vcgencmd get_throttled} navegando con audio & \id{0x0} \\
+$\approx$ 5\,V: motores frenados & Pasó \\
+Salida del divisor de \id{ECHO} al disparar el sensor & 3.3\,V como máximo &
+Pasó \\
+Raspberry Pi navegando con audio, alimentada del power bank & Sin reinicios
+ni subtensión & Pasó \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-\pendiente{anotar los valores medidos en cada verificación}
+La separación entre los dos dominios no depende de un regulador: cada uno
+tiene su propia fuente, y las únicas señales que cruzan lo hacen por los
+optoacopladores.
 
 \subsection{Validación de la eficiencia}
 \label{sec:metricas}
@@ -796,13 +863,24 @@ el panel de control no es alcanzable y el servicio no estaría operativo en
 el sentido del enunciado. El método completo está en \id{docs/metricas.md}.
 
 \subsection{Validación del costo y del impacto}
+\label{sec:costo}
 
 \begin{itemize}
-  \item \textbf{Costo.} \pendiente{comparar el costo real con la estimación
-        de 49--99 USD.}
+  \item \textbf{Costo.} El grupo gastó 134 USD, por encima del límite
+        superior de la estimación (99 USD). La diferencia tiene dos causas.
+        La primera es que 44 USD no terminaron en el robot: 24 de los motores
+        y el ventilador del primer diseño, que se descartaron al rehacerlo, y
+        20 de la aspiradora que se desarmó para hacerle ingeniería inversa.
+        La segunda es que la impresión 3D costó 50 USD, el doble del máximo
+        previsto para el bloque de chasis y acabado. Lo que quedó en el robot
+        suma 90 USD, dentro del intervalo estimado. La
+        lección es cerrar el diseño mecánico antes de comprar los motores y
+        cotizar la impresión antes de fijar el chasis.
   \item \textbf{Impacto ambiental.} Todos los módulos quedaron con conectores
         desconectables; la Raspberry Pi se devuelve sin soldaduras ni
-        adhesivos; el pack es recargable y desmontable.
+        adhesivos; el power bank es recargable. Las dos baterías de 9\,V
+        son alcalinas desechables, el mayor impacto del diseño final: se
+        entregan a un punto de recolección al agotarse.
 \end{itemize}
 
 \subsection{Hallazgos de la validación y acciones correctivas}
@@ -826,8 +904,9 @@ hace fallar la prueba. \\
 3 & Con PWM de 1\,kHz los motores no se movieron. & El PC817 con pull-up de
 4.7\,k$\Omega$ tarda decenas de microsegundos en apagarse; sumado a los 2\,V
 que cae el L298N, a ciclos medios el motor no alcanza su tensión de arranque.
-& \pendiente{describir la corrección aplicada: PWM a 100\,Hz, pull-up de
-1\,k$\Omega$ o velocidad fija} \\
+& Velocidad fija, sin PWM. Los motores dan 60\,rpm a 12\,V y trabajan a unos
+9\,V: con la tensión recortada no mueven el robot. Se consultó con el profesor
+y se acordó la desviación. \\
 4 & El servidor arrancaba a los 130\,s. & \id{eth0} sin cable y dos clientes
 DHCP sobre \id{wlan0} agotaban la espera de red. & Ethernet marcada como no
 requerida y un solo cliente DHCP: 17\,s. \\
@@ -837,29 +916,42 @@ pulso intermedio cada 20\,ms. \\
 6 & El \emph{build} colgaba el host al 67\,\%. & Tres compilaciones pesadas
 a la vez agotaron 7\,GB de RAM y el swap. & Dos hilos y regulación por
 presión de recursos (\id{BB_PRESSURE_MAX_MEMORY}). \\
+7 & Una Raspberry Pi dejó de funcionar durante el desarrollo. & No se
+determinó; se presume la antigüedad de la tarjeta. & Se reportó al profesor,
+quien la reemplazó, y el proyecto continuó con la nueva. \\
 \bottomrule
 \end{longtable}
 
 \subsection{Limitaciones conocidas}
 
 \begin{itemize}
-  \item El radar usa un solo sensor físico para cubrir las detecciones
-        frontal y lateral. El diseño deja libres los GPIO 22 y 10 para un
+  \item Los motores van a velocidad fija, sin PWM: el robot gira sobre su
+        eje, no en curvas de radio variable. Es una desviación acordada con
+        el profesor.
+  \item El radar usa un solo sensor de proximidad para cubrir las detecciones
+        frontal y lateral; el otro sensor del robot es el MPU-6050. También
+        es una desviación acordada. Los GPIO 22 y 10 quedaron libres para un
         segundo HC-SR04 fijo al frente.
   \item Sin encoders, la distancia recorrida depende de la calibración del
         modelo de los motores; el mapa sirve para la sesión, no como posición
         absoluta.
   \item Una lectura sin eco no significa camino libre: una pared oblicua
         desvía el pulso. El mapa no usa esas lecturas para despejar celdas.
+  \item Las baterías de 9\,V tienen poca capacidad y su tensión cae bajo la
+        corriente de los motores: la autonomía de la tracción es corta y
+        conviene tener repuestos a mano.
   \item Los requerimientos opcionales no se implementaron.
 \end{itemize}
 
 % ===========================================================================
 \section{Conclusiones}
 
-El diseño cumple los requerimientos obligatorios con un rootfs de 129\,MB y
-un modelo físico construido con el inventario del grupo y una compra acotada.
-Las decisiones que más pesaron ---radar sobre servo, pack 2S con dos rieles,
+El diseño cumple los requerimientos obligatorios, con dos desviaciones
+acordadas con el profesor (velocidad fija en vez de PWM, y un sensor de
+proximidad sobre un servo junto con un giroscopio), con un rootfs de 129\,MB
+y un modelo físico construido con el inventario del grupo y una compra
+acotada.
+Las decisiones que más pesaron ---radar sobre servo, dos fuentes independientes,
 MPU-6050 fusionado con el modelo de los motores--- se tomaron comparando
 alternativas con criterios técnicos, económicos, ambientales y sociales, y
 cada una dejó una debilidad conocida que el propio diseño atiende.
@@ -880,7 +972,7 @@ embebido se cierra en el hardware.
         \id{config.txt} y \emph{device tree overlays}.
   \item \id{pigpio}, documentación de la interfaz \id{pigpiod_if2}.
   \item Hojas de datos: Sharp PC817, STMicroelectronics L298N, InvenSense
-        MPU-6050, Diodes Inc. PAM8403, Monolithic Power MP2307, HC-SR04.
+        MPU-6050, Diodes Inc. PAM8403, HC-SR04.
   \item Repositorio del proyecto:
         \url{https://github.com/Randall-BL/EmpotradosProyecto1}.
 \end{itemize}

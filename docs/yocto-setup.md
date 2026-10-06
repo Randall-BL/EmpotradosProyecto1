@@ -27,7 +27,7 @@ Requisitos de recursos, medidos en el build de referencia:
 |---|---|---|
 | Espacio en disco | 100 GB | 150 GB (con `rm_work` activo) |
 | RAM | 8 GB | 16 GB |
-| Tiempo del primer build | ~3 h | menos con más núcleos |
+| Tiempo del primer build | más de 5 h | menos con más núcleos |
 
 > **La RAM es el límite real, no el disco.** En el host del grupo (4 núcleos, 7 GB) un
 > build con `BB_NUMBER_THREADS = "3"` agotó los 4 GB de swap y colgó la máquina al 67 %
@@ -405,4 +405,4 @@ El build de referencia usó el kernel **6.6.63-v8**.
 - [x] Capas y ramas compatibles definidas (`scarthgap`)
 - [x] `local.conf` del proyecto versionado como `local.conf.sample`
 - [x] Procedimiento de build, grabado y verificación documentado
-- [ ] Imagen construida y arrancada en la Raspberry Pi 4 — **pendiente: requiere el kit**
+- [x] Imagen construida y arrancada en la Raspberry Pi 4 — [`evidencias/ejecucion-target.md`](evidencias/ejecucion-target.md)

@@ -1,0 +1,112 @@
+CARCASA TIPO ROOMBA - DOS PIEZAS + TRES RUEDAS, SIN TORNILLOS
+=============================================================
+
+ARCHIVOS PARA IMPRIMIR (todos vienen en la orientación en que se imprimen, sin soportes)
+  carcasa_inferior.stl        Pieza de abajo (piso sobre la cama).                          1 vez
+  carcasa_inferior_succion.stl  OTRA VERSIÓN de la pieza de abajo, hecha para aspirar mejor
+                              (ver "VERSIÓN DE SUCCIÓN"). Se imprime una de las dos, no ambas.
+  boquilla_succion.stl        Boquilla que va debajo de la versión de succión.              1 vez
+  carcasa_superior.stl        Pieza de arriba (ya volteada: tapa sobre la cama).            1 vez
+  rueda_motriz_x2.stl         Rueda motriz de 30 mm con cubo para eje en D de 3 mm.         2 veces
+  rueda_apoyo_aro.stl         Aro que sujeta la bola de la tercera rueda.                   1 vez
+  rueda_apoyo_bola_16mm.stl   Bola de 16 mm. Mejor usar una canica de 16 mm: rueda más
+                              suave que una bola impresa.                                   1 vez (opcional)
+
+OTROS ARCHIVOS
+  *.step               Las mismas piezas para editar en un programa CAD.
+  carcasa_roomba.py    Modelo paramétrico (CadQuery). Cambiando los valores del inicio se regenera todo.
+  vistas/              Imágenes del diseño.
+
+MEDIDAS
+  Diámetro exterior 215 mm. Altura de la carcasa 45 mm; con ruedas queda a 53 mm del suelo.
+  El piso queda a 8 mm del suelo.
+  Hecha para una cama de 249 x 219 x 269 mm: las dos piezas grandes miden 215 x 215 mm,
+  así que sobran 2 mm por lado en Y. Imprimir centrado y sin falda ni borde (skirt/brim) ancho.
+  Pieza inferior: 18 mm de alto.  Pieza superior: 43 mm de alto.
+
+PESO (PLA, impreso macizo)
+  Carcasa inferior 114 g, carcasa superior 125 g, dos ruedas 9 g, aro 4 g.  Total impreso: unos 250 g.
+  Espesores: piso 2.0 mm, tapa 1.6 mm, paredes 1.6 mm.
+  Robot completo estimado: 580 a 630 g (con Raspberry Pi, placa, ventilador, motores y una batería de ~150 g).
+
+MATERIAL DE CADA PIEZA
+  Carcasa superior    PETG. Las 4 pestañas de clic se doblan cada vez que se abre; el PLA se quiebra antes.
+  Carcasa inferior    PETG (o PLA si no hay PETG). El PETG aguanta mejor el calor de la Raspberry Pi.
+  Ruedas motrices     PETG. El cubo entra a presión en el eje y el PLA puede rajarse.
+  Aro de la bola      PETG. Los dos pines partidos tienen que flexionar.
+  Bola                Canica de vidrio. Si se imprime, PLA: es el más duro y el que menos roza.
+  ABS                 Solo con impresora cerrada: una pieza de 215 mm se despega y se tuerce al aire libre.
+                      Es el más liviano (todo impreso pesaría unos 210 g en vez de 250 g).
+  TPU (flex)          No para estas piezas: son rígidas o tienen encajes a presión. Solo serviría
+                      para una llanta sobre la rueda motriz, en lugar de la liga.
+
+COMPROBACIÓN CONTRA EL MOTOR (AD12672: 30 rpm a 6 V, 60 rpm a 12 V; par a rotor bloqueado 110 / 200 oz-in)
+  Fuerza que hace falta para mover el robot      unos 2 N en total (rodadura, roce de la bola, rampas pequeñas).
+  Fuerza que puede dar cada rueda de 30 mm       52 N a 6 V, 94 N a 12 V.
+  El motor trabaja a un 2 % de su par máximo: el peso no es problema, sobra fuerza.
+  Lo que sí limita:
+    - Velocidad: 4.7 cm/s a 6 V y 9.4 cm/s a 12 V. Es un motor lento; una rueda más grande lo hace más rápido.
+    - Agarre: la rueda de plástico lisa patina. Lleva un canal en V para ponerle una liga o un O-ring.
+
+POR QUÉ LA RUEDA ES DE 30 mm Y NO DE 15 mm
+  El motor mide 10 mm de alto. Apoyado sobre el piso de la carcasa, su eje queda a 7 mm de la cara de abajo.
+  Una rueda de 15 mm (radio 7.5) dejaría la carcasa a 0.5 mm del suelo: rozaría. Con 30 mm queda a 8 mm.
+  Para otro diámetro, cambiar WHEEL_D en carcasa_roomba.py: la ranura, la bola y la altura se ajustan solas.
+
+CÓMO SE CIERRA Y SE ABRE
+  La pieza superior baja por fuera de la pared de la inferior y se apoya en el borde del piso.
+  Tiene 4 pestañas flexibles con un botón por dentro; al empujar la tapa, los 4 botones hacen clic
+  en 4 agujeros de la pared inferior. Solo entra en una posición: la guía interna de la tapa va en la
+  ranura del frente. Para abrir: sujetar el borde del piso por las dos muescas laterales y jalar la tapa.
+
+DÓNDE VA CADA COSA (ver vistas/vista_1_distribucion.png)
+  Motores           No tienen soporte: se colocan sobre el piso, junto a la ranura de cada rueda,
+                    con el eje apuntando hacia afuera y centrado en la ranura.
+                    El motor izquierdo queda debajo de la placa perforada.
+  Ruedas motrices   Entran a presión en el eje en D del motor, con el cubo hacia el motor.
+                    Poner una liga o un O-ring en el canal.
+  Rueda de apoyo    Atrás. La bola se mete por debajo en el asiento cónico del piso y se tapa con el aro,
+                    que entra a presión con sus dos pines. El aro se quita jalándolo.
+  Placa perforada   Lado izquierdo, a lo largo. Se apoya en 4 esquinas, a 11 mm del piso
+                    (elevada para que el motor izquierdo pase por debajo).
+  Raspberry Pi 4    Lado derecho, a lo largo, sobre 4 espigas que entran en los agujeros de la placa.
+                    Tarjeta SD hacia atrás, USB y Ethernet hacia el frente, USB-C hacia la derecha,
+                    pines GPIO hacia la placa perforada.
+  Ventilador        Marco al frente, sobre el agujero de entrada de aire. Entra a presión, soplando hacia arriba.
+  Botón             Agujero de 16.2 mm en la tapa, al frente a la izquierda (en el centro no cabe:
+                    debajo quedan la placa y la Raspberry Pi).
+  Salida de aire    Rejilla en la tapa, encima del ventilador.
+  Batería           Sin lugar asignado. Ponerla atrás (sobre la placa o junto a la rueda de apoyo) para que
+                    el peso quede entre las ruedas motrices y la bola; si queda adelante, el robot cabecea.
+
+VERSIÓN DE SUCCIÓN (carcasa_inferior_succion.stl + boquilla_succion.stl; imágenes vistas/succion_*.png)
+  Usa la misma pieza superior, las mismas ruedas y la misma bola. Cambia solo la zona del ventilador:
+  Boca de succión    Ranura de 70 x 12 mm en el piso, al frente (antes: un agujero redondo de 28 mm).
+  Campana            Sobre la boca hay una campana de 72 x 29 mm que se va cerrando hasta el ventilador,
+                     22 mm más arriba. El aire entra por todo el ancho de la boca y llega recogido al ventilador.
+                     Detrás de la boca queda un piso con un reborde de 4 mm donde se asienta el polvo pesado.
+  Ventilador         Va encima de la campana, en el mismo marco a presión, soplando hacia arriba.
+                     Queda a 7 mm de la rejilla de la tapa.
+  Boquilla           Pieza aparte que entra a presión por debajo, con dos pines. Baja la entrada de aire
+                     de 8 mm a 2 mm del suelo, que es donde está el polvo. El frente queda 2 mm más alto
+                     para que la basura pueda entrar. Sin la boquilla la succión en el suelo es mucho menor.
+  Raspberry Pi       Va 4 mm más atrás que en la otra versión, para que los cables USB no topen con la campana.
+  Filtro (opcional)  Se puede poner una malla fina debajo del ventilador, apretada por el mismo ventilador,
+                     para que el polvo no pase por las aspas. Con este ventilador la malla quita bastante caudal.
+  Peso               La pieza inferior pasa de 114 g a 124 g; la boquilla pesa 4 g.
+  Límite real        El ventilador AD32862 es un cooler de 30 mm (5 V, 0.16 A). Esta versión le da la mejor
+                     entrada de aire posible, pero levanta polvo liviano y pelusa, no migas ni arena.
+                     Para aspirar más hace falta un ventilador tipo turbina (blower).
+
+AJUSTES SI ALGO QUEDA FLOJO O APRETADO (valores al inicio de carcasa_roomba.py)
+  Rueda floja o no entra en el eje   BORE_FIT.
+  Pines del aro flojos o apretados   PIN_D.
+  Cierre muy duro o muy flojo        BUMP_OUT y TAB_L.
+  Tapa no entra en la inferior       FIT.
+
+SUPUESTOS QUE HAY QUE CONFIRMAR CON LAS PIEZAS EN MANO
+  - Eje del motor: 3 mm en D (2.5 mm sobre el plano) y 10 mm de largo.
+  - Alto del motor: 10 mm. Si el motor queda más alto o más bajo que apoyado en el piso,
+    la carcasa queda inclinada; se corrige cambiando WHEEL_D.
+  - Diámetro de la canica: 16 mm (las hay de 14 a 17 mm). Menos de 15 mm se sale por el aro.
+  - Diámetro del botón (16 mm).

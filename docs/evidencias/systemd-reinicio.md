@@ -1,7 +1,7 @@
 # Evidencia — Arranque automático y recuperación ante fallo (issue #12)
 
-El servidor debe arrancar solo y **reiniciarse si el proceso muere**. Como sin
-la Raspberry no se puede probar en el target, se valida en la laptop con el
+El servidor debe arrancar solo y **reiniciarse si el proceso muere**. La prueba de
+matar el proceso se hizo en la laptop, con el
 servidor corriendo sobre el simulador (`sim/`) y una unidad de usuario systemd
 que usa **las mismas directivas de recuperación** que la unidad real
 `meta-robot/recipes-robot/robot-server/files/robot-server.service`:

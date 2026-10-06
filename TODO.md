@@ -17,11 +17,11 @@
 
 ## 0. Arranque del proyecto
 
-- [ ] Definir roles del grupo (navegación / audio / web+red / Yocto+integración)
-- [ ] Crear cronograma con hitos hasta el 6 de octubre de 2026
+- [x] Definir roles del grupo (navegación / audio / web+red / Yocto+integración)
+- [x] Crear cronograma con hitos hasta el 6 de octubre de 2026
 - [ ] Inventariar el kit entregado por el profesor (Raspberry Pi 4, sensores, motores, etc.)
-- [ ] Definir la arquitectura general del sistema (HW + SW) antes de escribir código
-- [ ] Acordar convenciones de código (estilo, nombres, estructura de carpetas)
+- [x] Definir la arquitectura general del sistema (HW + SW) antes de escribir código
+- [x] Acordar convenciones de código (estilo, nombres, estructura de carpetas)
 
 ---
 
@@ -41,30 +41,30 @@
 ## 2. Hardware — modelo físico y circuitería
 
 ### 2.1 Modelo físico
-- [ ] Diseñar el chasis (circular o rectangular) — se evalúa funcionalidad **y estética**
-- [ ] Montar 2 motores DC con sus llantas + rueda loca de apoyo
-- [ ] Montar el radar: HC-SR04 sobre el servo de 180° en el borde frontal, eje a 10 cm del centro — `docs/hardware-chasis.md`
-- [ ] Montar el MPU-6050 plano y firme entre las dos llantas, con X hacia el frente
-- [ ] Montar los 4 LEDs indicadores en posición visible
-- [ ] Montar el parlante y el amplificador PAM8403 con su filtro RC — `docs/hardware-sensores.md`
-- [ ] Montar la fuente de alimentación portátil a bordo
+- [x] Diseñar el chasis (circular o rectangular) — se evalúa funcionalidad **y estética** — carcasa circular de 215 mm impresa en 3D, `modelo-3d/` y `docs/hardware-chasis.md`
+- [x] Montar 2 motores DC con sus llantas + rueda loca de apoyo — ruedas impresas de 30 mm y bola de 16 mm
+- [x] Montar el radar: HC-SR04 sobre el servo de 180° — `docs/hardware-sensores.md`
+- [x] Montar el MPU-6050 plano y firme, con X hacia el frente
+- [x] Montar los 4 LEDs indicadores en posición visible
+- [x] Montar el parlante y el amplificador PAM8403 con su filtro RC — `docs/hardware-sensores.md`
+- [x] Montar la fuente de alimentación portátil a bordo
 - [ ] Asegurar el cableado (ruteo limpio, sin cables sueltos que estorben el movimiento)
 
 ### 2.2 Seguridad eléctrica — **LECTURA OBLIGATORIA DEL ENUNCIADO**
 
 > El incumplimiento puede dañar permanentemente el equipo prestado por el curso; la responsabilidad es del grupo.
 
-- [ ] **Aislamiento galvánico u óptico obligatorio** entre la lógica (3.3 V) y la etapa de potencia
-  - [ ] Optoacopladores (PC817 / 4N25) en las señales PWM, **o**
+- [x] **Aislamiento galvánico u óptico obligatorio** entre la lógica (3.3 V) y la etapa de potencia
+  - [x] Optoacopladores (PC817 / 4N25) en las señales PWM, **o**
   - [ ] Driver con aislamiento integrado (L298N con optos adicionales, DRV8871) — **verificar** que la entrada opere a 3.3/5 V y que la potencia tenga alimentación independiente
-- [ ] **Tierras separadas**: GND de lógica y GND de potencia unidas únicamente a través del aislador
-- [ ] Batería Li-Ion 18650 (1S o 2S) o LiPo de modelo RC
-- [ ] **Módulo BMS** de protección (sobredescarga / sobrecarga / cortocircuito) — verificar si el pack ya lo incluye
-- [ ] Regulador **buck-boost** DC-DC a 5 V con ≥ 3 A para la Raspberry Pi (XL6009/MT3608 elevador; MP2307/LM2596 reductor)
-- [ ] **Dos rieles de alimentación independientes**: lógica (Pi, sensores, LEDs, audio) y potencia (motores), regulados por separado
-- [ ] Servo del radar en el riel de potencia con su propio buck de 5 V, y su señal por un 5.º PC817 en seguidor de emisor (no invierte) — `docs/hardware-aislamiento.md`
-- [ ] Probar cada riel con multímetro **antes** de conectar la Raspberry Pi
-- [ ] Documentar el diagrama eléctrico completo (para el README y el documento DI)
+- [x] **Tierras separadas**: GND de lógica y GND de potencia unidas únicamente a través del aislador
+- [x] Fuente portátil: power bank USB para la Raspberry Pi y dos baterías alcalinas de 9 V en paralelo para los motores — `docs/hardware-alimentacion.md`
+- [x] **Protección de la celda de Li-Ion** (sobredescarga / sobrecarga / cortocircuito) — la trae integrada el power bank; las alcalinas no llevan BMS
+- [x] 5 V regulados para la Raspberry Pi — los entrega el power bank por USB-C
+- [x] **Dos rieles de alimentación independientes**: lógica (Pi, servo, sensores, LEDs, audio) desde el power bank y potencia (motores) desde las baterías de 9 V
+- [x] Servo del radar alimentado de los 5 V de la Raspberry Pi, con la señal directa del GPIO 25 — `docs/hardware-aislamiento.md`
+- [x] Probar cada riel con multímetro **antes** de conectar la Raspberry Pi — todas las verificaciones pasaron (sección 5.3 del DI)
+- [x] Documentar el diagrama eléctrico completo (para el README y el documento DI) — `documentación/hardware-diagramas.pdf`
 
 ---
 
@@ -73,9 +73,9 @@
 - [x] Preparar el host de desarrollo (Ubuntu/Debian) con las dependencias de Yocto — documentado en `docs/yocto-setup.md` y ejecutado (la imagen se construyó)
 - [x] Clonar Poky + `meta-raspberrypi` + `meta-openembedded` (rama `scarthgap`) — clonadas y en uso en el build
 - [x] Configurar `local.conf` con `MACHINE = "raspberrypi4-64"` — versionado como `meta-robot/conf/local.conf.sample`
-- [~] Construir la imagen base y arrancarla exitosamente en la Raspberry Pi 4 — **imagen construida** (`.wic.bz2`, rootfs 129 MB); arrancarla en la Pi **requiere el kit**
+- [x] Construir la imagen base y arrancarla exitosamente en la Raspberry Pi 4 — imagen construida (rootfs 129 MB) y arrancada en la Pi: `docs/evidencias/ejecucion-target.md`
 - [x] Generar el **Toolchain-SDK** para desarrollo cruzado ARM (`bitbake -c populate_sdk`) — instalador de 264 MB generado en `tmp/deploy/sdk`; documentado en `docs/sdk.md`
-- [~] Verificar que **todo** el software se compila en el host y se ejecuta en el target — **compilación cruzada verificada**; ejecución en el target pendiente del kit
+- [x] Verificar que **todo** el software se compila en el host y se ejecuta en el target — compilación cruzada y ejecución en la Pi verificadas: `docs/evidencias/`
 - [x] Incluir **únicamente** los paquetes estrictamente necesarios (servidor web, bibliotecas de audio, decodificador MP3, GPIO)
 - [x] Documentar y **justificar cada paquete** agregado más allá de la imagen mínima base — `docs/paquetes.md`
 
@@ -90,7 +90,7 @@
 - [~] **Validar la reproducibilidad desde cero**: `bitbake <imagen>` produce la imagen — reproduce la imagen sin pasos manuales; falta validarla en una **máquina limpia**
 - [x] **(EVID)** Commitear el directorio `meta-robot/` con la receta y el `layer.conf`
 - [x] **(EVID)** Guardar el fragmento de `log.do_compile` que confirme la compilación cruzada exitosa — en `docs/evidencias/`
-- [ ] **(EVID)** Capturas de pantalla o salida de terminal del binario ejecutándose en el target
+- [x] **(EVID)** Capturas de pantalla o salida de terminal del binario ejecutándose en el target — `docs/evidencias/ejecucion-target.md`
 
 ---
 
@@ -99,7 +99,7 @@
 - [x] Definir la API pública de la biblioteca (header + versionado)
 - [x] Configurar el build con **CMake o Autotools** y compilación cruzada ARM
 - [x] Generar el **paquete estándar de código abierto** correspondiente
-- [~] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`); L298N siempre habilitado (jumpers `ENA`/`ENB`) y la inversión del PC817 compensada. **Por ahora a velocidad fija**: la PWM de 1 kHz por el PC817 no movió los motores (`MOTOR_VELOCIDAD_VARIABLE` en `lib_motors.h`)
+- [x] Implementar el módulo de **motores (PWM)**: avance, retroceso, giro izquierda/derecha, detención, velocidad por motor — con control diferencial (`motores_set`); L298N siempre habilitado (jumpers `ENA`/`ENB`) y la inversión del PC817 compensada. **A velocidad fija, sin PWM**: desviación acordada con el profesor (`MOTOR_VELOCIDAD_VARIABLE` en 0, en `lib_motors.h`; ver `docs/hardware-aislamiento.md`)
 - [x] Implementar el módulo de **sensores de proximidad (GPIO)**: lectura en tiempo real — radar con servo en `lib_radar` + `lib_servo`
 - [x] Implementar el módulo del **MPU-6050 (I2C)**: aceleración de avance y giro, con calibración — `lib_imu`
 - [x] Implementar el módulo de **LEDs (GPIO)**: control de los 4 indicadores
@@ -116,11 +116,11 @@
 - [~] Implementar el **modo autónomo** con al menos un algoritmo de cobertura reactiva — reactivo con rebote implementado y probado en el simulador; falta **prueba de campo**
 - [x] Comportamiento ante obstáculo: **detenerse → retroceder → cambiar de dirección** automáticamente
 - [x] Detección **frontal y lateral**: radar con un HC-SR04 sobre un servo de 180°, 7 direcciones (mont. físico en §2)
-- [ ] ⚠️ Confirmar con el profesor que el radar cumple "**al menos dos sensores**"; si no, un 2.º HC-SR04 fijo al frente en GPIO 22/10
+- [x] Confirmado con el profesor: el radar y el MPU-6050 bastan para "**al menos dos sensores**" (desviación acordada); no se monta un 2.º HC-SR04
 - [x] Lectura y procesamiento de sensores **en tiempo real** — ~10 lecturas/s, frente cada ~0.6 s; `docs/navegacion-radar.md`
 - [x] **Velocidad con el MPU-6050** y **tiempo antes de chocar**, actualizado en cada lectura frontal y proyectado entre lecturas — probado en el simulador
 - [x] Evasión: retroceder, barrido completo y giro en lazo cerrado hacia el lado más libre — 2 min en el simulador, 14 evasiones y ningún choque
-- [~] **Control diferencial** de los 2 motores DC vía PWM (giros con radio variable) — `motores_set` / `motores_curva` implementados y probados en el simulador; en el robot, pendiente de recuperar la PWM (probar 100 Hz o pull-up de 1 kΩ). Mientras tanto gira sobre su eje, una llanta adelante y la otra atrás
+- [x] **Control diferencial** de los 2 motores DC vía PWM (giros con radio variable) — `motores_set` / `motores_curva` implementados y probados en el simulador; en el robot la velocidad es fija, sin PWM, por desviación acordada con el profesor: gira sobre su eje, una llanta adelante y la otra atrás
 - [ ] Calibrar velocidades, umbrales (distancia y tiempo de choque), pulsos del servo y montaje del MPU — `docs/odometria.md`
 - [x] **4 LEDs indicadores**: (1) modo autónomo activo, (2) modo manual activo, (3) alerta de obstáculo detectado, (4) sistema encendido — control en código
 - [x] Implementar la **odometría** (insumo necesario para el mapa) — `lib_odom` con MPU-6050 + modelo de motores: 5 % de error de posición y 0.4° de rumbo en el simulador; **calibrar en campo**
@@ -146,7 +146,7 @@
 
 ## 7. Control remoto — servidor web / app móvil — (OBL)
 
-- [~] Levantar el servidor web sobre WiFi/Bluetooth, accesible desde celular o PC — servidor probado por HTTP sobre el simulador (`docs/evidencias/servidor-web.md`); el acceso por **WiFi desde el celular** usa la red de la Pi
+- [x] Levantar el servidor web sobre WiFi/Bluetooth, accesible desde celular o PC — activo en la Raspberry Pi 4, puerto 8080: `docs/evidencias/ejecucion-target.md`
 - [x] **Pantalla de login** con al menos un usuario registrado y un protocolo de seguridad mínimo — SHA-256 + sesiones
 - [x] Conmutación **modo autónomo ↔ modo manual**
 - [x] En modo manual, los controles direccionales comandan directamente los motores
@@ -177,14 +177,14 @@
 ## 8. Eficiencia de recursos — (OBL) (EVID)
 
 - [x] Medir el **tamaño del sistema de archivos raíz (rootfs)** — **129 MB** sobre la imagen construida
-- [ ] Medir el **tiempo de arranque** desde el reset hasta que el servicio de control queda operativo
+- [~] Medir el **tiempo de arranque** desde el reset hasta que el servicio de control queda operativo — 17 s medidos el 17 de setiembre; falta repetirlo sobre la imagen final
 - [ ] Medir el **uso de memoria RAM** en operación normal
 - [ ] Medir el **uso de CPU** en operación normal
 - [ ] Escenario de medición: navegación autónoma + audio + servidor web **simultáneos**
 - [ ] Justificar cualquier desviación del presupuesto de referencia:
   - [x] rootfs ≤ **200 MB** — 129 MB, dentro del presupuesto
   - [ ] tiempo de arranque ≤ **15 s**
-- [ ] Documentar las herramientas y el método de medición usados en cada caso (`systemd-analyze`, `du`, `free`, `top`/`htop`, `perf`, lectura directa de `/proc`)
+- [x] Documentar las herramientas y el método de medición usados en cada caso (`systemd-analyze`, `du`, `free`, `top`/`htop`, `perf`, lectura directa de `/proc`) — `docs/metricas.md`
 - [ ] Incluir la tabla de métricas final en el README
 
 ---
@@ -200,31 +200,31 @@
 ## 10. Documentación de atributos profesionales — 10%
 
 ### 10.1 Documento de Diseño (DI) — 5%
-- [ ] **DI1** — Identificación de necesidades y requerimientos del problema complejo de ingeniería, considerando aspectos técnicos, salud y seguridad pública, costos, impacto ambiental y recursos disponibles
-- [ ] **DI2** — Valoración de alternativas de solución que cumplan las necesidades, considerando múltiples factores (técnicos, económicos, ambientales, sociales)
-- [ ] **DI3** — Diseño creativo de la alternativa seleccionada, considerando todos los aspectos mencionados
-- [ ] **DI4** — Validación del diseño final de acuerdo con los requerimientos y las consideraciones de seguridad, costo e impacto
+- [x] **DI1** — Identificación de necesidades y requerimientos del problema complejo de ingeniería, considerando aspectos técnicos, salud y seguridad pública, costos, impacto ambiental y recursos disponibles
+- [x] **DI2** — Valoración de alternativas de solución que cumplan las necesidades, considerando múltiples factores (técnicos, económicos, ambientales, sociales)
+- [x] **DI3** — Diseño creativo de la alternativa seleccionada, considerando todos los aspectos mencionados
+- [~] **DI4** — Validación del diseño final de acuerdo con los requerimientos y las consideraciones de seguridad, costo e impacto — falta la RAM y la CPU en la tabla de eficiencia
 
 ### 10.2 Documento de Aprendizaje Continuo (AC) — 5%
-- [ ] **AC1** — Identificación de necesidades de aprendizaje (conocimientos, habilidades, destrezas o actitudes) en el contexto del proyecto y del cambio tecnológico
-- [ ] **AC2** — Identificación de tecnologías nuevas y emergentes que contribuyeron con el aprendizaje durante el desarrollo
-- [ ] **AC3** — Implementación de acciones o estrategias concretas (uso de nuevas tecnologías, organización del tiempo, búsqueda bibliográfica) para solventar las necesidades de aprendizaje
-- [ ] **AC4** — Evaluación crítica de la eficacia de las estrategias implementadas
+- [x] **AC1** — Identificación de necesidades de aprendizaje (conocimientos, habilidades, destrezas o actitudes) en el contexto del proyecto y del cambio tecnológico
+- [x] **AC2** — Identificación de tecnologías nuevas y emergentes que contribuyeron con el aprendizaje durante el desarrollo
+- [x] **AC3** — Implementación de acciones o estrategias concretas (uso de nuevas tecnologías, organización del tiempo, búsqueda bibliográfica) para solventar las necesidades de aprendizaje
+- [x] **AC4** — Evaluación crítica de la eficacia de las estrategias implementadas
 
 ---
 
 ## 11. README y documentación — 10%
 
-- [ ] Instrucciones de **instalación**
-- [ ] Instrucciones de **compilación** con la toolchain
-- [ ] Instrucciones de **generación de la imagen Yocto**, incluyendo la receta `.bb` propia y cómo agregar la capa `meta-robot/`
-- [ ] **Configuración y uso** del sistema (login, modos, audio, mapa)
-- [ ] **Diagrama de arquitectura de hardware**
-- [ ] **Diagrama de arquitectura de software**
-- [ ] **Documentación de la API** de la biblioteca dinámica
-- [ ] **Evidencias** de la compilación cruzada automatizada (fragmento del log de Yocto + ejecución en el target)
-- [ ] **Reporte de métricas** de eficiencia de recursos y herramientas utilizadas para medirlas
-- [ ] Resultados más relevantes del proyecto con **evidencias de ejecución** (fotos, videos, capturas)
+- [x] Instrucciones de **instalación**
+- [x] Instrucciones de **compilación** con la toolchain
+- [x] Instrucciones de **generación de la imagen Yocto**, incluyendo la receta `.bb` propia y cómo agregar la capa `meta-robot/`
+- [x] **Configuración y uso** del sistema (login, modos, audio, mapa)
+- [x] **Diagrama de arquitectura de hardware**
+- [x] **Diagrama de arquitectura de software**
+- [x] **Documentación de la API** de la biblioteca dinámica
+- [x] **Evidencias** de la compilación cruzada automatizada (fragmento del log de Yocto + ejecución en el target)
+- [~] **Reporte de métricas** de eficiencia de recursos y herramientas utilizadas para medirlas — faltan la RAM y la CPU
+- [~] Resultados más relevantes del proyecto con **evidencias de ejecución** (fotos, videos, capturas) — faltan las fotos y el video del robot
 - [x] Lista de todo paquete agregado sobre la imagen base + **justificación de cada uno** — `docs/paquetes.md`
 
 ---
@@ -248,7 +248,7 @@
 
 - [ ] `bitbake <imagen>` reproduce la imagen desde cero, sin pasos manuales — **verificado en una máquina limpia**
 - [ ] Todos los requerimientos obligatorios implementados y probados en el target
-- [ ] `meta-robot/`, `log.do_compile` y las capturas del target están commiteados
+- [x] `meta-robot/`, `log.do_compile` y las capturas del target están commiteados
 - [ ] README completo con diagramas, API y métricas
 - [ ] Documentos DI y AC finalizados y subidos al repositorio
 - [ ] Historial Git limpio, con Conventional Commits, ramas e issues cerrados
