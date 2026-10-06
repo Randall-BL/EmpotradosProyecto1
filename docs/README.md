@@ -20,9 +20,9 @@
 |---|---|
 | `hardware-pinout.md` | Mapa de pines GPIO — **referencia única del cableado** |
 | `hardware-aislamiento.md` | Etapa de potencia, optoacopladores y separación de tierras |
-| `hardware-alimentacion.md` | Batería, BMS y los dos rieles regulados |
+| `hardware-alimentacion.md` | Power bank para la lógica y baterías de 9 V para los motores |
 | `hardware-sensores.md` | Radar (HC-SR04 sobre servo de 180°), MPU-6050, LEDs, audio con PAM8403 y diagrama del dominio lógico |
-| `hardware-chasis.md` | Diseño del modelo físico, tracción y montaje |
+| `hardware-chasis.md` | Carcasa impresa en 3D, tracción, succión y distribución interna |
 
 > Antes de energizar cualquier cosa, leer `hardware-aislamiento.md` y
 > `hardware-sensores.md`. Ambos contienen procedimientos que, si se saltan, destruyen
