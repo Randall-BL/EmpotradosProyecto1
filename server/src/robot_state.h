@@ -2,8 +2,7 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * Archivo derivado del proyecto Proyecto1_RobotYocto---Sistemas-Empotrados,
- * MIT License - Copyright (c) 2026 Javier Tenorio Cervantes. Ver NOTICE.md.
+
  */
 
 #ifndef ROBOT_STATE_H

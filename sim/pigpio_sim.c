@@ -2,7 +2,6 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * MIT License. Ver LICENSE y NOTICE.md.
  */
 
 #include "pigpiod_if2.h"

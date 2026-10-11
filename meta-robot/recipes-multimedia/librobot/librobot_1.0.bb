@@ -16,7 +16,6 @@ odometria, los cuatro LEDs indicadores y la reproduccion de MP3."
 SECTION = "libs"
 HOMEPAGE = "https://github.com/Randall-BL/EmpotradosProyecto1"
 
-# El proyecto se distribuye bajo MIT (ver LICENSE y NOTICE.md en la raiz).
 # Si este checksum falla tras editar LICENSE, recalcularlo con: md5sum LICENSE
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"

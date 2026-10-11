@@ -185,7 +185,6 @@ Cómo navega, cómo estima la velocidad y cómo construye el mapa:
 ├── modelo-3d/              Carcasa impresa en 3D: modelo paramétrico (CadQuery), STL, STEP y vistas
 ├── documentación/          Documentos DI y AC, y diagramas de hardware (LaTeX y PDF)
 ├── CONTRIBUTING.md         Flujo de trabajo Git y convenciones de código
-├── NOTICE.md               Atribución de software de terceros
 └── TODO.md                 Desglose completo de requerimientos del enunciado
 ```
 
@@ -858,7 +857,3 @@ tocar el código de `lib/`. Ver [`sim/README.md`](sim/README.md) y
 El repositorio usa ramas `main` y `develop` con ramas de trabajo por funcionalidad,
 Conventional Commits, Pull Requests e issues agrupados en hitos. Las convenciones están
 en [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
-El proyecto se distribuye bajo licencia MIT: ver [`LICENSE`](LICENSE). Parte de la capa
-y del código deriva de un proyecto de referencia con la misma licencia; la atribución y
-las licencias del software de terceros están en [`NOTICE.md`](NOTICE.md).
