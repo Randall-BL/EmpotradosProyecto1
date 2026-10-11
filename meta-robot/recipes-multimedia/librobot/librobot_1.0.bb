@@ -18,7 +18,7 @@ HOMEPAGE = "https://github.com/Randall-BL/EmpotradosProyecto1"
 
 # Si este checksum falla tras editar LICENSE, recalcularlo con: md5sum LICENSE
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=6b4015c4e5d69df853a3874986fba2e7"
 
 # lib/ y LICENSE estan tres niveles arriba de esta receta, en la raiz del repo.
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../lib:${THISDIR}/../../..:"

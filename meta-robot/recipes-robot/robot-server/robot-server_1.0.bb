@@ -26,7 +26,7 @@ LICENSE = "MIT"
 # absoluta, do_populate_lic falla con "LIC_FILES_CHKSUM points to an invalid
 # file". librobot no tiene el problema porque alli el LICENSE se desempaqueta
 # dentro de S (subdir=lib).
-LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=71d3accc05fafe1f2c137677ec5d1600"
+LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=6b4015c4e5d69df853a3874986fba2e7"
 
 # server/, audio/ y LICENSE estan en la raiz del repositorio, tres niveles arriba.
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../server:${THISDIR}/../../..:"
