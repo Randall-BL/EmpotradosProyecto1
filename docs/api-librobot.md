@@ -315,4 +315,4 @@ int main(void) {
 ```
 
 > Esta referencia se enlaza desde el README. La prueba `sim/prueba_librobot`
-> ejercita cada módulo de esta API contra un robot simulado (47/47).
+> ejercita cada módulo de esta API contra un robot simulado (49/49).

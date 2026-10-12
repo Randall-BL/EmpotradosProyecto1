@@ -191,8 +191,6 @@ systemctl kill -s SIGKILL robot-server
 sleep 30
 systemctl is-active robot-server             # active
 systemctl show robot-server -p MainPID -p NRestarts   # otro PID, NRestarts=1
-
-journalctl -b -u robot-server -o short-monotonic | grep -E 'radar|Escaneo|escuchando'
 ```
 
 Terminal 2, en el host, mientras QEMU corre:
@@ -228,10 +226,6 @@ Salga de QEMU con `Ctrl-a x`.
 **Falla si** el servicio no está activo al arrancar, si no vuelve tras el `SIGKILL`
 o si algún código HTTP difiere. Si runqemu reporta el puerto 8080 ocupado, usa el
 siguiente libre y lo imprime al arrancar: ajuste `URL`.
-
-**Anotar.** Los tiempos de la última orden del bloque de la VM. La diferencia entre
-la línea `[radar]` y la línea `[audio] Escaneo` es lo que cuesta escanear la playlist
-antes de abrir el puerto (ver F6, punto 4).
 
 ## F5. SDK y binario ARM bajo `qemu-aarch64`
 
@@ -270,7 +264,11 @@ bajo emulación: si falla una de ±15 %, repita la corrida y anote ambas.
 ## F6. Raspberry Pi 4
 
 **Objetivo.** Lo único que ninguna simulación cubre: la imagen real, en el hardware
-real. Es también lo que pide [`PENDIENTES.md`](../PENDIENTES.md).
+real. Ya hay evidencia del arranque en el target y de las métricas con el robot
+armado, del 5 y 6 de octubre
+([`docs/evidencias/ejecucion-target.md`](../docs/evidencias/ejecucion-target.md) y
+[`docs/metricas.md`](../docs/metricas.md)); esta prueba la repite sobre la imagen de
+`main` y agrega lo que falta.
 
 Antes de construir la imagen para esta prueba, cree el archivo de credenciales WiFi
 (sección 6 de `docs/yocto-setup.md`) y reconstruya `wifi-config` y `robot-image`.
@@ -312,31 +310,19 @@ systemctl show robot-server -p MainPID -p NRestarts   # otro PID, NRestarts=1
 Desde el host: `curl -s -o /dev/null -w '%{http_code}\n' http://<ip-del-robot>:8080/`
 debe imprimir `200`.
 
-**4. Tiempo hasta abrir el puerto.** La prueba 03 midió que el servidor escanea la
-playlist antes de escuchar, y que la pista de 5,6 MB de `audio/canciones/` se lleva
-casi todo ese tiempo. `PENDIENTES.md` registra el servidor escuchando a los 24,7 s.
-Mida cuánto de eso es el escaneo:
-
-```bash
-journalctl -b -u robot-server -o short-monotonic | grep -E 'radar|Escaneo|escuchando'
-ls -la /opt/robot/audio/canciones/
-```
-
-La diferencia entre la línea `[radar]` y la línea `[audio] Escaneo` es el costo del
-escaneo en el target.
-
-**5. Métricas.** Con el robot **en el piso y con espacio libre**, recién arrancado y
-sin reiniciar el servicio. El script lo pone en modo autónomo: se va a mover.
+**4. Métricas.** Ya están medidas: 129 MB de rootfs, 19.2 s de arranque, 97 MB de RAM
+y 3.6 % de CPU, el 5 de octubre. Repetirlas confirma que la imagen de `main` no las
+cambió. Con el robot **en el piso y con espacio libre**, recién arrancado y sin
+reiniciar el servicio; el script lo pone en modo autónomo y se va a mover.
 
 ```bash
 ./scripts/medir-metricas.sh <ip-del-robot>
 ```
 
-Pegue la tabla que imprime en `docs/metricas.md` y en el registro de la prueba.
-`PENDIENTES.md` advierte que el script no se ha probado contra el robot: si falla,
-los comandos de la sección *Método* de `docs/metricas.md` se pueden correr a mano.
+Compare la tabla que imprime con la de `docs/metricas.md` y pegue ambas en el registro
+de la prueba.
 
-**6. Funcionamiento con los periféricos conectados.** Desde el navegador, en
+**5. Funcionamiento con los periféricos conectados.** Desde el navegador, en
 `http://<ip-del-robot>:8080`, con `user1` / `password1`:
 
 | Verificación | Esperado |
@@ -361,9 +347,6 @@ fila de la tabla no se cumple. Registre cada fila con lo observado, no con lo es
 Cosas que dejaron las pruebas 01 a 05 y que nadie ha resuelto. No bloquean la prueba
 final, pero conviene tenerlas a la vista al ejecutarla:
 
-- `sim/README.md` dice 47 comprobaciones; `prueba_librobot` ejecuta 49.
 - Aviso `-Wmisleading-indentation` en `lib/lib_audio.c:826`.
-- El escaneo de la playlist ocurre antes de abrir el puerto HTTP y crece con el tamaño
-  de las pistas.
 - `robot_state.h` está duplicado en `lib/` y `server/src/`.
 - `sim/prueba_api.sh` imprime los códigos HTTP pero no los compara contra lo esperado.

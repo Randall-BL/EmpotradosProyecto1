@@ -165,7 +165,7 @@ Cómo navega, cómo estima la velocidad y cómo construye el mapa:
 │   ├── src/                  Código del servidor (API REST, autenticación, estado)
 │   └── www/                  Interfaz web estática (login + dashboard)
 ├── audio/                  Recursos de audio
-│   ├── notify_*.mp3          Sonidos de los 4 eventos del sistema
+│   ├── notify_*.mp3          Sonidos de los 5 eventos del sistema
 │   ├── canciones/            Playlist versionada, de dominio público
 │   └── music/                Música propia (no se versiona, ver audio/README.md)
 ├── meta-robot/             Capa Yocto propia del proyecto
@@ -182,9 +182,11 @@ Cómo navega, cómo estima la velocidad y cómo construye el mapa:
 ├── sim/                    Simulador de hardware: prueba librobot y el servidor sin la Raspberry
 ├── scripts/                Grabado de la microSD, medición de métricas, generación de la playlist
 ├── docs/                   Documentación técnica y evidencias
+├── pruebas/                Registros de las pruebas ejecutadas y plan de la prueba final
 ├── modelo-3d/              Carcasa impresa en 3D: modelo paramétrico (CadQuery), STL, STEP y vistas
 ├── documentación/          Documentos DI y AC, y diagramas de hardware (LaTeX y PDF)
 ├── CONTRIBUTING.md         Flujo de trabajo Git y convenciones de código
+├── LICENSE                 Licencia MIT
 └── TODO.md                 Desglose completo de requerimientos del enunciado
 ```
 
@@ -693,7 +695,7 @@ bash: ./hola_sdk: no se puede ejecutar fichero binario: Formato de ejecutable in
 El programa de prueba de la biblioteca, compilado con el SDK y ejecutado bajo
 `qemu-aarch64`. Extracto de
 [`ejecucion-cruzada-qemu.md`](docs/evidencias/ejecucion-cruzada-qemu.md), capturado
-cuando la prueba tenía 18 comprobaciones; hoy son 47:
+cuando la prueba tenía 18 comprobaciones; hoy son 49:
 
 ```
 $ qemu-aarch64 -L $SDKTARGETSYSROOT ./prueba_librobot_arm
@@ -720,7 +722,7 @@ habilitado y activo desde la receta: [`docs/qemu.md`](docs/qemu.md).
 ### 9.4 Ejecución en la Raspberry Pi 4
 
 Salida completa en [`ejecucion-target.md`](docs/evidencias/ejecucion-target.md),
-capturada el 5 de octubre de 2026:
+capturada el 6 de octubre de 2026:
 
 ```
 $ uname -a
@@ -729,14 +731,14 @@ Linux raspberrypi4-64 6.6.63-v8 #1 SMP PREEMPT Fri Dec  6 10:10:05 UTC 2024 aarc
 $ systemctl status robot-server
 ● robot-server.service - Servidor de control del robot aspiradora
      Loaded: loaded (/usr/lib/systemd/system/robot-server.service; enabled; preset: enabled)
-     Active: active (running) since Mon 2026-10-05 22:30:23 UTC; 25min ago
+     Active: active (running) since Tue 2026-10-06 03:10:27 UTC; 15min ago
 
 $ ls -l /usr/lib/librobot.so*
 lrwxrwxrwx    1 root     root            17 Mar  9  2018 /usr/lib/librobot.so.1 -> librobot.so.1.0.0
 -rwxr-xr-x    1 root     root         67528 Mar  9  2018 /usr/lib/librobot.so.1.0.0
 
 $ journalctl -u robot-server -b -o short-monotonic | grep -m1 "Servidor escuchando"
-[   24.703636] raspberrypi4-64 robot-server[270]: [server] Servidor escuchando en puerto 8080
+[   19.388400] raspberrypi4-64 robot-server[273]: [server] Servidor escuchando en puerto 8080
 
 $ which gcc make cmake; echo $?
 1
@@ -776,7 +778,8 @@ margen de sobra en la Raspberry Pi 4.
 
 | Resultado | Evidencia |
 |---|---|
-| La prueba de la biblioteca pasa sus 49 comprobaciones, compilada para ARM bajo `qemu-aarch64` | [`sim/README.md`](sim/README.md), [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
+| La prueba de la biblioteca pasa sus 49 comprobaciones sobre el simulador | [`pruebas/02-librobot-simulador.md`](pruebas/02-librobot-simulador.md), [`sim/README.md`](sim/README.md) |
+| Compilada para ARM y ejecutada bajo `qemu-aarch64`, pasó las 47 comprobaciones que tenía entonces | [`docs/evidencias/ejecucion-cruzada-qemu.md`](docs/evidencias/ejecucion-cruzada-qemu.md), [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | Dos minutos en modo autónomo sobre el simulador: 18 evasiones y ningún choque | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | El radar mide los siete ángulos a menos de 2 cm de la distancia real | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | Odometría con MPU-6050: 5 % de error de posición y 0.4° de rumbo en un recorrido en L | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
@@ -784,11 +787,12 @@ margen de sobra en la Raspberry Pi 4.
 | Ciclo de limpieza: con una meta de 12 s el robot se detuvo a los 12.5 s y sonó el aviso; pedir modo autónomo empezó otro | [`docs/opcionales.md`](docs/opcionales.md) |
 | Playlist: se guardó en disco, sobrevivió a un reinicio del servidor y se reprodujo en orden y en bucle | [`docs/opcionales.md`](docs/opcionales.md) |
 | El mapa crece en tiempo real: de 79 a 85 celdas visitadas en 6 s | [`docs/evidencias/servidor-web.md`](docs/evidencias/servidor-web.md) |
-| La autenticación rechaza credenciales inválidas y protege los endpoints (HTTP 401) | [`docs/evidencias/servidor-web.md`](docs/evidencias/servidor-web.md) |
-| Tras un `kill -9`, `systemd` reinicia el servidor solo: PID nuevo y `NRestarts=1` | [`docs/evidencias/systemd-reinicio.md`](docs/evidencias/systemd-reinicio.md) |
+| La autenticación rechaza credenciales inválidas y protege los endpoints (HTTP 401) | [`docs/evidencias/servidor-web.md`](docs/evidencias/servidor-web.md), [`pruebas/03-api-servidor-simulador.md`](pruebas/03-api-servidor-simulador.md) |
+| Tras un `kill -9`, `systemd` reinicia el servidor solo: PID nuevo, `NRestarts=1` y vuelve a responder HTTP 200 | [`docs/evidencias/systemd-reinicio.md`](docs/evidencias/systemd-reinicio.md), [`pruebas/04-reinicio-systemd.md`](pruebas/04-reinicio-systemd.md) |
+| Las recetas compilan e instalan por CMake fuera de BitBake, y el servidor instalado responde | [`pruebas/05-compilacion-cmake-recetas.md`](pruebas/05-compilacion-cmake-recetas.md) |
 | La imagen completa arranca en QEMU y levanta el servicio sola | [`docs/qemu.md`](docs/qemu.md#resultado-de-la-primera-prueba-11-de-setiembre-de-2026) |
 | El Toolchain-SDK se genera, se instala y compila para ARM | [`docs/evidencias/sdk-prueba.md`](docs/evidencias/sdk-prueba.md) |
-| El arranque del servidor en la Raspberry Pi 4 bajó de 130 s a 17 s | Commit `5890dbb`, [`docs/metricas.md`](docs/metricas.md) |
+| El arranque del servidor en la Raspberry Pi 4 bajó de 130 s a 19.2 s | Commit `5890dbb`, [`docs/metricas.md`](docs/metricas.md#justificación-de-la-desviación-en-el-arranque) |
 
 ### Modelo físico
 
@@ -822,6 +826,11 @@ El simulador reemplaza a `pigpiod` por un robot virtual en una sala de 4 × 4 m,
 tocar el código de `lib/`. Ver [`sim/README.md`](sim/README.md) y
 [`docs/qemu.md`](docs/qemu.md).
 
+Los registros de la última corrida de las pruebas sobre el simulador, del 11 de octubre
+de 2026 y con su salida completa, están en [`pruebas/`](pruebas/). Lo que queda por
+ejecutar con Yocto y con el robot está en
+[`pruebas/FINAL_TEST.md`](pruebas/FINAL_TEST.md).
+
 ---
 
 ## 13. Documentación
@@ -848,6 +857,7 @@ tocar el código de `lib/`. Ver [`sim/README.md`](sim/README.md) y
 | [`docs/hardware-chasis.md`](docs/hardware-chasis.md) | Carcasa impresa en 3D, tracción, succión y distribución interna |
 | [`modelo-3d/`](modelo-3d/) | Modelo paramétrico de la carcasa, piezas para imprimir y vistas |
 | [`docs/evidencias/`](docs/evidencias/) | Logs de compilación cruzada y evidencias de ejecución |
+| [`pruebas/`](pruebas/) | Registro de cada prueba ejecutada, con su salida, y el plan de la prueba final |
 | [`meta-robot/README.md`](meta-robot/README.md) | Contenido de la capa Yocto y cómo agregarla al build |
 
 ---
@@ -857,3 +867,5 @@ tocar el código de `lib/`. Ver [`sim/README.md`](sim/README.md) y
 El repositorio usa ramas `main` y `develop` con ramas de trabajo por funcionalidad,
 Conventional Commits, Pull Requests e issues agrupados en hitos. Las convenciones están
 en [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+El proyecto se distribuye bajo licencia MIT: ver [`LICENSE`](LICENSE).

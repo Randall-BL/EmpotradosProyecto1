@@ -18,8 +18,8 @@ mkdir -p "$SIM/run" && ( cd "$SIM/run" && ln -sfn ../../server/www www && ln -sf
 ( cd "$SIM/run" && "$SIM/robot-server-sim" > srv.log 2>&1 ) & SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
 # Espera a que el servidor abra el puerto en vez de dormir un tiempo fijo:
-# antes de escuchar, el servidor calibra el MPU y lib_audio_init() escanea la
-# playlist, y con una pista larga eso pasa de los 3 s.
+# antes de escuchar, el servidor calibra el MPU y lee las pistas de audio, y
+# sobre un disco lento (p. ej. /mnt/c en WSL) eso pasa de los 3 s.
 i=0
 until curl -s -o /dev/null $URL/; do
     i=$((i + 1))

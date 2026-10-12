@@ -107,7 +107,7 @@
 - [x] Manejo de errores y liberación segura de los recursos GPIO (init/cleanup)
 - [x] **Verificar que el servidor web use exclusivamente esta biblioteca** para tocar hardware — se eliminó `robot_hardware.c`; `readelf` confirma que el servidor ya no enlaza pigpio
 - [x] Documentar la API completa (para el README) — `docs/api-librobot.md`
-- [x] Programa de prueba independiente que ejercite cada función de la biblioteca — `sim/prueba_librobot`, 47/47 comprobaciones
+- [x] Programa de prueba independiente que ejercite cada función de la biblioteca — `sim/prueba_librobot`, 49/49 comprobaciones
 
 ---
 
@@ -177,15 +177,15 @@
 ## 8. Eficiencia de recursos — (OBL) (EVID)
 
 - [x] Medir el **tamaño del sistema de archivos raíz (rootfs)** — **129 MB** sobre la imagen construida
-- [~] Medir el **tiempo de arranque** desde el reset hasta que el servicio de control queda operativo — 17 s medidos el 17 de setiembre; falta repetirlo sobre la imagen final
-- [ ] Medir el **uso de memoria RAM** en operación normal
-- [ ] Medir el **uso de CPU** en operación normal
-- [ ] Escenario de medición: navegación autónoma + audio + servidor web **simultáneos**
-- [ ] Justificar cualquier desviación del presupuesto de referencia:
+- [x] Medir el **tiempo de arranque** desde el reset hasta que el servicio de control queda operativo — **19.2 s** sobre la imagen final, el 5 de octubre
+- [x] Medir el **uso de memoria RAM** en operación normal — **97 MB** de 1845 MB
+- [x] Medir el **uso de CPU** en operación normal — **3.6 %** de los 4 núcleos
+- [x] Escenario de medición: navegación autónoma + audio + servidor web **simultáneos** — `scripts/medir-metricas.sh`
+- [x] Justificar cualquier desviación del presupuesto de referencia:
   - [x] rootfs ≤ **200 MB** — 129 MB, dentro del presupuesto
-  - [ ] tiempo de arranque ≤ **15 s**
+  - [x] tiempo de arranque ≤ **15 s** — excede en 4.2 s; justificado en `docs/metricas.md`
 - [x] Documentar las herramientas y el método de medición usados en cada caso (`systemd-analyze`, `du`, `free`, `top`/`htop`, `perf`, lectura directa de `/proc`) — `docs/metricas.md`
-- [ ] Incluir la tabla de métricas final en el README
+- [x] Incluir la tabla de métricas final en el README — sección 10
 
 ---
 
