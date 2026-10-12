@@ -54,9 +54,10 @@ El journal de esa corrida muestra además un aviso sobre la unidad de prueba:
 Dos defectos del script de prueba, ninguno del servidor:
 
 1. **Esperas fijas.** Consultaba el servidor 3 s después de arrancarlo y 5 s después
-   de matarlo. Aquí el servidor tarda 3,6 s en abrir el puerto, y tras el fallo hay
-   que sumar los 2 s de `RestartSec`. El veredicto solo comparaba los PID, así que
-   decía `OK` aunque el servidor no hubiera respondido.
+   de matarlo. Aquí el servidor tardó 3,6 s en abrir el puerto, porque antes escanea
+   la playlist (medición en la prueba 03), y tras el fallo hay que sumar los 2 s de
+   `RestartSec`. El veredicto solo comparaba los PID, así que decía `OK` aunque el
+   servidor no hubiera respondido.
 2. **Limitador de arranques mal ubicado.** La unidad de prueba ponía
    `StartLimitIntervalSec` en `[Service]`, donde `systemd` la ignora. La unidad real,
    `meta-robot/recipes-robot/robot-server/files/robot-server.service`, la tiene bien
