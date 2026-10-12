@@ -38,11 +38,12 @@ completo (`construir_servidor.sh` + `prueba_api.sh`), ver
 [`../docs/qemu.md`](../docs/qemu.md) y
 [`../docs/evidencias/`](../docs/evidencias/).
 
-## Qué comprueba `prueba_librobot` (issue #19) — 47 comprobaciones
+## Qué comprueba `prueba_librobot` (issue #19) — 49 comprobaciones
 
 | Módulo | Verificación |
 |---|---|
 | Arranque | `robot_init()` abre la sesión, el MPU-6050 contesta en el bus I2C |
+| Sensores de desnivel | sobre el piso ningún sensor marca desnivel; en el centro de la sala hay piso |
 | MPU-6050 | la calibración quita el sesgo de fábrica del sensor simulado (0.02 g y 1.5 °/s); el eje vertical mide 1 g; la odometría lo usa |
 | Radar | completa un barrido; cada uno de los 7 ángulos mide lo que hay en el mundo en esa dirección; las distancias de la fachada son los ángulos 90/180/0; `radar_rayo()` proyecta el eco frontal sobre la pared |
 | Servo | pulsos de 1000 µs a 45°, saturación en 500 y 2500 µs, estimación del tiempo de viaje |
