@@ -28,24 +28,33 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Raiz del repositorio: el primer argumento, o la carpeta actual.
 RAIZ = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+# Las dos recetas que piden el LICENSE.
 RECETAS = [
     "meta-robot/recipes-multimedia/librobot/librobot_1.0.bb",
     "meta-robot/recipes-robot/robot-server/robot-server_1.0.bb",
 ]
+# Problemas encontrados; el codigo de salida depende de este contador.
 fallos = 0
 
 
 def asignaciones(texto, nombre):
     """Valores de todas las asignaciones NOMBRE[:override] = "..." (multilinea)."""
+    # Busca NOMBRE, con overrides opcionales, seguido de un operador de
+    # asignacion y de un valor entre comillas que puede ocupar varias
+    # lineas.
     patron = re.compile(
         r'^(' + re.escape(nombre) + r'(?::[\w:${}-]+)?)\s*(?::=|\?=|\+=|=)\s*"((?:[^"\\]|\\.|\\\n)*)"',
         re.M,
     )
+    # Devuelve pares (clave, valor), con las continuaciones de linea
+    # convertidas en espacios.
     return [(m.group(1), m.group(2).replace("\\\n", " ")) for m in patron.finditer(texto)]
 
 
 for rel in RECETAS:
+    # Receta, su texto, su carpeta (THISDIR) y su nombre y version.
     receta = RAIZ / rel
     texto = receta.read_text(encoding="utf-8")
     thisdir = receta.parent
@@ -60,20 +69,26 @@ for rel in RECETAS:
                 busqueda.append(Path(p.replace("${THISDIR}", str(thisdir))).resolve())
     busqueda += [thisdir / f"{pn}-{pv}", thisdir / pn, thisdir / "files"]
 
+    # WORKDIR temporal de esta receta.
     workdir = Path(tempfile.mkdtemp(prefix=f"workdir-{pn}-"))
+    # Entradas file:// vistas, y cuantas no se encontraron.
     total = faltan = 0
     for clave, valor in asignaciones(texto, "SRC_URI"):
         for uri in valor.split():
+            # Solo interesan los archivos locales.
             if not uri.startswith("file://"):
                 continue
+            # Ruta del archivo y parametros, como subdir=.
             ruta, *params = uri[len("file://"):].split(";")
             subdir = next((p.split("=", 1)[1] for p in params if p.startswith("subdir=")), "")
             total += 1
+            # Primera carpeta de busqueda donde existe.
             origen = next((d / ruta for d in busqueda if (d / ruta).exists()), None)
             if origen is None:
                 faltan += 1
                 print(f"  FALTA  {uri}   ({clave})")
                 continue
+            # Se copia al WORKDIR, dentro de subdir si la entrada lo indica.
             destino = workdir / subdir / ruta
             destino.parent.mkdir(parents=True, exist_ok=True)
             if origen.is_dir():
@@ -89,21 +104,26 @@ for rel in RECETAS:
     print(f"  S = {s.replace(str(workdir), '${WORKDIR}')}  ->  CMakeLists.txt {'presente' if cmakelists.is_file() else 'AUSENTE'}")
     fallos += 0 if cmakelists.is_file() else 1
 
+    # Entrada de LIC_FILES_CHKSUM: ruta del archivo y md5 esperado.
     chk = dict(asignaciones(texto, "LIC_FILES_CHKSUM"))["LIC_FILES_CHKSUM"].strip()
     ruta, *params = chk[len("file://"):].split(";")
     esperado = next(p.split("=", 1)[1] for p in params if p.startswith("md5="))
     ruta = ruta.replace("${WORKDIR}", str(workdir))
+    # Una ruta relativa se busca en S; una absoluta, tal cual.
     lic = Path(ruta) if Path(ruta).is_absolute() else Path(s) / ruta
     if not lic.is_file():
         print(f"  FALLO  LIC_FILES_CHKSUM apunta a un archivo que no existe: {lic}")
         fallos += 1
     else:
+        # md5 real del archivo desempaquetado.
         real = hashlib.md5(lic.read_bytes()).hexdigest()
         ok = real == esperado
         print(f"  LIC_FILES_CHKSUM: declarado {esperado}")
         print(f"                    calculado {real}  ->  {'COINCIDE' if ok else 'NO COINCIDE'}")
         fallos += 0 if ok else 1
+    # Borra el WORKDIR temporal.
     shutil.rmtree(workdir, ignore_errors=True)
 
+# Resumen y codigo de salida.
 print(f"\nRESULTADO: {'OK' if fallos == 0 else 'FALLO'} ({fallos} problemas)")
 sys.exit(1 if fallos else 0)

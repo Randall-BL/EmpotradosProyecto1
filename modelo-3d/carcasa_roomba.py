@@ -10,11 +10,16 @@ Requiere CadQuery (pip install cadquery).  Uso:  python carcasa_roomba.py
 Ejes: X = izquierda/derecha, Y = atrás(-)/frente(+), Z = arriba.  Z = 0 es la cara de abajo del piso.
 Todas las medidas en mm.
 """
+# Rutas de salida.
 import os
+# Argumentos: la opción --preview.
 import sys
+# Constantes y raíz cuadrada para la geometría.
 from math import pi, sqrt
+# CadQuery: modelado de sólidos por código.
 import cadquery as cq
 
+# Carpeta donde se escriben los STL y los STEP: la de este archivo.
 OUT = os.path.dirname(os.path.abspath(__file__))
 
 # ===================== PARÁMETROS =====================
@@ -105,10 +110,14 @@ MOUTH_Y0 = MOUTH_Y1 - MOUTH_DEPTH
 MOUTH_YC = (MOUTH_Y0 + MOUTH_Y1) / 2
 
 
+# Borde de la tarjeta SD de la Raspberry Pi; en la variante de succión va
+# más atrás.
 def rpi_y_sd(succion):
     return RPI_Y_SD + (RPI_SHIFT_SUCCION if succion else 0.0)
 
 
+# Centros de los 4 agujeros de montaje de la Raspberry Pi: un rectángulo
+# de 58 x 49 mm, a 3,5 mm de los bordes.
 def rpi_holes(succion):
     return [(RPI_X_PORTS - v, rpi_y_sd(succion) + u) for u in (3.5, 61.5) for v in (3.5, 52.5)]
 BUMP_R = 2.4                                 # radio de la base del botón de clic
@@ -117,10 +126,12 @@ CONE_K = BALL_D / 2 * sqrt(2)                # cono a 45° tangente a la bola: r
 SLOT_X0, SLOT_X1 = MOTOR_X + 1.0, MOTOR_X + SHAFT_L + 2.0   # ranura de cada rueda motriz
 
 
+# Caja alineada con los ejes, dada por sus dos esquinas opuestas.
 def box(x0, x1, y0, y1, z0, z1):
     return cq.Workplane("XY").box(x1 - x0, y1 - y0, z1 - z0, centered=False).translate((x0, y0, z0))
 
 
+# Cilindro vertical de radio r, centrado en (x, y), de z0 a z1.
 def cyl(x, y, z0, z1, r):
     return cq.Workplane("XY").circle(r).extrude(z1 - z0).translate((x, y, z0))
 
@@ -138,15 +149,23 @@ def revolucion(puntos):
 # ===================== PIEZA INFERIOR =====================
 def _tronco(w0, d0, w1, d1, h):
     """Tronco de pirámide: rectángulo w0 x d0 abajo, w1 x d1 arriba (corrido hacia el ventilador)."""
+    # Centro de la campana en Y.
     yb = (HOOD_Y0 + HOOD_Y1) / 2
+    # Une con una superficie reglada el rectángulo de abajo y el de arriba,
+    # que queda centrado sobre el ventilador.
     t = cq.Workplane("XY").rect(w0, d0).workplane(offset=h).center(0, FAN_Y - yb).rect(w1, d1).loft(combine=True)
     return t.translate((0, yb, FLOOR))
 
 
+# Pieza inferior: el piso con todo lo que sostiene. Con succion=True agrega
+# la campana y la boca de aspiración.
 def pieza_inferior(succion=False):
     # piso + pared interna (la pieza superior baja por fuera de esta pared y se apoya en el borde del piso)
+    # Disco del piso, con el borde de abajo biselado.
     p = cq.Workplane("XY").circle(R).extrude(FLOOR)
     p = p.edges("<Z").chamfer(1.0)
+    # Anillo de la pared interna, con el borde de arriba biselado para guiar
+    # la tapa.
     pared = cq.Workplane("XY").circle(R_BW).circle(R_BW - BW_T).extrude(BW_TOP - FLOOR).translate((0, 0, FLOOR))
     pared = pared.faces(">Z").edges("%CIRCLE").edges(cq.selectors.RadiusNthSelector(1)).chamfer(0.6)
     p = p.union(pared)
@@ -161,7 +180,10 @@ def pieza_inferior(succion=False):
         p = p.union(cyl(sg * PIN_R_POS, CASTER_Y, FLOOR, FLOOR + PIN_H, 4.0))
 
     # ventilador: marco donde entra a presión
+    # Medio lado del ventilador, con holgura.
     a = FAN / 2 + 0.15
+    # Altura a la que apoya el ventilador: sobre el piso, o sobre la
+    # campana.
     z_fan = FLOOR + (HOOD_H if succion else 0.0)
     marco = box(-a - 1.6, a + 1.6, FAN_Y - a - 1.6, FAN_Y + a + 1.6, z_fan, z_fan + FAN_FRAME_H)
     marco = marco.cut(box(-a, a, FAN_Y - a, FAN_Y + a, z_fan, z_fan + FAN_FRAME_H + 1))
@@ -187,9 +209,11 @@ def pieza_inferior(succion=False):
                     .faces(">Z").chamfer(0.4))
 
     # placa perforada: 4 esquinas donde se apoya y queda encajada
+    # Medias dimensiones de la placa, con holgura, y altura del apoyo.
     px, py = PB_X / 2 + 0.3, PB_Y / 2 + 0.3
     z_ledge = FLOOR + PB_LEDGE_H
     cuna = None
+    # Un bloque en cada esquina; después se les resta el hueco de la placa.
     for sx in (1, -1):
         for sy in (1, -1):
             xa, xb = sorted((PB_CX + sx * (px - 6), PB_CX + sx * (px + PB_RIM)))
@@ -230,7 +254,12 @@ def pieza_inferior(succion=False):
 
 
 # ===================== PIEZA SUPERIOR =====================
+# Pieza superior: la tapa con su pared, las pestañas de cierre, la guía,
+# el agujero del botón y la rejilla del ventilador.
 def pieza_superior():
+    # Cilindro macizo de la altura de la tapa, con el borde superior
+    # biselado
+    # y vaciado por dentro.
     p = cq.Workplane("XY").circle(R).extrude(H - FLOOR).translate((0, 0, FLOOR))
     p = p.edges(">Z").chamfer(1.2)
     p = p.cut(cyl(0, 0, FLOOR - 1, H - LID, R_IN))
@@ -267,7 +296,9 @@ def pieza_superior():
 # ===================== RUEDAS =====================
 def rueda_motriz():
     """Rueda con cubo para eje en D. Se modela como se imprime: cara exterior sobre la cama, cubo hacia arriba."""
+    # Radio de la rueda.
     rw = WHEEL_D / 2
+    # Disco de la banda de rodadura, con los cantos biselados.
     w = cq.Workplane("XY").circle(rw).extrude(WHEEL_W)
     w = w.edges("%CIRCLE").chamfer(0.6)
     # canal en V para una liga o un O-ring (da agarre)
@@ -286,10 +317,14 @@ def rueda_motriz():
 
 def aro_bola():
     """Aro que sujeta la bola por debajo. Se modela como se imprime: cara de abajo sobre la cama, pines hacia arriba."""
+    # Radio de la bola.
     rb = BALL_D / 2
     r_top = rb + 0.45                                   # holgura con la bola a la altura del piso
     r_bot = sqrt(rb ** 2 - (RING_H + BALL_ZC) ** 2) + 0.37   # abertura por donde asoma la bola (menor que la bola)
+    # Perfil del aro, revolucionado alrededor del eje vertical.
     a = revolucion([(r_bot, 0), (RING_R - 1.5, 0), (RING_R, 1.5), (RING_R, RING_H), (r_top, RING_H)])
+    # Dos pines partidos: la ranura les da elasticidad para entrar a
+    # presión.
     for sg in (1, -1):
         pin = cyl(sg * PIN_R_POS, 0, RING_H - 0.1, RING_H + PIN_H, PIN_D / 2).faces(">Z").chamfer(0.5)
         pin = pin.cut(box(sg * PIN_R_POS - 0.5, sg * PIN_R_POS + 0.5, -PIN_D, PIN_D, RING_H + 1.2, RING_H + PIN_H + 1))
@@ -300,13 +335,19 @@ def aro_bola():
 def boquilla():
     """Boquilla de succión: va debajo de la boca y deja el aire entrar a NOZZLE_GAP mm del suelo.
     Se modela como se imprime: cara de abajo sobre la cama, pines hacia arriba."""
+    # Altura de la boquilla: lo que hay del piso de la carcasa al suelo,
+    # menos
+    # la separación.
     h = CLEAR - NOZZLE_GAP
     hw, hd = HOOD_HALF_W - 0.5, MOUTH_DEPTH / 2 + 0.5        # abertura
+    # Marco alrededor de la abertura, y una barra que lleva los dos pines.
     b = box(-hw - 2.4, hw + 2.4, -hd - 2.4, hd + 2.4, 0, h)
     b = b.union(box(-NOZZLE_PIN_X - 5, NOZZLE_PIN_X + 5, -5, 5, 0, h))
     b = b.edges("|Z").fillet(1.5).faces("<Z").chamfer(0.8)
+    # Abertura por donde pasa el aire.
     b = b.cut(box(-hw, hw, -hd, hd, -1, h + 1))
     b = b.cut(box(-hw + 5, hw - 5, hd - 1, hd + 4, -1, 2.0))   # el frente queda más alto para que entre la basura
+    # Dos pines partidos, iguales a los del aro.
     for sg in (1, -1):
         pin = cyl(sg * NOZZLE_PIN_X, 0, h - 0.1, h + PIN_H, PIN_D / 2).faces(">Z").chamfer(0.5)
         pin = pin.cut(box(sg * NOZZLE_PIN_X - 0.5, sg * NOZZLE_PIN_X + 0.5, -PIN_D, PIN_D, h + 1.2, h + PIN_H + 1))
@@ -317,15 +358,23 @@ def boquilla():
 def exportar_bola(path, n_lat=48, n_lon=96, plano=0.5):
     """Bola de 16 mm con un plano pequeño para que pegue a la cama (mejor usar una canica de 16 mm).
     La malla se escribe directo en STL para que quede cerrada y pareja."""
+    # struct, para escribir el STL binario; trigonometría para la esfera.
     import struct
     from math import acos, cos, sin
+    # Radio de la bola.
     rb = BALL_D / 2
     t0 = acos((rb - plano) / rb)                       # ángulo donde empieza el plano
+    # Anillos de puntos de la esfera, desde el borde del plano hasta el polo
+    # superior.
     anillos = [[(rb * sin(t) * cos(2 * pi * j / n_lon), rb * sin(t) * sin(2 * pi * j / n_lon),
                  rb - plano - rb * cos(t)) for j in range(n_lon)]
                for t in (t0 + (pi - t0) * i / n_lat for i in range(n_lat))]
+    # Centro del plano de apoyo y polo superior.
     base, polo = (0.0, 0.0, 0.0), (0.0, 0.0, 2 * rb - plano)
+    # Triángulos de la malla.
     tris = []
+    # Por cada meridiano: un triángulo del plano, dos por cada franja entre
+    # anillos y uno del polo.
     for j in range(n_lon):
         k = (j + 1) % n_lon
         tris.append((base, anillos[0][k], anillos[0][j]))
@@ -333,6 +382,8 @@ def exportar_bola(path, n_lat=48, n_lon=96, plano=0.5):
             a_, b_, c_, d_ = anillos[i][j], anillos[i][k], anillos[i + 1][k], anillos[i + 1][j]
             tris += [(a_, b_, c_), (a_, c_, d_)]
         tris.append((anillos[-1][j], anillos[-1][k], polo))
+    # STL binario: cabecera de 80 bytes, cantidad de triángulos y, por cada
+    # uno, la normal (en cero), tres vértices y dos bytes de atributo.
     with open(path, "wb") as f:
         f.write(b"bola 16 mm".ljust(80, b" ") + struct.pack("<I", len(tris)))
         for t in tris:
@@ -340,9 +391,13 @@ def exportar_bola(path, n_lat=48, n_lon=96, plano=0.5):
 
 
 # ===================== componentes de referencia (solo para verificar que todo cabe) =====================
+# Devuelve un diccionario con el volumen de cada componente en su posición
+# de montaje. Los que empiezan con pieza_ son piezas impresas.
 def componentes(succion=False):
+    # Diccionario de nombre a sólido.
     c = {}
     rueda = rueda_motriz().rotate((0, 0, 0), (0, 1, 0), -90)      # eje de la rueda sobre X, cubo hacia -X
+    # Las dos ruedas con su motor: la izquierda es el espejo de la derecha.
     for sg, n in ((1, "der"), (-1, "izq")):
         r_ = rueda.translate((MOTOR_X + 0.5 + HUB_L, 0, 0))
         if sg < 0:
@@ -351,12 +406,17 @@ def componentes(succion=False):
         xa, xb = sorted((sg * (MOTOR_X - MOTOR_L), sg * MOTOR_X))
         m = box(xa, xb, WHEEL_Y - MOTOR_W / 2, WHEEL_Y + MOTOR_W / 2, FLOOR + 0.05, FLOOR + MOTOR_H)
         c["motor_" + n] = m
+    # Bola y aro de la rueda de apoyo.
     c["pieza_bola"] = cq.Workplane("XY").sphere(BALL_D / 2).translate((0, CASTER_Y, BALL_ZC))
     c["pieza_aro"] = aro_bola().translate((0, CASTER_Y, -RING_H))
+    # Ventilador, a la altura que corresponde a la variante.
     z_fan = FLOOR + (HOOD_H if succion else 0.0)
     c["ventilador"] = box(-FAN / 2, FAN / 2, FAN_Y - FAN / 2, FAN_Y + FAN / 2, z_fan + 0.05, z_fan + FAN_T)
     if succion:
         c["pieza_boquilla"] = boquilla().translate((0, MOUTH_YC, -(CLEAR - NOZZLE_GAP)))
+    # Raspberry Pi: la placa con sus agujeros, el bloque de USB y Ethernet,
+    # y
+    # la tira de GPIO.
     z0 = FLOOR + RPI_STANDOFF_H
     xp, ys = RPI_X_PORTS, rpi_y_sd(succion)
     rpi = box(xp - 56, xp, ys, ys + 85, z0 + 0.05, z0 + 1.4)
@@ -365,16 +425,20 @@ def componentes(succion=False):
     rpi = rpi.union(box(xp - 54, xp - 2, ys + 66, ys + 87, z0 + 1.4, z0 + 17.4))    # USB y Ethernet
     rpi = rpi.union(box(xp - 55, xp - 50, ys + 7, ys + 58, z0 + 4.5, z0 + 10))      # GPIO
     c["raspberry_pi_4"] = rpi
+    # Placa perforada, apoyada en sus cuatro esquinas.
     z0 = FLOOR + PB_LEDGE_H
     c["placa_perforada"] = box(PB_CX - PB_X / 2, PB_CX + PB_X / 2, PB_CY - PB_Y / 2, PB_CY + PB_Y / 2,
                                z0 + 0.05, z0 + PB_T)
+    # Botón de encendido.
     c["boton"] = cyl(BUTTON_POS[0], BUTTON_POS[1], H - LID - 30, H + 3, 7.9)
     return c
 
 
 def revisar(nombre, inf, sup, comp):
     """Volumen de choque entre carcasas y componentes (debe dar cero)."""
+    # True mientras no aparezca ninguna interferencia.
     ok = True
+    # Cada carcasa contra cada componente.
     for nom, pieza in (("inferior", inf), ("superior", sup)):
         for cn, cs in comp.items():
             v = pieza.intersect(cs).val().Volume()
@@ -382,6 +446,7 @@ def revisar(nombre, inf, sup, comp):
             if v > 0.5 and not (nom == "inferior" and cn in ("pieza_aro", "pieza_bola", "pieza_boquilla") and v < 15):
                 ok = False
                 print(f"  !! {nom} x {cn}: {v:.1f}")
+    # Cada componente contra los demás.
     names = list(comp)
     for i, a in enumerate(names):
         for b in names[i + 1:]:
@@ -389,6 +454,7 @@ def revisar(nombre, inf, sup, comp):
             if v > 0.5:
                 ok = False
                 print(f"  !! {a} x {b}: {v:.1f}")
+    # Las dos carcasas entre sí.
     v = inf.intersect(sup).val().Volume()
     if v > 0.5:
         ok = False
@@ -397,14 +463,17 @@ def revisar(nombre, inf, sup, comp):
 
 
 if __name__ == "__main__":
+    # Construye todas las piezas y los componentes de las dos variantes.
     sup = pieza_superior()
     inf, inf_s = pieza_inferior(), pieza_inferior(succion=True)
     rueda, aro, boq = rueda_motriz(), aro_bola(), boquilla()
     comp, comp_s = componentes(), componentes(succion=True)
+    # Comprueba que nada choque.
     revisar("normal", inf, sup, comp)
     revisar("succión", inf_s, sup, comp_s)
 
     # ---- exportar ----
+    # Precisión de la malla de los STL.
     tol = dict(tolerance=0.03, angularTolerance=0.1)
     cq.exporters.export(inf, os.path.join(OUT, "carcasa_inferior.stl"), **tol)
     cq.exporters.export(inf_s, os.path.join(OUT, "carcasa_inferior_succion.stl"), **tol)
@@ -415,6 +484,7 @@ if __name__ == "__main__":
     cq.exporters.export(aro, os.path.join(OUT, "rueda_apoyo_aro.stl"), **tol)
     cq.exporters.export(boq, os.path.join(OUT, "boquilla_succion.stl"), **tol)
     exportar_bola(os.path.join(OUT, "rueda_apoyo_bola_16mm.stl"))
+    # Los mismos sólidos en STEP, para editarlos en otro programa de CAD.
     for nombre, pieza in (("carcasa_inferior", inf), ("carcasa_inferior_succion", inf_s), ("carcasa_superior", sup),
                           ("rueda_motriz", rueda), ("rueda_apoyo_aro", aro), ("boquilla_succion", boq)):
         cq.exporters.export(pieza, os.path.join(OUT, nombre + ".step"))
@@ -434,11 +504,15 @@ if __name__ == "__main__":
     print("\nPiezas (peso si se imprimen macizas en PLA):")
     for nombre, pieza, n in (("carcasa inferior", inf, 1), ("inferior succión", inf_s, 1), ("carcasa superior", sup, 1),
                              ("rueda motriz", rueda, 2), ("aro de la bola", aro, 1), ("boquilla", boq, 1)):
+        # Dimensiones de la caja que contiene la pieza, y volumen en cm3.
         bb = pieza.val().BoundingBox()
         vol = pieza.val().Volume() / 1000
         print(f"  {nombre:17s} {bb.xlen:6.1f} x {bb.ylen:6.1f} x {bb.zlen:5.1f} mm  {vol * PLA:6.1f} g x{n}"
               f"   válido: {pieza.val().isValid()}  sólidos: {pieza.solids().size()}")
     print(f"\nSeparación del piso al suelo: {CLEAR:.1f} mm.  Altura total sobre el suelo: {H + CLEAR:.1f} mm")
+    # Velocidad y fuerza con los datos del motor a 6 V y a 12 V: rpm y par
+    # en
+    # onzas-pulgada.
     for volt, rpm, ozin in ((6, 30, 110), (12, 60, 200)):
         print(f"A {volt} V: {pi * WHEEL_D / 10 * rpm / 60:.1f} cm/s, "
               f"fuerza máxima por rueda {ozin * 0.00706155 / (WHEEL_D / 2000):.0f} N")
