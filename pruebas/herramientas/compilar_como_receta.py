@@ -33,15 +33,21 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Raiz del repositorio y carpeta de trabajo, por argumento o por defecto.
 RAIZ = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 TRABAJO = Path(sys.argv[2] if len(sys.argv) > 2 else RAIZ / "build-receta").resolve()
+# Binario de cmake y argumentos extra, por variable de entorno.
 CMAKE = os.environ.get("CMAKE", "cmake")
 CMAKE_EXTRA = shlex.split(os.environ.get("CMAKE_EXTRA", ""))
+# Sysroot de prueba donde se instala todo.
 SYSROOT = TRABAJO / "sysroot"
+# Direccion del servidor que se arranca al final.
 URL = "http://localhost:8080"
+# Comprobaciones fallidas.
 fallos = 0
 
 
+# Registra una comprobacion: imprime OK o FALLO y lleva la cuenta.
 def verificar(texto, condicion):
     global fallos
     print(f"  [{'OK ' if condicion else 'FALLO'}] {texto}")
@@ -50,6 +56,7 @@ def verificar(texto, condicion):
 
 def asignaciones(texto, nombre):
     """Valores de todas las asignaciones NOMBRE[:override] = "..." (multilinea)."""
+    # La misma expresion regular de verificar_licencias.py.
     patron = re.compile(
         r'^(' + re.escape(nombre) + r'(?::[\w:${}-]+)?)\s*(?::=|\?=|\+=|=)\s*"((?:[^"\\]|\\.|\\\n)*)"',
         re.M,
@@ -59,11 +66,13 @@ def asignaciones(texto, nombre):
 
 def desempaquetar(rel):
     """Emula do_unpack. Devuelve (WORKDIR, S, EXTRA_OECMAKE de qemuall)."""
+    # Receta, su texto, su carpeta y su nombre y version.
     receta = RAIZ / rel
     texto = receta.read_text(encoding="utf-8")
     thisdir = receta.parent
     pn, pv = receta.stem.split("_")
 
+    # Carpetas de busqueda: FILESEXTRAPATHS y despues las de FILESPATH.
     busqueda = []
     for _, valor in asignaciones(texto, "FILESEXTRAPATHS"):
         for p in valor.split(":"):
@@ -71,6 +80,7 @@ def desempaquetar(rel):
                 busqueda.append(Path(p.replace("${THISDIR}", str(thisdir))).resolve())
     busqueda += [thisdir / f"{pn}-{pv}", thisdir / pn, thisdir / "files"]
 
+    # WORKDIR propio de la receta, vacio.
     workdir = TRABAJO / pn
     shutil.rmtree(workdir, ignore_errors=True)
     total = 0
@@ -81,11 +91,15 @@ def desempaquetar(rel):
         for uri in valor.split():
             if not uri.startswith("file://"):
                 continue
+            # Ruta del archivo y parametros de la entrada.
             ruta, *params = uri[len("file://"):].split(";")
             subdir = next((p.split("=", 1)[1] for p in params if p.startswith("subdir=")), "")
+            # Primera carpeta de busqueda donde existe; si no esta en
+            # ninguna, se aborta.
             origen = next((d / ruta for d in busqueda if (d / ruta).exists()), None)
             if origen is None:
                 sys.exit(f"FALLO: {rel} pide {uri} y no existe en el repositorio")
+            # Se copia respetando subdir=.
             destino = workdir / subdir / ruta
             destino.parent.mkdir(parents=True, exist_ok=True)
             if origen.is_dir():
@@ -93,7 +107,9 @@ def desempaquetar(rel):
             else:
                 shutil.copy2(origen, destino)
             total += 1
+    # S de la receta, con WORKDIR resuelto.
     s = Path(dict(asignaciones(texto, "S"))["S"].replace("${WORKDIR}", str(workdir)))
+    # Argumentos de CMake que la receta agrega para la maquina de QEMU.
     extra = " ".join(v for k, v in asignaciones(texto, "EXTRA_OECMAKE") if k.endswith(":qemuall"))
     print(f"  {pn}: {total} entradas de SRC_URI desempaquetadas en {workdir.relative_to(TRABAJO)}/")
     return workdir, s, shlex.split(extra.replace("${S}", str(s)))
@@ -101,6 +117,7 @@ def desempaquetar(rel):
 
 def compilar(nombre, s, args):
     """do_configure + do_compile + do_install con CMake. Devuelve los avisos."""
+    # Carpeta de compilacion, junto a S, y archivo de log.
     build = s.parent / "build"
     log = TRABAJO / f"{nombre}.log"
     pasos = [
@@ -110,6 +127,8 @@ def compilar(nombre, s, args):
         [CMAKE, "--build", str(build), "--parallel"],
         [CMAKE, "--install", str(build)],
     ]
+    # Ejecuta los tres pasos con DESTDIR apuntando al sysroot; si uno falla,
+    # muestra el final del log y termina.
     with open(log, "w") as salida:
         for paso in pasos:
             r = subprocess.run(paso, stdout=salida, stderr=subprocess.STDOUT,
@@ -117,9 +136,11 @@ def compilar(nombre, s, args):
             if r.returncode != 0:
                 print(log.read_text()[-3000:])
                 sys.exit(f"FALLO: {nombre}: `{' '.join(paso[:3])} ...` termino con codigo {r.returncode}")
+    # Lineas del log que son avisos del compilador.
     return [l for l in log.read_text().splitlines() if "warning:" in l]
 
 
+# Codigo HTTP de una peticion GET; 0 si no hubo conexion.
 def http(ruta):
     try:
         return urllib.request.urlopen(URL + ruta, timeout=2).status
@@ -131,6 +152,7 @@ def http(ruta):
 
 def arrancar(workdir_servidor):
     """Arranca el servidor instalado desde un directorio armado como /opt/robot."""
+    # Carpeta que imita /opt/robot: la interfaz web y los sonidos de evento.
     opt = TRABAJO / "opt-robot"
     shutil.rmtree(opt, ignore_errors=True)
     shutil.copytree(workdir_servidor / "www", opt / "www")
@@ -138,25 +160,33 @@ def arrancar(workdir_servidor):
     for mp3 in (workdir_servidor / "audio").glob("notify_*.mp3"):
         shutil.copy2(mp3, opt / "audio")
 
+    # Si algo ya responde en el puerto, la prueba no seria valida.
     if http("/") != 0:
         sys.exit("FALLO: el puerto 8080 ya esta ocupado por otro proceso")
+    # El servidor instalado necesita encontrar librobot en el sysroot.
     entorno = {**os.environ,
                "LD_LIBRARY_PATH": f"{SYSROOT}/usr/lib:" + os.environ.get("LD_LIBRARY_PATH", "")}
     with open(TRABAJO / "robot-server.log", "w") as log:
+        # Lanza el servidor con esa carpeta como directorio de trabajo.
         proc = subprocess.Popen([str(SYSROOT / "usr/bin/robot-server")], cwd=opt, env=entorno,
                                 stdout=log, stderr=subprocess.STDOUT)
         try:
             inicio = time.time()
             raiz = 0
+            # Sondea la raiz hasta 15 s, o hasta que el proceso termine
+            # solo.
             while raiz == 0 and proc.poll() is None and time.time() - inicio < 15:
                 raiz = http("/")
                 if raiz == 0:
                     time.sleep(0.5)
             print(f"  el servidor respondio a los {time.time() - inicio:.1f} s")
             verificar(f"GET / devuelve 200 (obtenido {raiz})", raiz == 200)
+            # Sin sesion, la API tiene que responder 401.
             estado = http("/api/status")
             verificar(f"GET /api/status sin sesion devuelve 401 (obtenido {estado})", estado == 401)
         finally:
+            # Siempre se detiene el servidor; si no termina en 20 s, se lo
+            # mata.
             proc.terminate()
             try:
                 proc.wait(timeout=20)
@@ -164,15 +194,18 @@ def arrancar(workdir_servidor):
                 proc.kill()
 
 
+# Empieza con el sysroot vacio.
 shutil.rmtree(SYSROOT, ignore_errors=True)
 TRABAJO.mkdir(parents=True, exist_ok=True)
 
 print("== do_unpack ==")
+# Desempaqueta las dos recetas.
 _, s_lib, args_lib = desempaquetar("meta-robot/recipes-multimedia/librobot/librobot_1.0.bb")
 wd_srv, s_srv, _ = desempaquetar("meta-robot/recipes-robot/robot-server/robot-server_1.0.bb")
 
 print("\n== librobot: configurar, compilar e instalar ==")
 print(f"  EXTRA_OECMAKE: {' '.join(a.replace(str(TRABAJO), '${TRABAJO}') for a in args_lib)}")
+# Compila e instala la biblioteca, y comprueba lo instalado contra FILES.
 avisos = compilar("librobot", s_lib, args_lib)
 lib = SYSROOT / "usr/lib"
 inc = SYSROOT / "usr/include/robot"
@@ -187,6 +220,7 @@ for a in avisos:
     print(f"    {a.replace(str(TRABAJO) + '/', '')}")
 
 print("\n== robot-server: configurar contra el sysroot, compilar e instalar ==")
+# El servidor se configura contra el sysroot donde quedo la biblioteca.
 avisos = compilar("robot-server", s_srv, [f"-DCMAKE_PREFIX_PATH={SYSROOT}/usr"])
 verificar("usr/bin/robot-server instalado", (SYSROOT / "usr/bin/robot-server").is_file())
 print(f"  avisos del compilador: {len(avisos)}")
@@ -194,7 +228,9 @@ for a in avisos:
     print(f"    {a.replace(str(TRABAJO) + '/', '')}")
 
 print("\n== arranque del servidor instalado ==")
+# Arranca lo instalado y le hace dos peticiones.
 arrancar(wd_srv)
 
+# Resumen y codigo de salida.
 print(f"\nRESULTADO: {'OK' if fallos == 0 else 'FALLO'} ({fallos} problemas)")
 sys.exit(1 if fallos else 0)
