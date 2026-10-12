@@ -4,76 +4,117 @@
  *
  */
 
+/* Tipos, constantes LIB_AUDIO_* y prototipos del modulo. */
 #include "lib_audio.h"
+/* printf, fprintf, snprintf y manejo de archivos (fopen, fgets, rename). */
 #include <stdio.h>
+/* qsort, para ordenar las pistas por nombre. */
 #include <stdlib.h>
+/* memset, memcpy, strncpy, strcmp y strcspn. */
 #include <string.h>
+/* Hilo de reproduccion, mutex y variable de condicion. */
 #include <pthread.h>
+/* opendir y readdir, para escanear la carpeta de audio. */
 #include <dirent.h>
+/* access, fsync y unlink. */
 #include <unistd.h>
+/* Senales (kill): quedo de la version que lanzaba un proceso por cada
+   notificacion; hoy solo aparece en codigo comentado. */
 #include <signal.h>
+/* Constantes de acceso a archivos, como F_OK para access(). */
 #include <fcntl.h>
+/* waitpid: el mismo caso que signal.h. */
 #include <sys/wait.h>
+/* strcasecmp, para reconocer la extension .mp3 sin importar mayusculas. */
 #include <strings.h>  
+/* Decodificador de MP3. */
 #include <mpg123.h>
+/* ALSA: la salida de audio (PCM) y el control de volumen (mixer). */
 #include <alsa/asoundlib.h>
 
 /* ═══════════════════════════════════════════════════════════
    Comandos para el thread de reproduccion
 ═══════════════════════════════════════════════════════════ */
+/* Ordenes que la API le deja al hilo de reproduccion. La API nunca toca el
+   decodificador ni ALSA: escribe un comando y despierta al hilo. */
 typedef enum {
+    /* Sin orden pendiente. */
     PCMD_NONE   = 0,
+    /* Reproducir el archivo de cmd_filepath. */
     PCMD_PLAY   = 1,
+    /* Pausar la pista que suena. */
     PCMD_PAUSE  = 2,
+    /* Reanudar la pista en pausa. */
     PCMD_RESUME = 3,
+    /* Detener la reproduccion. */
     PCMD_STOP   = 4,
+    /* Terminar el hilo. */
     PCMD_QUIT   = 5,
 } PlayCmd;
 
 /* ═══════════════════════════════════════════════════════════
    Parametros Globales
 ═══════════════════════════════════════════════════════════ */
+/* Todo el estado del modulo en una sola estructura estatica, g. */
 static struct {
     // Lista de pistas
+    /* Pistas encontradas en el ultimo escaneo, y cuantas son. */
     LibAudioTrack   tracks[LIB_AUDIO_TRACKS_MAX];
     int             track_count;
+    /* Carpeta donde estan los MP3. */
     char            audio_dir[512];
 
     // Thread de reproduccion
+    /* Hilo que decodifica y escribe en ALSA. */
     pthread_t        thread;
+    /* Protege todos los campos de g. */
     pthread_mutex_t  lock;
+    /* Despierta al hilo cuando llega un comando o un salto. */
     pthread_cond_t   cond;
+    /* Comando pendiente. */
     PlayCmd          cmd;
+    /* Archivo e id de la pista del comando PLAY. */
     char             cmd_filepath[512];
     int              cmd_track_id;
     float            seek_req;        /* salto pedido en segundos, o -1 */
 
     // Estado actual
+    /* Reproduciendo, en pausa o detenido. */
     LibAudioStatus   status;
+    /* Id de la pista en curso, o -1. */
     int              current_id;
+    /* Segundos reproducidos de la pista en curso. */
     float            position_secs;
+    /* Volumen de la musica, de 0 a 100. */
     int              volume;          
 
     // Playlist persistente: ids en orden; pl_pos es la posicion que suena,
     // o -1 si lo que suena es una pista suelta
     int              playlist[LIB_AUDIO_TRACKS_MAX];
+    /* Cantidad de pistas de la playlist. */
     int              playlist_n;
+    /* 1 si lo que suena es la playlist. */
     int              pl_activa;
     int              pl_pos;
 
     // PID del proceso de notificación activo
     // pid_t            notify_pid;
 
+    /* 1 cuando lib_audio_init() ya corrio. */
     int              initialized;
 } g;
 
 // ═══════════ Helpers PCM ALSA
 
+/* Abre la salida de audio y la configura para muestras de 16 bits con la
+   frecuencia y los canales de la pista. Devuelve el dispositivo, o NULL. */
 static snd_pcm_t *alsa_open(long rate, int channels)
 {
+    /* Dispositivo PCM y codigo de error de ALSA. */
     snd_pcm_t *pcm = NULL;
     int err;
 
+    /* Abre el dispositivo para reproduccion, en modo bloqueante. */
     err = snd_pcm_open(&pcm, LIB_AUDIO_ALSA_DEVICE,
                        SND_PCM_STREAM_PLAYBACK, 0);
     if (err < 0) {
@@ -81,13 +122,19 @@ static snd_pcm_t *alsa_open(long rate, int channels)
         return NULL;
     }
 
+    /* Parametros de hardware: se reservan en la pila y parten de todo lo que
+       el dispositivo admite. */
     snd_pcm_hw_params_t *hw;
     snd_pcm_hw_params_alloca(&hw);
     snd_pcm_hw_params_any(pcm, hw);
+    /* Muestras intercaladas (L R L R), de 16 bits con signo en
+       little-endian,
+       y con los canales de la pista. */
     snd_pcm_hw_params_set_access(pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED);
     snd_pcm_hw_params_set_format(pcm, hw, SND_PCM_FORMAT_S16_LE);
     snd_pcm_hw_params_set_channels(pcm, hw, (unsigned int)channels);
 
+    /* Frecuencia de muestreo: la mas cercana que el dispositivo acepte. */
     unsigned int r = (unsigned int)rate;
     snd_pcm_hw_params_set_rate_near(pcm, hw, &r, 0);
 
@@ -95,6 +142,7 @@ static snd_pcm_t *alsa_open(long rate, int channels)
     snd_pcm_uframes_t buf_sz = 4096;
     snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buf_sz);
 
+    /* Aplica los parametros al dispositivo. */
     err = snd_pcm_hw_params(pcm, hw);
     if (err < 0) {
         fprintf(stderr, "[audio] snd_pcm_hw_params: %s\n", snd_strerror(err));
@@ -102,6 +150,7 @@ static snd_pcm_t *alsa_open(long rate, int channels)
         return NULL;
     }
 
+    /* Lo deja listo para recibir muestras. */
     snd_pcm_prepare(pcm);
     return pcm;
 }
@@ -110,8 +159,11 @@ static snd_pcm_t *alsa_open(long rate, int channels)
 static void mezclar_a_mono(unsigned char *buf, size_t bytes, int channels)
 {
 #if LIB_AUDIO_MONO
+    /* Solo hay algo que mezclar si la pista es estereo. */
     if (channels != 2) return;
+    /* Cantidad de cuadros: un cuadro son dos muestras de 16 bits. */
     size_t frames = bytes / sizeof(int16_t[2]);
+    /* Cada cuadro se reemplaza por su promedio, repetido en los dos canales. */
     for (size_t i = 0; i < frames; i++) {
         /* memcpy y no un cast: buf es un arreglo de bytes, sin garantia de
            alineacion para int16_t. */
@@ -122,6 +174,8 @@ static void mezclar_a_mono(unsigned char *buf, size_t bytes, int channels)
         memcpy(buf + i * sizeof(lr), lr, sizeof(lr));
     }
 #else
+    /* Sin mezcla a mono la funcion no hace nada; esto silencia el aviso de
+       parametros sin usar. */
     (void)buf; (void)bytes; (void)channels;
 #endif
 }
@@ -129,9 +183,11 @@ static void mezclar_a_mono(unsigned char *buf, size_t bytes, int channels)
 // Ajusta el volumen del mixer ALSA
 static void alsa_set_volume(int vol_pct)
 {
+    /* Limita el porcentaje a 0-100. */
     if (vol_pct < 0)   vol_pct = 0;
     if (vol_pct > 100) vol_pct = 100;
 
+    /* Abre el mezclador de ALSA. */
     snd_mixer_t *handle = NULL;
     if (snd_mixer_open(&handle, 0) < 0) return;
 
@@ -139,18 +195,25 @@ static void alsa_set_volume(int vol_pct)
     if (snd_mixer_attach(handle, LIB_AUDIO_MIXER_CARD) < 0) {
         snd_mixer_close(handle); return;
     }
+    /* Registra y carga los controles de esa tarjeta. */
     snd_mixer_selem_register(handle, NULL, NULL);
     snd_mixer_load(handle);
 
+    /* Identificador del control que se busca: indice 0 y el nombre
+       configurado. */
     snd_mixer_selem_id_t *sid;
     snd_mixer_selem_id_alloca(&sid);
     snd_mixer_selem_id_set_index(sid, 0);
     snd_mixer_selem_id_set_name(sid, LIB_AUDIO_MIXER_CTRL);
 
+    /* Busca el control. */
     snd_mixer_elem_t *elem = snd_mixer_find_selem(handle, sid);
     if (elem) {
+        /* Rango del control, en las unidades propias de la tarjeta. */
         long pmin, pmax;
         snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
+        /* Convierte el porcentaje a esa escala y lo aplica a todos los
+           canales. */
         long vol = pmin + (long)(((pmax - pmin) * vol_pct) / 100);
         snd_mixer_selem_set_playback_volume_all(elem, vol);
         printf("[audio] Volumen card 1 '%s': %d%% (raw=%ld)\n",
@@ -160,26 +223,33 @@ static void alsa_set_volume(int vol_pct)
                 LIB_AUDIO_MIXER_CTRL);
     }
 
+    /* Cierra el mezclador. */
     snd_mixer_close(handle);
 }
 
 // Duracion del MP3 usando mpg123
 static int mp3_duration(const char *path)
 {
+    /* Decodificador temporal, solo para medir la pista. */
     int err_code;
     mpg123_handle *mh = mpg123_new(NULL, &err_code);
     mpg123_param(mh, MPG123_QUIET, 1, 0);  /* suprimir warnings de ID3 malformados */
     if (!mh) return 0;
 
+    /* Duracion en segundos; queda en 0 si no se puede abrir o medir. */
     int secs = 0;
     if (mpg123_open(mh, path) == MPG123_OK) {
+        /* Recorre el archivo para conocer su largo exacto en muestras. */
         mpg123_scan(mh);
+        /* Largo en muestras, y frecuencia de muestreo para pasarlo a
+           segundos. */
         off_t  length = mpg123_length(mh);
         long   rate   = 44100;
         int    ch, enc;
         mpg123_getformat(mh, &rate, &ch, &enc);
         if (rate > 0 && length > 0)
             secs = (int)(length / rate);
+        /* Cierra el archivo; despues se libera el decodificador. */
         mpg123_close(mh);
     }
     mpg123_delete(mh);
@@ -191,6 +261,7 @@ static int mp3_duration(const char *path)
 ═══════════════════════════════════════════════════════════ */
 
 /* Las dos se llaman con g.lock tomado. */
+/* Busca una pista por su id. Devuelve NULL si no existe. */
 static const LibAudioTrack *pista_por_id(int id)
 {
     for (int i = 0; i < g.track_count; i++)
@@ -202,10 +273,15 @@ static const LibAudioTrack *pista_por_id(int id)
    quedo sin pistas validas. */
 static int pedir_siguiente_de_playlist(void)
 {
+    /* Como maximo se prueban tantas posiciones como pistas tiene la
+       playlist. */
     for (int intento = 0; intento < g.playlist_n; intento++) {
+        /* Avanza una posicion, volviendo a 0 al pasar la ultima. */
         g.pl_pos = (g.pl_pos + 1) % g.playlist_n;
+        /* Pista de esa posicion; si ya no existe, se prueba la siguiente. */
         const LibAudioTrack *t = pista_por_id(g.playlist[g.pl_pos]);
         if (!t) continue;
+        /* Deja el comando PLAY armado con el archivo y el id de la pista. */
         strncpy(g.cmd_filepath, t->filepath, sizeof(g.cmd_filepath) - 1);
         g.cmd_filepath[sizeof(g.cmd_filepath) - 1] = '\0';
         g.cmd_track_id = t->id;
@@ -215,6 +291,7 @@ static int pedir_siguiente_de_playlist(void)
     return 0;
 }
 
+/* Arma la ruta del archivo de la playlist dentro de la carpeta de audio. */
 static void ruta_playlist(char *out, size_t len)
 {
     snprintf(out, len, "%s/%s", g.audio_dir, LIB_AUDIO_PLAYLIST_FILE);
@@ -224,20 +301,30 @@ static void ruta_playlist(char *out, size_t len)
    en orden. Se llama con g.lock tomado, despues de un escaneo. */
 static void cargar_playlist(void)
 {
+    /* Ruta del archivo de la playlist. */
     char ruta[600];
     ruta_playlist(ruta, sizeof(ruta));
 
+    /* La playlist se reconstruye desde cero. */
     g.playlist_n = 0;
     FILE *f = fopen(ruta, "r");
+    /* Sin archivo: la playlist son todas las pistas, en el orden del
+       escaneo. */
     if (!f) {
         for (int i = 0; i < g.track_count; i++) g.playlist[g.playlist_n++] = g.tracks[i].id;
         return;
     }
 
+    /* Una linea por pista. */
     char linea[LIB_AUDIO_NAME_MAX + 4];
+    /* Lee linea por linea, hasta el fin del archivo o hasta llenar la
+       playlist. */
     while (fgets(linea, sizeof(linea), f) && g.playlist_n < LIB_AUDIO_TRACKS_MAX) {
+        /* Quita el salto de linea final. */
         linea[strcspn(linea, "\r\n")] = '\0';
+        /* Las lineas vacias se saltan. */
         if (!linea[0]) continue;
+        /* Busca la pista con ese nombre de archivo y agrega su id. */
         for (int i = 0; i < g.track_count; i++) {
             if (strcmp(g.tracks[i].filename, linea) == 0) {
                 g.playlist[g.playlist_n++] = g.tracks[i].id;
@@ -247,6 +334,7 @@ static void cargar_playlist(void)
         /* Un archivo que ya no esta se ignora: la playlist no se rompe por
            borrar una cancion de la particion. */
     }
+    /* Cierra el archivo. */
     fclose(f);
 }
 
@@ -254,62 +342,79 @@ static void cargar_playlist(void)
    playlist vieja o la nueva, nunca una a medias. */
 static int guardar_playlist(void)
 {
+    /* Ruta definitiva y ruta del temporal. */
     char ruta[600], tmp[620];
     ruta_playlist(ruta, sizeof(ruta));
     snprintf(tmp, sizeof(tmp), "%s.tmp", ruta);
 
+    /* Abre el temporal para escritura. */
     FILE *f = fopen(tmp, "w");
     if (!f) {
         fprintf(stderr, "[audio] No se pudo escribir '%s'\n", tmp);
         return -1;
     }
+    /* Un nombre de archivo por linea, en el orden de la playlist. */
     for (int i = 0; i < g.playlist_n; i++) {
         const LibAudioTrack *t = pista_por_id(g.playlist[i]);
         if (t) fprintf(f, "%s\n", t->filename);
     }
+    /* Vacia el buffer de stdio y fuerza la escritura al disco antes de
+       cerrar. */
     fflush(f);
     fsync(fileno(f));
     fclose(f);
+    /* El renombrado es atomico: reemplaza el archivo viejo de una sola vez. */
     if (rename(tmp, ruta) != 0) {
         fprintf(stderr, "[audio] No se pudo reemplazar '%s'\n", ruta);
+        /* Si falla, se borra el temporal. */
         unlink(tmp);
         return -1;
     }
     return 0;
 }
 
+/* Copia los ids de la playlist. Devuelve cuantos copio. */
 int lib_audio_playlist_get(int *ids, int max)
 {
+    /* Sin inicializar, sin destino o sin espacio no se copia nada. */
     if (!g.initialized || !ids || max <= 0) return 0;
     pthread_mutex_lock(&g.lock);
+    /* No mas de los que caben. */
     int n = g.playlist_n < max ? g.playlist_n : max;
     memcpy(ids, g.playlist, (size_t)n * sizeof(int));
     pthread_mutex_unlock(&g.lock);
     return n;
 }
 
+/* Reemplaza la playlist y la guarda en disco. Devuelve 0 o -1. */
 int lib_audio_playlist_set(const int *ids, int n)
 {
+    /* Valida los argumentos. */
     if (!g.initialized || n < 0 || n > LIB_AUDIO_TRACKS_MAX || (n > 0 && !ids)) return -1;
 
     pthread_mutex_lock(&g.lock);
+    /* Todos los ids tienen que existir; con uno invalido no se cambia nada. */
     for (int i = 0; i < n; i++) {
         if (!pista_por_id(ids[i])) {
             pthread_mutex_unlock(&g.lock);
             return -1;
         }
     }
+    /* Copia la lista nueva. */
     if (n > 0) memcpy(g.playlist, ids, (size_t)n * sizeof(int));
     g.playlist_n = n;
 
     /* Si la playlist esta sonando, la posicion sigue a la pista actual; si
        se la quito, la siguiente sera la primera de la lista nueva. */
     if (g.pl_activa) {
+        /* Busca en la lista nueva la pista que suena. */
         g.pl_pos = -1;
         for (int i = 0; i < n; i++)
             if (g.playlist[i] == g.current_id) { g.pl_pos = i; break; }
+        /* Una playlist vacia deja de estar activa. */
         if (n == 0) g.pl_activa = 0;
     }
+    /* Guarda en disco, todavia con el candado tomado. */
     int r = guardar_playlist();
     pthread_mutex_unlock(&g.lock);
 
@@ -317,17 +422,21 @@ int lib_audio_playlist_set(const int *ids, int n)
     return r;
 }
 
+/* Empieza a reproducir la playlist desde una posicion. */
 int lib_audio_play_playlist(int pos)
 {
     if (!g.initialized) return -1;
     pthread_mutex_lock(&g.lock);
+    /* Sin pistas no hay nada que reproducir. */
     if (g.playlist_n == 0) {
         pthread_mutex_unlock(&g.lock);
         return -1;
     }
+    /* Una posicion fuera de rango se toma como la primera. */
     if (pos < 0 || pos >= g.playlist_n) pos = 0;
     g.pl_activa = 1;
     g.pl_pos    = pos - 1;   /* pedir_siguiente avanza una */
+    /* Deja armado el PLAY de esa posicion y despierta al hilo. */
     int ok = pedir_siguiente_de_playlist();
     if (ok) pthread_cond_signal(&g.cond);
     else    g.pl_activa = 0;
@@ -335,6 +444,7 @@ int lib_audio_play_playlist(int pos)
     return ok ? 0 : -1;
 }
 
+/* Posicion de la playlist que suena, o -1. */
 int lib_audio_playlist_pos(void)
 {
     pthread_mutex_lock(&g.lock);
@@ -348,17 +458,21 @@ int lib_audio_playlist_pos(void)
    decodificador, que no toca el estado compartido. */
 static void aplicar_salto(mpg123_handle *mh, snd_pcm_t *pcm, long rate)
 {
+    /* Sin salto pendiente no hay nada que hacer. */
     if (g.seek_req < 0.0f) return;
+    /* Toma el destino y borra la peticion. */
     float destino = g.seek_req;
     g.seek_req = -1.0f;
     pthread_mutex_unlock(&g.lock);
 
+    /* Mueve el decodificador a la muestra que corresponde a ese segundo. */
     off_t muestra = mpg123_seek(mh, (off_t)(destino * (float)rate), SEEK_SET);
     /* Lo que ya estaba en el buffer de ALSA es de la posicion vieja: se
        descarta para que el salto se oiga en el acto. */
     snd_pcm_drop(pcm);
     snd_pcm_prepare(pcm);
 
+    /* Con el candado otra vez, publica la posicion nueva. */
     pthread_mutex_lock(&g.lock);
     if (muestra >= 0) {
         g.position_secs = (float)muestra / (float)rate;
@@ -372,17 +486,25 @@ static void aplicar_salto(mpg123_handle *mh, snd_pcm_t *pcm, long rate)
 /* ═══════════════════════════════════════════════════════════
    Main Thread de reproducción principal
 ═══════════════════════════════════════════════════════════ */
+/* Cuerpo del hilo de reproduccion. Espera un comando PLAY, abre el archivo
+   y la salida, y decodifica y escribe bloque a bloque; entre bloques
+   atiende los comandos y los saltos que van llegando. */
 static void *playback_thread(void *arg)
 {
+    /* El argumento del hilo no se usa. */
     (void)arg;
+    /* Decodificador y salida de audio; se reutilizan de una pista a otra. */
     mpg123_handle *mh  = NULL;
     snd_pcm_t     *pcm = NULL;
 
+    /* Una vuelta por cada pista. */
     while (1) {
         pthread_mutex_lock(&g.lock);
+        /* Duerme hasta que haya un comando. */
         while (g.cmd == PCMD_NONE)
             pthread_cond_wait(&g.cond, &g.lock);
 
+        /* Copia el comando y sus datos, y lo marca como atendido. */
         PlayCmd cmd = g.cmd;
         char    fp[512];
         int     tid = g.cmd_track_id;
@@ -392,14 +514,19 @@ static void *playback_thread(void *arg)
         g.seek_req = -1.0f;   /* un salto pedido para la pista anterior no aplica */
         pthread_mutex_unlock(&g.lock);
 
+        /* QUIT termina el hilo. Cualquier otro que no sea PLAY se ignora
+           aqui,
+           porque no hay pista sonando. */
         if (cmd == PCMD_QUIT) break;
         if (cmd != PCMD_PLAY) continue; 
 
         //Abrir archivo MP3
+        /* El decodificador se crea una sola vez. */
         if (!mh) mh = mpg123_new(NULL, NULL);
         mpg123_param(mh, MPG123_QUIET, 1, 0);  /* suprimir warnings de ID3 */
         if (!mh) { fprintf(stderr, "[audio] mpg123_new failed\n"); continue; }
 
+        /* Abre el archivo de la pista. */
         if (mpg123_open(mh, fp) != MPG123_OK) {
             fprintf(stderr, "[audio] No se pudo abrir '%s': %s\n",
                     fp, mpg123_strerror(mh));
@@ -407,15 +534,19 @@ static void *playback_thread(void *arg)
         }
 
         // Forzar formato S16_LE para ALSA
+        /* Formato de la pista; la salida se fuerza a 16 bits con signo. */
         long rate = 44100; int channels = 2, encoding = MPG123_ENC_SIGNED_16;
         mpg123_getformat(mh, &rate, &channels, &encoding);
         mpg123_format_none(mh);
         mpg123_format(mh, rate, channels, MPG123_ENC_SIGNED_16);
 
         // Abrir ALSA
+        /* Si quedaba una salida abierta de la pista anterior, se cierra. */
         if (pcm) { snd_pcm_close(pcm); pcm = NULL; }
         pcm = alsa_open(rate, channels);
         if (!pcm) {
+            /* Sin salida de audio la pista no puede sonar: el estado queda
+               detenido. */
             mpg123_close(mh);
             pthread_mutex_lock(&g.lock);
             g.status     = LIB_AUDIO_STOPPED;
@@ -424,6 +555,7 @@ static void *playback_thread(void *arg)
             continue;
         }
 
+        /* Publica que la pista esta sonando desde el segundo cero. */
         pthread_mutex_lock(&g.lock);
         g.status        = LIB_AUDIO_PLAYING;
         g.current_id    = tid;
@@ -432,12 +564,15 @@ static void *playback_thread(void *arg)
         printf("[audio] Reproduciendo id=%d '%s'\n", tid, fp);
 
         // Establecer bucle de decodificacion
+        /* Bloque decodificado, bytes obtenidos y codigo del decodificador. */
         unsigned char buf[8192];
         size_t        done;
         int           dec_err;
+        /* 1 cuando hay que dejar esta pista. */
         int           stop_requested = 0;
         int           siguiente = 0;      /* fin natural, sigue la playlist */
 
+        /* Una vuelta por bloque. */
         while (!stop_requested) {
 
             // Verificar comando pendiente
@@ -448,6 +583,7 @@ static void *playback_thread(void *arg)
 
             // PAUSA: suspender decodificación hasta RESUME / STOP
             if (g.cmd == PCMD_PAUSE) {
+                /* Atiende la pausa y la publica. */
                 g.cmd    = PCMD_NONE;
                 g.status = LIB_AUDIO_PAUSED;
                 // Vaciar el buffer para audio residual
@@ -458,11 +594,14 @@ static void *playback_thread(void *arg)
                    y se sigue en pausa, en la posicion nueva. */
                 while (g.cmd != PCMD_RESUME && g.cmd != PCMD_STOP &&
                        g.cmd != PCMD_PLAY  && g.cmd != PCMD_QUIT) {
+                    /* Con un salto pendiente, se aplica; si no, se duerme
+                       hasta el proximo aviso. */
                     if (g.seek_req >= 0.0f) aplicar_salto(mh, pcm, rate);
                     else                    pthread_cond_wait(&g.cond, &g.lock);
                 }
 
                 if (g.cmd == PCMD_RESUME) {
+                    /* Vuelve a reproducir. */
                     g.cmd    = PCMD_NONE;
                     g.status = LIB_AUDIO_PLAYING;
                     // Rearmar el ALSA
@@ -473,7 +612,10 @@ static void *playback_thread(void *arg)
 
             /* STOP / nueva cancion / salir */
             if (g.cmd == PCMD_STOP || g.cmd == PCMD_PLAY || g.cmd == PCMD_QUIT) {
+                /* Se sale del ciclo de bloques. */
                 stop_requested = 1;
+                /* Solo STOP limpia el estado; PLAY y QUIT los atiende la
+                   vuelta exterior. */
                 if (g.cmd == PCMD_STOP) {
                     g.cmd           = PCMD_NONE;
                     g.status        = LIB_AUDIO_STOPPED;
@@ -496,17 +638,22 @@ static void *playback_thread(void *arg)
                no quedar girando sin reproducir nada. */
             if (dec_err == MPG123_DONE || done == 0) {
                 pthread_mutex_lock(&g.lock);
+                /* La pista "sono" si llego a reproducir mas de medio
+                   segundo. */
                 int sono = g.position_secs > 0.5f;
                 /* Reproduciendo la playlist: se pasa a la siguiente pista,
                    salvo que el usuario ya haya pedido otra cosa. */
                 if (sono && g.pl_activa && g.playlist_n > 0 && g.cmd == PCMD_NONE &&
                     pedir_siguiente_de_playlist()) {
+                    /* Hay otra pista pedida: se sale para que la vuelta
+                       exterior la abra. */
                     siguiente = 1;
                     pthread_mutex_unlock(&g.lock);
                     break;
                 }
                 pthread_mutex_unlock(&g.lock);
 
+                /* Pista suelta: se rebobina y sigue desde el principio. */
                 if (sono && mpg123_seek(mh, 0, SEEK_SET) >= 0) {
                     pthread_mutex_lock(&g.lock);
                     g.position_secs = 0.0f;
@@ -514,6 +661,7 @@ static void *playback_thread(void *arg)
                     continue;
                 }
 
+                /* No alcanzo a sonar, o no se pudo rebobinar: se detiene. */
                 printf("[audio] Fin de pista id=%d\n", tid);
                 pthread_mutex_lock(&g.lock);
                 g.status        = LIB_AUDIO_STOPPED;
@@ -523,6 +671,7 @@ static void *playback_thread(void *arg)
                 break;
             }
 
+            /* Cualquier otro error del decodificador corta la pista. */
             if (dec_err != MPG123_OK && dec_err != MPG123_NEW_FORMAT) {
                 fprintf(stderr, "[audio] Error de decodificación: %s\n",
                         mpg123_strerror(mh));
@@ -531,13 +680,20 @@ static void *playback_thread(void *arg)
 
             // Escribir chunk a ALSA
             mezclar_a_mono(buf, done, channels);
+            /* Cuadros que hay en el bloque, puntero de avance y cuadros ya
+               escritos. */
             snd_pcm_uframes_t frames   = snd_pcm_bytes_to_frames(pcm, (ssize_t)done);
             unsigned char    *ptr      = buf;
             snd_pcm_uframes_t written  = 0;
 
+            /* Escribe hasta agotar el bloque. */
             while (frames > 0) {
+                /* Entrega cuadros a ALSA; devuelve cuantos acepto, o un
+                   error. */
                 snd_pcm_sframes_t wr = snd_pcm_writei(pcm, ptr, frames);
                 if (wr < 0) {
+                    /* Intenta recuperarse, por ejemplo de un buffer que se
+                       vacio. */
                     wr = snd_pcm_recover(pcm, (int)wr, 0);
                     if (wr < 0) {
                         fprintf(stderr, "[audio] Error ALSA: %s\n", snd_strerror((int)wr));
@@ -545,6 +701,7 @@ static void *playback_thread(void *arg)
                     }
                     continue;
                 }
+                /* Avanza el puntero y descuenta lo escrito. */
                 ptr     += snd_pcm_frames_to_bytes(pcm, (snd_pcm_uframes_t)wr);
                 frames  -= (snd_pcm_uframes_t)wr;
                 written += (snd_pcm_uframes_t)wr;
@@ -553,6 +710,7 @@ static void *playback_thread(void *arg)
             // Actualizar posición una vez por chunk
             if (written > 0) {
                 pthread_mutex_lock(&g.lock);
+                /* Segundos = cuadros escritos / frecuencia de muestreo. */
                 g.position_secs += (float)written / (float)rate;
                 pthread_mutex_unlock(&g.lock);
             }
@@ -560,16 +718,22 @@ static void *playback_thread(void *arg)
 
         // Terminar la decodificacion
         pthread_mutex_lock(&g.lock);
+        /* Si hay un PLAY pendiente, se esta cambiando de pista. */
         int switching = (g.cmd == PCMD_PLAY);
         pthread_mutex_unlock(&g.lock);
 
+        /* Al cambiar de pista por orden del usuario se descarta lo que
+           quedaba en
+           el buffer; en cualquier otro caso se deja sonar hasta el final. */
         if (switching && !siguiente)
             snd_pcm_drop(pcm);  
         else
             snd_pcm_drain(pcm); 
+        /* Cierra el archivo; el decodificador queda para la proxima pista. */
         mpg123_close(mh);
     }
 
+    /* Al terminar el hilo se liberan la salida y el decodificador. */
     if (pcm) { snd_pcm_close(pcm); pcm = NULL; }
     if (mh)  { mpg123_delete(mh);  mh  = NULL; }
     return NULL;
@@ -579,33 +743,45 @@ static void *playback_thread(void *arg)
    API - Inicializacion con parametros iniciales
 ═══════════════════════════════════════════════════════════ */
 
+/* Inicializa el modulo: estado, hilo de reproduccion, volumen y escaneo.
+   audio_dir: carpeta de los MP3, o NULL para la carpeta por defecto.
+   Devuelve 0 si quedo listo y -1 si no. */
 int lib_audio_init(const char *audio_dir)
 {
+    /* Llamarla dos veces no reinicializa. */
     if (g.initialized) return 0;
 
+    /* Todo el estado en cero y la carpeta de audio copiada. */
     memset(&g, 0, sizeof(g));
     strncpy(g.audio_dir,
             audio_dir ? audio_dir : LIB_AUDIO_DIR_DEFAULT,
             sizeof(g.audio_dir) - 1);
 
+    /* Valores iniciales: volumen al 85 %, detenido, sin pista y sin salto. */
     g.volume     = 85;
     g.status     = LIB_AUDIO_STOPPED;
     g.current_id = -1;
     g.seek_req   = -1.0f;
     // g.notify_pid = -1;
 
+    /* Inicializa la biblioteca mpg123. */
     mpg123_init();
 
+    /* Crea el mutex y la variable de condicion. */
     if (pthread_mutex_init(&g.lock, NULL) != 0) return -1;
     if (pthread_cond_init (&g.cond, NULL) != 0) return -1;
 
+    /* Se marca antes de crear el hilo y de escanear: lib_audio_scan() lo
+       exige. */
     g.initialized = 1;
 
+    /* Lanza el hilo de reproduccion. */
     if (pthread_create(&g.thread, NULL, playback_thread, NULL) != 0) {
         fprintf(stderr, "[audio] No se pudo crear hilo de reproducción\n");
         return -1;
     }
 
+    /* Aplica el volumen inicial y busca las pistas. */
     alsa_set_volume(g.volume);
     lib_audio_scan();
 
@@ -614,15 +790,18 @@ int lib_audio_init(const char *audio_dir)
     return 0;
 }
 
+/* Termina el hilo y libera los recursos del modulo. */
 void lib_audio_destroy(void)
 {
     if (!g.initialized) return;
 
+    /* Le pide al hilo que termine y lo despierta. */
     pthread_mutex_lock(&g.lock);
     g.cmd = PCMD_QUIT;
     pthread_cond_signal(&g.cond);
     pthread_mutex_unlock(&g.lock);
 
+    /* Espera a que salga y destruye el mutex y la condicion. */
     pthread_join(g.thread, NULL);
     pthread_mutex_destroy(&g.lock);
     pthread_cond_destroy(&g.cond);
@@ -632,6 +811,7 @@ void lib_audio_destroy(void)
     //    waitpid(g.notify_pid, NULL, WNOHANG);
     // }
 
+    /* Cierra mpg123 y marca el modulo como no inicializado. */
     mpg123_exit();
     g.initialized = 0;
     printf("[audio] destruido\n");
@@ -647,18 +827,23 @@ void lib_audio_destroy(void)
    /opt/robot/audio/. Devuelve el nuevo total de pistas. */
 static int scan_dir(const char *dir, int subdirs, LibAudioTrack *out, int count)
 {
+    /* Abre la carpeta; si no existe, la lista queda como estaba. */
     DIR *d = opendir(dir);
     if (!d) return count;
 
+    /* Recorre las entradas mientras quepan pistas. */
     struct dirent *entry;
     while ((entry = readdir(d)) != NULL && count < LIB_AUDIO_TRACKS_MAX) {
+        /* Nombre de la entrada, su largo y su ruta completa. */
         const char *name = entry->d_name;
         size_t      nlen = strlen(name);
         char        path[640];
 
+        /* Se saltan los archivos ocultos y las entradas . y .. */
         if (name[0] == '.') continue;
         snprintf(path, sizeof(path), "%s/%s", dir, name);
 
+        /* Una subcarpeta se escanea sin bajar un nivel mas. */
         if (subdirs && entry->d_type == DT_DIR) {
             count = scan_dir(path, 0, out, count);
             continue;
@@ -669,6 +854,7 @@ static int scan_dir(const char *dir, int subdirs, LibAudioTrack *out, int count)
         // No tomar en cuenta los archivos que son para notificaciones
         if (strncmp(name, "notify_", 7) == 0) continue;
 
+        /* Llena la pista: nombre, ruta y duracion. */
         LibAudioTrack *t = &out[count];
         strncpy(t->filename, name,         LIB_AUDIO_NAME_MAX - 1);
         t->filename[LIB_AUDIO_NAME_MAX - 1] = '\0';
@@ -676,24 +862,32 @@ static int scan_dir(const char *dir, int subdirs, LibAudioTrack *out, int count)
         t->filepath[sizeof(t->filepath) - 1] = '\0';
         t->duration_secs = mp3_duration(t->filepath);
 
+        /* Una pista mas. */
         count++;
     }
     closedir(d);
     return count;
 }
 
+/* Compara dos pistas por nombre de archivo, para qsort. */
 static int cmp_track(const void *a, const void *b)
 {
     return strcmp(((const LibAudioTrack *)a)->filename,
                   ((const LibAudioTrack *)b)->filename);
 }
 
+/* Busca los MP3 de la carpeta de audio, los ordena, les asigna id y recarga
+   la playlist. Devuelve cuantas pistas encontro, o -1. */
 int lib_audio_scan(void)
 {
     if (!g.initialized) return -1;
 
+    /* Lista temporal. Es static para no ocupar la pila: son 64 pistas con
+       sus
+       rutas. */
     static LibAudioTrack found[LIB_AUDIO_TRACKS_MAX];
 
+    /* Comprueba que la carpeta exista antes de escanear. */
     DIR *dir = opendir(g.audio_dir);
     if (!dir) {
         fprintf(stderr, "[audio] No se pudo abrir '%s'\n", g.audio_dir);
@@ -701,6 +895,7 @@ int lib_audio_scan(void)
     }
     closedir(dir);
 
+    /* Escanea la carpeta y sus subcarpetas inmediatas. */
     int count = scan_dir(g.audio_dir, 1, found, 0);
 
     /* readdir no garantiza ningun orden; ordenar por nombre deja la playlist
@@ -709,6 +904,7 @@ int lib_audio_scan(void)
     qsort(found, (size_t)count, sizeof(LibAudioTrack), cmp_track);
     for (int i = 0; i < count; i++) found[i].id = i + 1;
 
+    /* Publica la lista nueva y recarga la playlist, bajo el candado. */
     pthread_mutex_lock(&g.lock);
     memcpy(g.tracks, found, (size_t)count * sizeof(LibAudioTrack));
     g.track_count = count;
@@ -720,10 +916,12 @@ int lib_audio_scan(void)
     return count;
 }
 
+/* Copia la lista de pistas. Devuelve cuantas copio. */
 int lib_audio_get_tracks(LibAudioTrack *out, int max)
 {
     if (!g.initialized || !out || max <= 0) return 0;
     pthread_mutex_lock(&g.lock);
+    /* No mas de las que caben. */
     int n = (g.track_count < max) ? g.track_count : max;
     memcpy(out, g.tracks, (size_t)n * sizeof(LibAudioTrack));
     pthread_mutex_unlock(&g.lock);
@@ -734,12 +932,15 @@ int lib_audio_get_tracks(LibAudioTrack *out, int max)
    API - Control de reproduccion
 ═══════════════════════════════════════════════════════════ */
 
+/* Pide reproducir una pista suelta, que se repite en bucle. Devuelve 0 si
+   la pista existe y -1 si no. */
 int lib_audio_play(int track_id)
 {
     if (!g.initialized) return -1;
 
     pthread_mutex_lock(&g.lock);
 
+    /* Busca la ruta del archivo de esa pista. */
     const char *fp = NULL;
     for (int i = 0; i < g.track_count; i++) {
         if (g.tracks[i].id == track_id) { fp = g.tracks[i].filepath; break; }
@@ -750,6 +951,7 @@ int lib_audio_play(int track_id)
         return -1;
     }
 
+    /* Arma el comando PLAY y despierta al hilo. */
     strncpy(g.cmd_filepath, fp, sizeof(g.cmd_filepath) - 1);
     g.cmd_filepath[sizeof(g.cmd_filepath) - 1] = '\0';
     g.cmd_track_id = track_id;
@@ -760,6 +962,7 @@ int lib_audio_play(int track_id)
     return 0;
 }
 
+/* Pide pausar la pista que suena. */
 void lib_audio_pause(void)
 {
     if (!g.initialized) return;
@@ -774,10 +977,12 @@ void lib_audio_pause(void)
     pthread_mutex_unlock(&g.lock);
 }
 
+/* Pide reanudar una pista en pausa. */
 void lib_audio_resume(void)
 {
     if (!g.initialized) return;
     pthread_mutex_lock(&g.lock);
+    /* Solo si esta en pausa y no hay otro comando pendiente. */
     if (g.status == LIB_AUDIO_PAUSED && g.cmd == PCMD_NONE) {
         g.cmd = PCMD_RESUME;
         pthread_cond_signal(&g.cond);
@@ -785,11 +990,14 @@ void lib_audio_resume(void)
     pthread_mutex_unlock(&g.lock);
 }
 
+/* Pide detener la reproduccion. */
 void lib_audio_stop(void)
 {
     if (!g.initialized) return;
     pthread_mutex_lock(&g.lock);
+    /* Detener tambien termina la playlist. */
     g.pl_activa = 0;
+    /* Si ya estaba detenido no hace falta el comando. */
     if (g.status != LIB_AUDIO_STOPPED) {
         g.cmd = PCMD_STOP;
         pthread_cond_signal(&g.cond);
@@ -797,10 +1005,12 @@ void lib_audio_stop(void)
     pthread_mutex_unlock(&g.lock);
 }
 
+/* Pide saltar a un segundo de la pista actual. Ver lib_audio.h. */
 int lib_audio_seek(float segundos)
 {
     if (!g.initialized) return -1;
     pthread_mutex_lock(&g.lock);
+    /* Sin pista cargada no hay donde saltar. */
     if (g.status == LIB_AUDIO_STOPPED || g.current_id < 0) {
         pthread_mutex_unlock(&g.lock);
         return -1;
@@ -809,8 +1019,10 @@ int lib_audio_seek(float segundos)
        terminaria la pista en el acto. */
     const LibAudioTrack *t = pista_por_id(g.current_id);
     float tope = (t && t->duration_secs > 1) ? (float)t->duration_secs - 0.5f : segundos;
+    /* Recorta el destino al rango valido. */
     if (segundos > tope) segundos = tope;
     if (segundos < 0.0f) segundos = 0.0f;
+    /* Deja el salto pedido y despierta al hilo. */
     g.seek_req = segundos;
     pthread_cond_signal(&g.cond);
     pthread_mutex_unlock(&g.lock);
@@ -821,15 +1033,18 @@ int lib_audio_seek(float segundos)
    API - Volumen y estado
 ═══════════════════════════════════════════════════════════ */
 
+/* Fija el volumen de la musica, de 0 a 100. */
 void lib_audio_set_volume(int vol)
 {
     if (vol < 0) vol = 0; if (vol > 100) vol = 100;
+    /* Guarda el valor y lo aplica al mezclador. */
     pthread_mutex_lock(&g.lock);
     g.volume = vol;
     pthread_mutex_unlock(&g.lock);
     alsa_set_volume(vol);
 }
 
+/* Devuelve el volumen guardado. */
 int lib_audio_get_volume(void)
 {
     pthread_mutex_lock(&g.lock);
@@ -838,6 +1053,7 @@ int lib_audio_get_volume(void)
     return v;
 }
 
+/* Devuelve el estado del reproductor. */
 LibAudioStatus lib_audio_get_status(void)
 {
     pthread_mutex_lock(&g.lock);
@@ -846,6 +1062,7 @@ LibAudioStatus lib_audio_get_status(void)
     return s;
 }
 
+/* Devuelve el id de la pista en curso, o -1. */
 int lib_audio_get_current_id(void)
 {
     pthread_mutex_lock(&g.lock);
@@ -854,6 +1071,7 @@ int lib_audio_get_current_id(void)
     return id;
 }
 
+/* Devuelve los segundos reproducidos de la pista en curso. */
 float lib_audio_get_position(void)
 {
     pthread_mutex_lock(&g.lock);
@@ -866,8 +1084,12 @@ float lib_audio_get_position(void)
    API - Notificaciones
 ═══════════════════════════════════════════════════════════ */
 
+/* Reproduce el sonido de un evento. Bloquea hasta que termina: decodifica
+   y escribe en ALSA en el hilo que la llama. Si habia musica, la pausa
+   antes y la reanuda despues. */
 void lib_audio_notify(NotificationEvent event)
 {
+    /* Archivo de cada evento, en el orden de NotificationEvent. */
     static const char *NAMES[] = {
         "notify_startup.mp3",
         "notify_autonomous.mp3",
@@ -876,11 +1098,14 @@ void lib_audio_notify(NotificationEvent event)
         "notify_cycle_end.mp3",
     };
 
+    /* Un evento fuera de rango se ignora. */
     if ((unsigned int)event >= NOTIFY_COUNT) return;
 
+    /* Ruta completa del archivo del evento. */
     char filepath[640];
     snprintf(filepath, sizeof(filepath), "%s/%s", g.audio_dir, NAMES[event]);
 
+    /* Si el archivo no esta, se avisa y no suena nada. */
     if (access(filepath, F_OK) != 0) {
         printf("[audio] Notificación '%s' no encontrada\n", NAMES[event]);
         return;
@@ -888,6 +1113,7 @@ void lib_audio_notify(NotificationEvent event)
 
     printf("[audio] Notificación: %s\n", NAMES[event]);
 
+    /* Si hay musica sonando, se pausa mientras dura el aviso. */
     int was_playing = (g.status == LIB_AUDIO_PLAYING);
     if (was_playing) lib_audio_pause();
 
@@ -898,8 +1124,10 @@ void lib_audio_notify(NotificationEvent event)
 
     alsa_set_volume(92);  // ← forzar volumen
 
+    /* Decodificador propio para el aviso. */
     int err_code;
     mpg123_handle *mh = mpg123_new(NULL, &err_code);
+    /* Ante cualquier fallo se restaura el volumen y se reanuda la musica. */
     if (!mh) {
         alsa_set_volume(vol_original);
         if (was_playing) lib_audio_resume();
@@ -908,6 +1136,7 @@ void lib_audio_notify(NotificationEvent event)
 
     mpg123_param(mh, MPG123_QUIET, 1, 0);
 
+    /* Abre el archivo del aviso. */
     if (mpg123_open(mh, filepath) != MPG123_OK) {
         fprintf(stderr, "[audio] No se pudo abrir notificación '%s'\n", filepath);
         mpg123_delete(mh);
@@ -916,12 +1145,14 @@ void lib_audio_notify(NotificationEvent event)
         return;
     }
 
+    /* Formato del aviso; la salida se fuerza a 16 bits con signo. */
     long rate = 44100;
     int channels = 2, encoding = MPG123_ENC_SIGNED_16;
     mpg123_getformat(mh, &rate, &channels, &encoding);
     mpg123_format_none(mh);
     mpg123_format(mh, rate, channels, MPG123_ENC_SIGNED_16);
 
+    /* Abre una salida de audio propia para el aviso. */
     snd_pcm_t *pcm = alsa_open(rate, channels);
     if (!pcm) {
         mpg123_close(mh);
@@ -931,15 +1162,19 @@ void lib_audio_notify(NotificationEvent event)
         return;
     }
 
+    /* Bloque decodificado, bytes obtenidos y codigo del decodificador. */
     unsigned char buf[8192];
     size_t done;
     int dec_err;
 
+    /* Decodifica y escribe bloque a bloque hasta el final del archivo. */
     while (1) {
         dec_err = mpg123_read(mh, buf, sizeof(buf), &done);
+        /* Fin del archivo o error: se termina. */
         if (dec_err == MPG123_DONE || done == 0) break;
         if (dec_err != MPG123_OK && dec_err != MPG123_NEW_FORMAT) break;
 
+        /* La misma mezcla a mono y la misma escritura que usa la musica. */
         mezclar_a_mono(buf, done, channels);
         snd_pcm_uframes_t frames = snd_pcm_bytes_to_frames(pcm, (ssize_t)done);
         unsigned char *ptr = buf;
@@ -956,6 +1191,7 @@ void lib_audio_notify(NotificationEvent event)
         }
     }
 
+    /* Espera a que suene lo que quedo en el buffer y libera todo. */
     snd_pcm_drain(pcm);
     snd_pcm_close(pcm);
     mpg123_close(mh);
@@ -964,5 +1200,6 @@ void lib_audio_notify(NotificationEvent event)
     // Restaurar volumen original
     alsa_set_volume(vol_original);  // ← restaurar
 
+    /* Si se habia pausado la musica, vuelve a sonar. */
     if (was_playing) lib_audio_resume();
 }
