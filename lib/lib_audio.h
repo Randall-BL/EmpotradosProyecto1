@@ -4,9 +4,11 @@
  *
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef LIB_AUDIO_H
 #define LIB_AUDIO_H
 // sudo apt install libmpg123-dev libasound2-dev mpg123
+/* Enteros de ancho fijo. */
 #include <stdint.h>
 
 // Configuracion
@@ -21,6 +23,7 @@
    la saca por GPIO 18 hacia el filtro RC y el amplificador PAM8403, en vez de
    por el jack de 3.5 mm. Ver docs/hardware-sensores.md. */
 #define LIB_AUDIO_ALSA_DEVICE   "hw:1,0"
+/* Tarjeta cuyo mezclador controla el volumen, y nombre de ese control. */
 #define LIB_AUDIO_MIXER_CARD    "hw:1"            
 #define LIB_AUDIO_MIXER_CTRL    "PCM"    // "PCM" Rasp, "Master" PC
 
@@ -29,30 +32,44 @@
    canales llevan la misma senal: no se pierde lo que viene solo por la
    derecha y da igual a cual de los dos GPIO quedo cableado el amplificador. */
 #define LIB_AUDIO_MONO          1
+/* Maximo de pistas en la lista y largo maximo de un nombre de archivo. */
 #define LIB_AUDIO_TRACKS_MAX     64
 #define LIB_AUDIO_NAME_MAX       128
 
 /* Tipos */
+/* Estado del reproductor. */
 typedef enum {
     LIB_AUDIO_STOPPED = 0,
     LIB_AUDIO_PLAYING = 1,
     LIB_AUDIO_PAUSED  = 2,
 } LibAudioStatus;
 
+/* Eventos que tienen sonido propio. El valor es el indice del archivo en
+   la tabla de lib_audio_notify(). */
 typedef enum {
+    /* Arranque del sistema. */
     NOTIFY_STARTUP    = 0,  
+    /* Entrada al modo autonomo. */
     NOTIFY_AUTONOMOUS = 1,  
+    /* Obstaculo o desnivel detectado. */
     NOTIFY_OBSTACLE   = 2, 
+    /* Cambio a modo manual. */
     NOTIFY_MANUAL     = 3, 
     NOTIFY_CYCLE_END  = 4,   /* fin del ciclo de limpieza */
+    /* Cantidad de eventos; no es un evento. */
     NOTIFY_COUNT
 } NotificationEvent;
 
 // Parametros de cada Audio
 typedef struct {
+    /* Identificador de la pista: su posicion, desde 1, en la lista ordenada
+       por nombre. */
     int  id;
+    /* Nombre del archivo, sin la carpeta. */
     char filename[LIB_AUDIO_NAME_MAX];  
+    /* Ruta completa para abrirlo. */
     char filepath[640];                 
+    /* Duracion en segundos; 0 si no se pudo medir. */
     int  duration_secs;                 
 } LibAudioTrack;
 
@@ -60,17 +77,26 @@ typedef struct {
    API
 ───────────────────────────────────────────────── */
 
+/* Inicializa el modulo y lanza el hilo de reproduccion. audio_dir: carpeta
+   de los MP3, o NULL para LIB_AUDIO_DIR_DEFAULT. Devuelve 0 o -1. */
 int  lib_audio_init   (const char *audio_dir);
+/* Termina el hilo y libera los recursos. */
 void lib_audio_destroy(void);
 
+/* Vuelve a buscar los MP3 de la carpeta. Devuelve cuantos encontro, o -1. */
 int lib_audio_scan(void);
 
+/* Copia la lista de pistas en out. Devuelve cuantas copio. */
 int lib_audio_get_tracks(LibAudioTrack *out, int max);
 
 // Reproduccion del audio
+/* Reproduce una pista suelta en bucle. Devuelve 0, o -1 si el id no existe. */
 int  lib_audio_play   (int track_id);
+/* Pausa la pista que suena. */
 void lib_audio_pause  (void);
+/* Reanuda una pista en pausa. */
 void lib_audio_resume (void);
+/* Detiene la reproduccion y sale de la playlist. */
 void lib_audio_stop   (void);
 
 /**
@@ -86,11 +112,16 @@ void lib_audio_set_volume(int vol);
 int  lib_audio_get_volume(void);
 
 // Estado actual
+/* Reproduciendo, en pausa o detenido. */
 LibAudioStatus lib_audio_get_status    (void);
+/* Id de la pista en curso, o -1 si no hay. */
 int            lib_audio_get_current_id(void);
+/* Segundos reproducidos de la pista en curso. */
 float          lib_audio_get_position  (void);  
 
 // Notificaciones
+/* Reproduce el sonido de un evento y bloquea hasta que termina. Pausa la
+   musica mientras suena y la reanuda despues. */
 void lib_audio_notify(NotificationEvent event);
 
 /* ── Playlist persistente ─────────────────────────────────────────────────────
