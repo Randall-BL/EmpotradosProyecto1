@@ -4,9 +4,11 @@
  *
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef ULTRASONIC_SENSOR_H
 #define ULTRASONIC_SENSOR_H
 
+/* Enteros de ancho fijo (uint32_t). */
 #include <stdint.h>
 
 /**
@@ -14,7 +16,9 @@
  * @brief Estructura para almacenar los pines de un sensor HC-SR04.
  */
 typedef struct {
+    /* GPIO (BCM) que dispara la medicion: salida de la Raspberry Pi. */
     int pinTrigger;
+    /* GPIO (BCM) por donde vuelve el pulso de eco: entrada. */
     int pinEcho;
 } SensorUltrasonico;
 
@@ -22,6 +26,8 @@ typedef struct {
  * @brief Inicializa los pines de un sensor específico.
  */
 
+/* pi: sesion con pigpiod. sensor: estructura que se llena.
+   trigger, echo: GPIO (BCM) de cada senal. */
 void sensor_init(int pi, SensorUltrasonico* sensor, int trigger, int echo);
 
 /**
