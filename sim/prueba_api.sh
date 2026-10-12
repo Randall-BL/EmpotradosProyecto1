@@ -17,7 +17,15 @@ mkdir -p "$SIM/run" && ( cd "$SIM/run" && ln -sfn ../../server/www www && ln -sf
 
 ( cd "$SIM/run" && "$SIM/robot-server-sim" > srv.log 2>&1 ) & SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
-sleep 3
+# Espera a que el servidor abra el puerto en vez de dormir un tiempo fijo:
+# antes de escuchar, el servidor calibra el MPU y lib_audio_init() escanea la
+# playlist, y con una pista larga eso pasa de los 3 s.
+i=0
+until curl -s -o /dev/null $URL/; do
+    i=$((i + 1))
+    [ $i -le 15 ] || { echo "El servidor no respondio en 15 s; ver $SIM/run/srv.log"; exit 1; }
+    sleep 1
+done
 CK=$(mktemp)
 
 echo "== Autenticacion (#25) =="
