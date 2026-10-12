@@ -42,10 +42,23 @@ json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
 ```
 
 **Causa.** El script lanzaba el servidor y esperaba un tiempo fijo, `sleep 3`. En esta
-máquina el servidor tarda **3,6 s** en abrir el puerto, porque `robot_init()` calibra
-el MPU-6050 con 100 muestras y hace un barrido de radar antes de escuchar. Las
-peticiones salían antes de tiempo, `curl` devolvía `000` y el primer `json.load`
-abortaba el script. El defecto es del script de prueba, no del servidor.
+máquina el servidor tardó **3,6 s** en abrir el puerto. Las peticiones salían antes de
+tiempo, `curl` devolvía `000` y el primer `json.load` abortaba el script. El defecto
+es del script de prueba, no del servidor.
+
+El tiempo se va en `lib_audio_init()`, que escanea la playlist antes de que el
+servidor empiece a escuchar. Medido lanzando el mismo binario con tres contenidos
+distintos de `audio/canciones/`:
+
+| Contenido de `audio/canciones/` | Calibración del MPU y radar | Escaneo de audio | Puerto abierto a los |
+|---|---|---|---|
+| Vacío | 0,57 s | 0,01 s | 0,57 s |
+| Las 8 pistas generadas (688 KB) | 0,56 s | 0,81 s | 1,37 s |
+| Las 9 versionadas (6,1 MB) | 0,57 s | 5,84 s | 6,41 s |
+
+La novena pista, de 5,6 MB, explica casi todo el escaneo. Su costo varía entre
+corridas según el archivo esté o no en la caché de disco: unos 3 s en las corridas de la
+prueba y 5,8 s en esta medición, hecha sobre una copia recién creada.
 
 **Corrección.** `sim/prueba_api.sh` ahora sondea `GET /` una vez por segundo hasta que
 el servidor responde, con un máximo de 15 s, y si no responde termina con un mensaje
@@ -104,6 +117,11 @@ OK
 
 ## Observaciones
 
+- **El tiempo hasta abrir el puerto depende de la playlist.** El escaneo ocurre antes
+  de `MHD_start_daemon`, así que cada pista larga retrasa el momento en que el robot
+  empieza a responder. En el target las canciones se instalan en
+  `/opt/robot/audio/canciones/`, por lo que el mismo escaneo ocurre en cada arranque.
+  No se midió en la Raspberry Pi.
 - **El servidor tarda 6,9 s en terminar tras `SIGTERM`.** Libera el puerto antes, pero
   el proceso sigue vivo mientras apaga el hardware. No afecta a la prueba; conviene
   tenerlo presente al medir `systemctl stop` o `restart` en el target.
