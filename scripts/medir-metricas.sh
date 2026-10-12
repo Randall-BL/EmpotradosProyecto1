@@ -22,29 +22,39 @@
 # En el target solo usa lo que ya trae la imagen (BusyBox, systemctl,
 # journalctl y /proc): no hace falta agregar systemd-analyze ni ningun paquete.
 #
+# Falla ante cualquier error, variable sin definir o fallo en una tuberia.
 set -euo pipefail
 
+# Direccion del robot: el primer argumento.
 HOST="${1:-}"
+# Puertos, duracion de la ventana y credenciales; todos se pueden cambiar
+# por variable de entorno.
 SSH_PORT="${SSH_PORT:-22}"
 HTTP_PORT="${HTTP_PORT:-8080}"
 DUR="${DUR:-60}"
 USUARIO="${USUARIO:-user1}"
 CLAVE="${CLAVE:-password1}"
 
+# Sin direccion se imprime la ayuda, que es la cabecera de este archivo.
 if [ -z "$HOST" ]; then
     sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
 fi
+# El host necesita curl y ssh.
 for cmd in curl ssh; do
     command -v "$cmd" >/dev/null || { echo "Falta $cmd en el host." >&2; exit 1; }
 done
 
+# Direccion base de la API, archivo de la cookie y PID del sondeo en
+# segundo plano.
 URL="http://$HOST:$HTTP_PORT"
 CK="$(mktemp)"
 SONDEO=""
 
+# Llamada a la API con la cookie de sesion y 5 s de limite.
 api() { curl -s -m 5 -b "$CK" -H 'Content-Type: application/json' "$@"; }
 
+# Inicia sesion: guarda la cookie e imprime el codigo HTTP.
 login() {
     curl -s -m 5 -c "$CK" -o /dev/null -w '%{http_code}' -X POST "$URL/api/login" \
         -H 'Content-Type: application/json' \
@@ -54,7 +64,9 @@ login() {
 # Manda una orden y la reintenta hasta que el servidor conteste 200. Si la
 # sesion ya no vale (401), vuelve a iniciarla.
 orden() {
+    # Ruta, cuerpo y ultimo codigo recibido.
     local ruta="$1" cuerpo="$2" codigo=000
+    # Hasta cinco intentos, uno por segundo.
     for _ in 1 2 3 4 5; do
         codigo="$(api -o /dev/null -w '%{http_code}' -X POST "$URL$ruta" -d "$cuerpo" || true)"
         [ "$codigo" = "200" ] && return 0
@@ -68,28 +80,36 @@ orden() {
 # Pase lo que pase, el robot queda detenido. Se comprueba al final: un robot
 # que sigue navegando despues de medir es peligroso.
 limpiar() {
+    # Detiene el sondeo en segundo plano.
     [ -n "$SONDEO" ] && kill "$SONDEO" 2>/dev/null || true
     wait 2>/dev/null || true
+    # Musica detenida, modo manual y motores frenados.
     orden /api/audio/control '{"action":"stop"}'   || true
     orden /api/mode          '{"mode":"manual"}'   || true
     orden /api/move          '{"direction":"stop"}' || true
+    # Consulta el estado para confirmar que quedo asi.
     estado="$(api "$URL/api/status" 2>/dev/null || true)"
     case "$estado" in
         *'"mode":"manual"'*'"status":0'*) echo "Robot en modo manual, detenido y sin musica." >&2 ;;
         *) echo "AVISO: no se pudo confirmar que el robot quedara detenido. Detengalo desde el panel." >&2 ;;
     esac
+    # Borra la cookie.
     rm -f "$CK"
 }
+# limpiar corre siempre al salir, tambien si el script falla.
 trap limpiar EXIT
 
+# Aviso y confirmacion escrita: el robot se va a mover.
 echo "El robot en $HOST va a navegar en modo autonomo durante $DUR s." >&2
 read -r -p "Escriba SI para continuar: " resp
 [ "$resp" = "SI" ] || { echo "Cancelado." >&2; exit 1; }
 
 # ── Escenario de operacion normal ────────────────────────────────────────────
+# Inicia sesion; sin 200 no se sigue.
 codigo="$(login)"
 [ "$codigo" = "200" ] || { echo "El login en $URL fallo (HTTP $codigo)." >&2; exit 1; }
 
+# Modo autonomo y una pista sonando.
 api -X POST "$URL/api/mode"          -d '{"mode":"autonomous"}'           >/dev/null
 api -X POST "$URL/api/audio/control" -d '{"action":"play","track_id":1}'  >/dev/null
 
@@ -97,35 +117,46 @@ api -X POST "$URL/api/audio/control" -d '{"action":"play","track_id":1}'  >/dev/
 ( while :; do api -o /dev/null "$URL/api/status" || true; sleep 0.5; done ) &
 SONDEO=$!
 
+# La tabla sale por la salida estandar; los avisos, por la de error.
 echo "Midiendo..." >&2
 echo
 echo "### Medicion del $(date '+%Y-%m-%d %H:%M') sobre \`$HOST\`"
 echo
 
 # ── Lo que corre en el target ────────────────────────────────────────────────
+# Lo que sigue hasta TARGET se ejecuta en el robot, por ssh. La clave del
+# host no se verifica ni se guarda: la imagen se regraba seguido.
 ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o LogLevel=ERROR "root@$HOST" "DUR=$DUR sh -s" <<'TARGET'
+# Falla ante errores y variables sin definir.
 set -eu
 
+# PID principal de un servicio; 0 si no existe.
 pid_de()  { systemctl show "$1" -p MainPID --value 2>/dev/null || echo 0; }
 # utime + stime del proceso en ticks de reloj. USER_HZ es 100 en Linux: un
 # tick por segundo es el 1 % de un nucleo.
 ticks()   { [ -r "/proc/$1/stat" ] && sed 's/.*) //' "/proc/$1/stat" | awk '{print $12 + $13}' || echo 0; }
+# Memoria residente del proceso, en MB.
 rss_mb()  { awk '/^VmRSS:/ {printf "%.1f", $2 / 1024}' "/proc/$1/status" 2>/dev/null || true; }
 # Total e inactivo (idle + iowait) de la primera linea de /proc/stat.
 cpu()     { awk 'NR == 1 {t = 0; for (i = 2; i <= 9; i++) t += $i; print t, $5 + $6}' /proc/stat; }
+# Microsegundos a segundos, con un decimal.
 us_a_s()  { awk -v u="${1:-0}" 'BEGIN {printf "%.1f", u / 1000000}'; }
+# Una fila de la tabla en Markdown.
 fila()    { printf '| %s | %s | %s |\n' "$1" "$2" "$3"; }
 
+# Modelo de la placa y cantidad de nucleos.
 modelo='sin device-tree'
 [ -r /proc/device-tree/model ] && modelo="$(tr -d '\0' < /proc/device-tree/model)"
 nucleos="$(grep -c '^processor' /proc/cpuinfo)"
 
+# Encabezado de la tabla y fila de la plataforma.
 echo '| Metrica | Valor | Metodo |'
 echo '|---|---|---|'
 fila 'Plataforma' "$modelo, $nucleos nucleos, kernel $(uname -r)" '`/proc/device-tree/model`, `uname -r`'
 
 # ── Sistema de archivos ──────────────────────────────────────────────────────
+# Una fila por particion montada: MB usados y MB totales.
 for punto in / /boot /opt/robot/audio/canciones; do
     grep -q " $punto " /proc/mounts || continue
     set -- $(df -k "$punto" | tail -n 1 | awk '{print $(NF-4), $(NF-3)}')
@@ -145,6 +176,7 @@ reinicios="$(systemctl show robot-server -p NRestarts --value)"
 t_http="$(journalctl -u robot-server -b -o short-monotonic --no-pager 2>/dev/null \
           | sed -n 's/^\[ *\([0-9.]*\)\].*Servidor escuchando.*/\1/p' | head -n 1)"
 
+# Filas del arranque.
 fila 'Arranque: kernel' "$(us_a_s "$t_kernel") s" '`UserspaceTimestampMonotonic`'
 fila 'Arranque: `robot-server` activo' "$(us_a_s "$t_srv") s" '`ActiveEnterTimestampMonotonic` de la unidad'
 escucha='sin dato'
@@ -154,14 +186,20 @@ fila 'Arranque: sistema completo' "$(us_a_s "$t_fin") s" '`FinishTimestampMonoto
 [ "$reinicios" = "0" ] || echo "> AVISO: robot-server se reinicio $reinicios veces en este arranque; el tiempo de la unidad no es el del arranque. Use la fila del journal." >&2
 
 # ── CPU: dos muestras separadas por DUR segundos ─────────────────────────────
+# PID de los dos procesos que se miden.
 p_srv="$(pid_de robot-server)"
 p_pig="$(pid_de pigpiod)"
+# Primera muestra: tiempo total y ocioso del sistema, y ticks de cada
+# proceso.
 set -- $(cpu); tot0="$1"; idle0="$2"
 s0="$(ticks "$p_srv")"; g0="$(ticks "$p_pig")"
+# Ventana de medicion.
 sleep "$DUR"
+# Segunda muestra.
 set -- $(cpu); tot1="$1"; idle1="$2"
 s1="$(ticks "$p_srv")"; g1="$(ticks "$p_pig")"
 
+# Porcentaje del tiempo que no fue ocioso entre las dos muestras.
 fila "CPU del sistema ($DUR s)" \
      "$(awk -v t0="$tot0" -v t1="$tot1" -v i0="$idle0" -v i1="$idle1" \
         'BEGIN {d = t1 - t0; if (d <= 0) d = 1; printf "%.1f %% de los nucleos", 100 * (d - (i1 - i0)) / d}')" \
@@ -172,6 +210,7 @@ de_un_nucleo() {
     awk -v a="$1" -v b="$2" -v n="$nucleos" -v d="$((tot1 - tot0))" \
         'BEGIN {if (d <= 0) d = 1; printf "%.1f %% de un nucleo", 100 * (b - a) * n / d}'
 }
+# Filas de CPU por proceso y carga promedio.
 fila 'CPU de `robot-server`' "$(de_un_nucleo "$s0" "$s1")" \
      'diferencia de `utime + stime` en `/proc/PID/stat`'
 [ "$p_pig" != "0" ] && fila 'CPU de `pigpiod`' "$(de_un_nucleo "$g0" "$g1")" 'idem'
@@ -181,11 +220,13 @@ fila 'Carga promedio (1 min)' "$(cut -d ' ' -f 1 /proc/loadavg)" '`/proc/loadavg
 fila 'RAM en uso' \
      "$(awk '/^MemTotal:/ {t = $2} /^MemAvailable:/ {a = $2} END {printf "%.0f MB de %.0f MB", (t - a) / 1024, t / 1024}' /proc/meminfo)" \
      '`MemTotal - MemAvailable` de `/proc/meminfo`'
+# Memoria del servidor y de pigpiod.
 rss="$(rss_mb "$p_srv")"
 [ -n "$rss" ] && rss="$rss MB" || rss='sin dato'
 fila 'RAM de `robot-server` (RSS)' "$rss" '`VmRSS` de `/proc/PID/status`'
 [ "$p_pig" != "0" ] && fila 'RAM de `pigpiod` (RSS)' "$(rss_mb "$p_pig") MB" 'idem'
 
+# Temperatura del procesador, si el kernel la expone.
 if [ -r /sys/class/thermal/thermal_zone0/temp ]; then
     fila 'Temperatura del SoC' \
          "$(awk '{printf "%.1f C", $1 / 1000}' /sys/class/thermal/thermal_zone0/temp)" \
@@ -194,5 +235,6 @@ fi
 exit 0
 TARGET
 
+# Fin: recordatorio de donde pegar la tabla.
 echo
 echo "Listo. Pegue la tabla en docs/metricas.md y en el README." >&2
