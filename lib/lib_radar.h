@@ -4,9 +4,11 @@
  *
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef LIB_RADAR_H
 #define LIB_RADAR_H
 
+/* uint32_t, para los numeros de secuencia. */
 #include <stdint.h>
 
 /*
@@ -31,11 +33,15 @@
  * Angulos del servo: 0 = derecha, 90 = frente, 180 = izquierda.
  */
 
+/* Separacion entre posiciones del barrido, en grados. */
 #define RADAR_PASO_GRADOS 30
+/* Cantidad de posiciones: con pasos de 30 grados son 7. */
 #define RADAR_N_ANGULOS   (180 / RADAR_PASO_GRADOS + 1)   /* 0, 30, ..., 180 */
+/* Angulo del servo que mira al frente del robot. */
 #define RADAR_FRENTE       90
 
 /** Pines del HC-SR04 (BCM). El ECHO va con divisor 1k/2k: saca 5 V. */
+/* TRIG en GPIO 17 (pin fisico 11) y ECHO en GPIO 27 (pin fisico 13). */
 #define RADAR_TRIG_GPIO 17
 #define RADAR_ECHO_GPIO 27
 
@@ -78,6 +84,7 @@ typedef struct {
  *
  * @return 0 si el hilo quedo corriendo, -1 si no.
  */
+/* pi: sesion abierta con pigpiod. */
 int radar_iniciar(int pi);
 
 /** Detiene el barrido, suelta el servo y deja el TRIG en bajo. Idempotente. */

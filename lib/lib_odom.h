@@ -4,6 +4,7 @@
  *
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef LIB_ODOM_H
 #define LIB_ODOM_H
 
