@@ -4,6 +4,7 @@
  *
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef MUNDO_H
 #define MUNDO_H
 
