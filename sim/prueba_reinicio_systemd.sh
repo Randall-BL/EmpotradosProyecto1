@@ -39,8 +39,8 @@ limpiar() {
 
 # Sondea GET / hasta que el servidor responde 200 (maximo 15 s) e imprime el
 # ultimo codigo. Un sleep fijo no sirve: antes de abrir el puerto el servidor
-# calibra el MPU y lib_audio_init() escanea la playlist, y con una pista larga
-# eso pasa de los 3 s.
+# calibra el MPU y lee las pistas de audio, y sobre un disco lento (p. ej.
+# /mnt/c en WSL) eso pasa de los 3 s.
 esperar_http() {
     i=0
     while [ $i -lt 15 ]; do

@@ -42,23 +42,35 @@ json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
 ```
 
 **Causa.** El script lanzaba el servidor y esperaba un tiempo fijo, `sleep 3`. En esta
-máquina el servidor tardó **3,6 s** en abrir el puerto. Las peticiones salían antes de
-tiempo, `curl` devolvía `000` y el primer `json.load` abortaba el script. El defecto
-es del script de prueba, no del servidor.
+ejecución el servidor tardó **3,6 s** en abrir el puerto. Las peticiones salían antes
+de tiempo, `curl` devolvía `000` y el primer `json.load` abortaba el script. El
+defecto es la espera fija del script de prueba, no el servidor.
 
-El tiempo se va en `lib_audio_init()`, que escanea la playlist antes de que el
-servidor empiece a escuchar. Medido lanzando el mismo binario con tres contenidos
-distintos de `audio/canciones/`:
+El tiempo se fue en `lib_audio_init()`, que lee las pistas antes de que el servidor
+empiece a escuchar, y esa lectura fue lenta **por el disco de esta ejecución**: la
+carpeta de trabajo estaba en el disco de Windows visto desde WSL (`/mnt/c`, sistema de
+archivos 9p). El mismo binario, con las 9 pistas versionadas:
 
-| Contenido de `audio/canciones/` | Calibración del MPU y radar | Escaneo de audio | Puerto abierto a los |
+| Carpeta de trabajo | Escaneo de audio | Puerto abierto a los |
+|---|---|---|
+| `/mnt/c`, disco de Windows desde WSL (9p) | 2,6 s | 3,2 s |
+| Disco nativo de WSL (ext4) | 0,02 s | 0,59 s |
+
+En la Raspberry Pi, el journal de `docs/evidencias/ejecucion-target.md` registra
+0,44 s para ese mismo escaneo de 9 pistas. Sobre un disco Linux el servidor escucha en
+menos de 1 s y el `sleep 3` original alcanzaba, lo que coincide con las evidencias
+anteriores del repositorio.
+
+En el disco lento, el costo crece con el tamaño de las pistas:
+
+| Contenido de `audio/canciones/`, en `/mnt/c` | Calibración del MPU y radar | Escaneo de audio | Puerto abierto a los |
 |---|---|---|---|
 | Vacío | 0,57 s | 0,01 s | 0,57 s |
 | Las 8 pistas generadas (688 KB) | 0,56 s | 0,81 s | 1,37 s |
 | Las 9 versionadas (6,1 MB) | 0,57 s | 5,84 s | 6,41 s |
 
-La novena pista, de 5,6 MB, explica casi todo el escaneo. Su costo varía entre
-corridas según el archivo esté o no en la caché de disco: unos 3 s en las corridas de la
-prueba y 5,8 s en esta medición, hecha sobre una copia recién creada.
+La última fila se midió sobre una copia recién creada; con el archivo ya en la caché de
+disco el escaneo bajó a unos 3 s.
 
 **Corrección.** `sim/prueba_api.sh` ahora sondea `GET /` una vez por segundo hasta que
 el servidor responde, con un máximo de 15 s, y si no responde termina con un mensaje
@@ -117,11 +129,9 @@ OK
 
 ## Observaciones
 
-- **El tiempo hasta abrir el puerto depende de la playlist.** El escaneo ocurre antes
-  de `MHD_start_daemon`, así que cada pista larga retrasa el momento en que el robot
-  empieza a responder. En el target las canciones se instalan en
-  `/opt/robot/audio/canciones/`, por lo que el mismo escaneo ocurre en cada arranque.
-  No se midió en la Raspberry Pi.
+- **La espera fija solo falla sobre un disco lento.** Con la carpeta de trabajo en un
+  disco Linux el servidor escucha a los 0,6 s y el script original pasaba. El sondeo
+  hace que la prueba deje de depender de dónde está clonado el repositorio.
 - **El servidor tarda 6,9 s en terminar tras `SIGTERM`.** Libera el puerto antes, pero
   el proceso sigue vivo mientras apaga el hardware. No afecta a la prueba; conviene
   tenerlo presente al medir `systemctl stop` o `restart` en el target.

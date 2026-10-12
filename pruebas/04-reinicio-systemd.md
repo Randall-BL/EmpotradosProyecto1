@@ -54,10 +54,10 @@ El journal de esa corrida muestra además un aviso sobre la unidad de prueba:
 Dos defectos del script de prueba, ninguno del servidor:
 
 1. **Esperas fijas.** Consultaba el servidor 3 s después de arrancarlo y 5 s después
-   de matarlo. Aquí el servidor tardó 3,6 s en abrir el puerto, porque antes escanea
-   la playlist (medición en la prueba 03), y tras el fallo hay que sumar los 2 s de
-   `RestartSec`. El veredicto solo comparaba los PID, así que decía `OK` aunque el
-   servidor no hubiera respondido.
+   de matarlo. Aquí el servidor tardó 3,6 s en abrir el puerto, porque la carpeta de
+   trabajo estaba en un disco lento (medición en la prueba 03), y tras el fallo hay
+   que sumar los 2 s de `RestartSec`. El veredicto solo comparaba los PID, así que
+   decía `OK` aunque el servidor no hubiera respondido.
 2. **Limitador de arranques mal ubicado.** La unidad de prueba ponía
    `StartLimitIntervalSec` en `[Service]`, donde `systemd` la ignora. La unidad real,
    `meta-robot/recipes-robot/robot-server/files/robot-server.service`, la tiene bien
@@ -116,8 +116,8 @@ servidor vivo y que el puerto 8080 quedó libre.
 ## Observaciones
 
 - **`docs/evidencias/systemd-reinicio.md` muestra HTTP 200 con el script original.**
-  Es coherente con una máquina o una versión del servidor que arrancaba en menos de
-  3 s. Con la espera fija el resultado dependía de la velocidad del host.
+  Es coherente: sobre un disco Linux el servidor escucha a los 0,6 s y la espera de
+  3 s alcanzaba. Con la espera fija el resultado dependía de la velocidad del disco.
 - La unidad de prueba usa `RestartSec=2`; la real usa `RestartSec=5`.
 
 ## Límites

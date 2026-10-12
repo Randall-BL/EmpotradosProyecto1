@@ -99,8 +99,9 @@ Tras la prueba se comprobó que no quedó ningún servidor vivo.
 ## Observaciones
 
 - **El servidor respondió al primer sondeo, a 1,0 s**, contra los 3,6 s de la prueba
-  03. La diferencia es la playlist: aquí el directorio de trabajo se arma con los
-  sonidos de evento y sin canciones, así que el escaneo de audio no cuesta nada.
+  03. Las dos corrieron sobre el mismo disco lento; la diferencia es que aquí el
+  directorio de trabajo se arma con los sonidos de evento y sin canciones, así que
+  casi no hay nada que leer al arrancar.
 - **Hay dos copias de `robot_state.h`**, en `lib/` y en `server/src/`. Hoy solo
   difieren en una línea en blanco. `lib_leds.c` compila con la de `lib/` y el
   servidor con la suya; si una cambia y la otra no, la estructura `RobotState`
