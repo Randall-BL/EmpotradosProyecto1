@@ -98,8 +98,8 @@ geometría del robot y a cuánto tarda en frenar.
    - `TTC_OBSTACULO_S` (hoy 1.2 s): el robot tiene que detenerse con margen
      aun cuando la lectura frontal llega justo antes de disparar. Si frena
      demasiado cerca, subirlo.
-   - `DIST_OBSTACULO_CM` (hoy 20 cm): un poco por encima de la distancia de
-     frenado a baja velocidad.
+   - `DIST_OBSTACULO_CM` (hoy 6 cm): un poco por encima de la distancia de
+     frenado a baja velocidad. A los ~2 cm/s del robot es la vía que dispara.
 
 ## 5. Constantes de odometría (issue #22)
 
@@ -108,9 +108,9 @@ constantes del modelo (`lib/lib_odom.h`) hay que medirlas, porque en crucero la
 velocidad converge a la del modelo:
 
 - **`ODOM_VEL_MAX_CM_S`** — velocidad de una llanta a fondo. Medir el avance en
-  línea recta durante 10 s y dividir entre el tiempo. El valor por defecto,
-  30 cm/s, es el del simulador: con los motores de 60 rpm a 12 V y las ruedas de
-  30 mm, el robot real va a unos 5 cm/s, así que hay que cambiarlo.
+  línea recta durante 10 s y dividir entre el tiempo. Hoy vale 2 cm/s, medido
+  en el robot. El valor anterior, 30 cm/s, era el del simulador y hacía que el
+  tiempo de choque disparara la evasión a más de 30 cm de la pared.
 - **`ODOM_ENTRE_EJES_CM`** — distancia entre el centro de las dos llantas, con
   regla. Con MPU el rumbo sale del giroscopio, pero sin él se usa esta.
 - **`ODOM_PWM_ARRANQUE`** — el PWM mínimo con el que las llantas empiezan a

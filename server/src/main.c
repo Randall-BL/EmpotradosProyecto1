@@ -436,11 +436,13 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
      por debajo de DIST_OBSTACULO_CM;
    - tiempo: el tiempo antes de chocar del radar por debajo de
      TTC_OBSTACULO_S. Es la via que reacciona antes cuanto mas rapido va el
-     robot: a 25 cm/s salta a unos 30 cm de la pared.
-   La distancia cubre al robot quieto o muy lento, donde no hay tiempo de
-   choque que calcular. */
-/* Distancia, en cm, por debajo de la cual hay obstaculo. */
-#define DIST_OBSTACULO_CM 20.0
+     robot: a 25 cm/s saltaria a unos 30 cm de la pared.
+   El robot real va a unos 2 cm/s, asi que en la practica manda la distancia:
+   a esa velocidad el tiempo de choque solo bajaria de TTC_OBSTACULO_S a
+   2.4 cm, ya dentro del umbral de distancia. */
+/* Distancia, en cm, por debajo de la cual hay obstaculo. A 2 cm/s el robot
+   tiene tiempo de sobra para frenar: se deja acercar hasta 6 cm. */
+#define DIST_OBSTACULO_CM 6.0
 /* Tiempo de choque, en s, por debajo del cual hay obstaculo. */
 #define TTC_OBSTACULO_S    1.2
 /* Semiapertura del cono frontal: cuentan los angulos a 30 grados o menos
@@ -602,9 +604,13 @@ static int actualizar_estado(RobotState *rs) {
 /* Lecturas parecidas a la mejor, dentro de este margen, compiten al azar. */
 #define MARGEN_EMPATE_CM 25.0
 
-/* Tope de tiempo para un giro: a VEL_GIRO el robot gira unos 180 grados/s;
-   el tope deja margen para piso resbaloso o bateria baja. */
-#define GIRO_MS_POR_GRADO 20
+/* Velocidad de un giro en el lugar segun el modelo de los motores, en
+   grados/s: las dos llantas a ODOM_VEL_MAX_CM_S en sentidos opuestos. Con los
+   2 cm/s del robot real son unos 15 grados/s; antes se suponian 180. */
+#define GIRO_GRADOS_S (2.0 * ODOM_VEL_MAX_CM_S / ODOM_ENTRE_EJES_CM * 180.0 / M_PI)
+/* Tope de tiempo para un giro: el doble de lo que deberia tardar, para dejar
+   margen a un piso resbaloso o a la bateria baja. */
+#define GIRO_MARGEN_TOPE 2.0
 /* Grados de tolerancia: un giro menor no se ejecuta, y uno en curso termina
    al quedar a esa distancia del objetivo. */
 #define GIRO_TOLERANCIA    5.0
@@ -649,7 +655,7 @@ static int girar_grados(RobotState *rs, double grados) {
     else              motores_girar_izquierda(VEL_GIRO);
 
     /* Tiempo maximo del giro, por si el rumbo no avanza. */
-    int tope_ms = (int)(fabs(grados) * GIRO_MS_POR_GRADO) + 1000;
+    int tope_ms = (int)(fabs(grados) / GIRO_GRADOS_S * 1000.0 * GIRO_MARGEN_TOPE) + 1000;
     /* 1 mientras el giro no se aborte. */
     int ok = 1;
     for (int t = 0; t < tope_ms; t += PASO_MS) {
@@ -735,7 +741,7 @@ static void evadir(RobotState *rs) {
 
 /* Rutina ante un desnivel: el HC-SR04 no ve una grada, asi que no hay barrido
    que consultar. Retrocede mas que ante un obstaculo —el borde esta debajo
-   del robot, no a 20 cm— y gira hacia el lado contrario al del sensor que
+   del robot, no a unos centimetros— y gira hacia el lado contrario al del sensor que
    perdio el piso; con los dos, media vuelta. */
 #define RETROCESO_CAIDA_MS 800
 

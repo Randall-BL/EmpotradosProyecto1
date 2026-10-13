@@ -24,8 +24,9 @@ SRV=../server/src
 # Todos los modulos de la biblioteca: motores, sensor, servo, radar, MPU,
 # odometria, LEDs, audio y la fachada.
 # -I. va antes que -I$LIB: el pigpiod_if2.h de esta carpeta gana. Enlaza con
-# mpg123, ALSA, la biblioteca matematica y pthreads.
-$CC -Wall -Wextra -O1 -g -I. -I"$LIB" \
+# mpg123, ALSA, la biblioteca matematica y pthreads. El modelo de odometria
+# usa la velocidad del robot simulado (28 cm/s en mundo.c), no la del real.
+$CC -Wall -Wextra -O1 -g -I. -I"$LIB" -DODOM_VEL_MAX_CM_S=30.0 \
     "$LIB"/lib_*.c \
     "$SRV"/robot_state.c \
     mundo.c \
