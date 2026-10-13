@@ -232,6 +232,7 @@ git clone -b scarthgap https://github.com/agherzan/meta-raspberrypi.git
 git clone -b scarthgap https://github.com/openembedded/meta-openembedded.git
 cd ..
 git clone https://github.com/Randall-BL/EmpotradosProyecto1.git
+export PROYECTO=~/yocto/EmpotradosProyecto1   # o la ruta donde quedó el clon
 ```
 
 ---
@@ -252,7 +253,7 @@ bitbake-layers add-layer ../meta-openembedded/meta-oe
 bitbake-layers add-layer ../meta-openembedded/meta-python
 bitbake-layers add-layer ../meta-openembedded/meta-multimedia
 bitbake-layers add-layer ../meta-openembedded/meta-networking
-bitbake-layers add-layer ~/yocto/EmpotradosProyecto1/meta-robot
+bitbake-layers add-layer $PROYECTO/meta-robot
 
 bitbake-layers show-layers          # deben aparecer las 8 capas
 ```
@@ -264,7 +265,7 @@ mediante `FILESEXTRAPATHS`: si se copia solo la carpeta de la capa, `do_fetch` f
 ### 4.2 Configurar el build
 
 ```bash
-cat ~/yocto/EmpotradosProyecto1/meta-robot/conf/local.conf.sample >> conf/local.conf
+cat $PROYECTO/meta-robot/conf/local.conf.sample >> conf/local.conf
 ```
 
 Ese archivo lleva comentada la razón de cada variable. Lo esencial:
@@ -284,7 +285,7 @@ El arranque es headless: el robot se conecta solo a la red. El archivo real est�
 `.gitignore` y nunca se sube.
 
 ```bash
-cd ~/yocto/EmpotradosProyecto1/meta-robot/recipes-connectivity/wifi-config/files
+cd $PROYECTO/meta-robot/recipes-connectivity/wifi-config/files
 cp wpa_supplicant-wlan0.conf.sample wpa_supplicant-wlan0.conf
 $EDITOR wpa_supplicant-wlan0.conf   # SSID y contraseña de la red
 ```
@@ -388,13 +389,14 @@ bitbake -c populate_sdk robot-image
 
 ```bash
 source ~/robot-sdk/environment-setup-cortexa72-poky-linux
+export PROYECTO=~/yocto/EmpotradosProyecto1   # ruta del clon, ver 3.2
 
-cd ~/yocto/EmpotradosProyecto1/lib
+cd $PROYECTO/lib
 mkdir -p build && cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=$OECORE_NATIVE_SYSROOT/usr/share/cmake/OEToolchainConfig.cmake ..
 make -j$(nproc)
 
-cd ~/yocto/EmpotradosProyecto1/server/src
+cd $PROYECTO/server/src
 mkdir -p build && cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=$OECORE_NATIVE_SYSROOT/usr/share/cmake/OEToolchainConfig.cmake ..
 make -j$(nproc)

@@ -75,7 +75,8 @@ echo $SDKTARGETSYSROOT
 ### Compilar la biblioteca
 
 ```bash
-cd ~/EmpotradosProyecto1/lib
+export PROYECTO=~/yocto/EmpotradosProyecto1   # ruta donde se clonó el repositorio
+cd $PROYECTO/lib
 mkdir -p build && cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=$OECORE_NATIVE_SYSROOT/usr/share/cmake/OEToolchainConfig.cmake ..
 make -j$(nproc)
@@ -84,7 +85,7 @@ make -j$(nproc)
 ### Compilar el servidor
 
 ```bash
-cd ~/EmpotradosProyecto1/server/src
+cd $PROYECTO/server/src
 mkdir -p build && cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=$OECORE_NATIVE_SYSROOT/usr/share/cmake/OEToolchainConfig.cmake ..
 make -j$(nproc)

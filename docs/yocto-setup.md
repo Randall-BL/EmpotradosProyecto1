@@ -58,6 +58,7 @@ cd ..
 
 # Repositorio del proyecto: aporta la capa meta-robot/
 git clone https://github.com/Randall-BL/EmpotradosProyecto1.git
+export PROYECTO=~/yocto/EmpotradosProyecto1   # o la ruta donde quedó el clon
 ```
 
 | Capa | Para qué |
@@ -92,7 +93,7 @@ bitbake-layers add-layer ../meta-openembedded/meta-oe
 bitbake-layers add-layer ../meta-openembedded/meta-python
 bitbake-layers add-layer ../meta-openembedded/meta-multimedia
 bitbake-layers add-layer ../meta-openembedded/meta-networking
-bitbake-layers add-layer ~/yocto/EmpotradosProyecto1/meta-robot
+bitbake-layers add-layer $PROYECTO/meta-robot
 
 bitbake-layers show-layers        # verificar que aparezcan las 8 capas
 ```
@@ -110,7 +111,7 @@ Anexe al final de `build/conf/local.conf` el contenido de
 [`meta-robot/conf/local.conf.sample`](../meta-robot/conf/local.conf.sample):
 
 ```bash
-cat ~/yocto/EmpotradosProyecto1/meta-robot/conf/local.conf.sample >> conf/local.conf
+cat $PROYECTO/meta-robot/conf/local.conf.sample >> conf/local.conf
 ```
 
 Ese archivo lleva comentada la razón de cada variable. Lo esencial:
@@ -240,7 +241,7 @@ El arranque es headless: el robot debe conectarse solo a la red. Cree el archivo
 credenciales (está en `.gitignore`, nunca se sube al repositorio):
 
 ```bash
-cd ~/yocto/EmpotradosProyecto1
+cd $PROYECTO
 cp meta-robot/recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf.sample \
    meta-robot/recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf
 $EDITOR meta-robot/recipes-connectivity/wifi-config/files/wpa_supplicant-wlan0.conf
