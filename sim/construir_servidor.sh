@@ -19,8 +19,9 @@ LIB=../lib
 SRV=../server/src
 
 # Compila el servidor, la biblioteca y el simulador en un solo binario,
-# enlazado con las bibliotecas reales del host.
-$CC -Wall -O1 -g -I. -I"$LIB" -I"$SRV" \
+# enlazado con las bibliotecas reales del host. El modelo de odometria usa la
+# velocidad del robot simulado (28 cm/s en mundo.c), no la del real.
+$CC -Wall -O1 -g -I. -I"$LIB" -I"$SRV" -DODOM_VEL_MAX_CM_S=30.0 \
     "$SRV"/main.c "$SRV"/api.c "$SRV"/auth.c "$SRV"/sha256.c "$SRV"/robot_state.c \
     "$LIB"/lib_*.c \
     mundo.c pigpio_sim.c \

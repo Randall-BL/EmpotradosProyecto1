@@ -436,11 +436,13 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
      por debajo de DIST_OBSTACULO_CM;
    - tiempo: el tiempo antes de chocar del radar por debajo de
      TTC_OBSTACULO_S. Es la via que reacciona antes cuanto mas rapido va el
-     robot: a 25 cm/s salta a unos 30 cm de la pared.
-   La distancia cubre al robot quieto o muy lento, donde no hay tiempo de
-   choque que calcular. */
-/* Distancia, en cm, por debajo de la cual hay obstaculo. */
-#define DIST_OBSTACULO_CM 20.0
+     robot: a 25 cm/s saltaria a unos 30 cm de la pared.
+   El robot real va a unos 2 cm/s, asi que en la practica manda la distancia:
+   a esa velocidad el tiempo de choque solo bajaria de TTC_OBSTACULO_S a
+   2.4 cm, ya dentro del umbral de distancia. */
+/* Distancia, en cm, por debajo de la cual hay obstaculo. A 2 cm/s el robot
+   tiene tiempo de sobra para frenar: se deja acercar hasta 6 cm. */
+#define DIST_OBSTACULO_CM 6.0
 /* Tiempo de choque, en s, por debajo del cual hay obstaculo. */
 #define TTC_OBSTACULO_S    1.2
 /* Semiapertura del cono frontal: cuentan los angulos a 30 grados o menos
@@ -735,7 +737,7 @@ static void evadir(RobotState *rs) {
 
 /* Rutina ante un desnivel: el HC-SR04 no ve una grada, asi que no hay barrido
    que consultar. Retrocede mas que ante un obstaculo —el borde esta debajo
-   del robot, no a 20 cm— y gira hacia el lado contrario al del sensor que
+   del robot, no a unos centimetros— y gira hacia el lado contrario al del sensor que
    perdio el piso; con los dos, media vuelta. */
 #define RETROCESO_CAIDA_MS 800
 

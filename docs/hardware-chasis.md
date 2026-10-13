@@ -131,9 +131,9 @@ giroscopio da el rumbo y cuyo acelerómetro, integrado, da la velocidad; y el **
 los motores** —su velocidad a fondo, medida en la calibración—, que corrige la deriva
 del acelerómetro. El detalle está en [`navegacion-radar.md`](navegacion-radar.md).
 
-> La velocidad a fondo del modelo es `ODOM_VEL_MAX_CM_S` en `lib/lib_odom.h`. Su valor
-> por defecto es de 30 cm/s, el del simulador: en el robot hay que medirla y cambiarla,
-> porque la real es varias veces menor (ver [`odometria.md`](odometria.md)).
+> La velocidad a fondo del modelo es `ODOM_VEL_MAX_CM_S` en `lib/lib_odom.h`. Vale
+> 2 cm/s, medida en el robot; el simulador mantiene su propia velocidad, de 28 cm/s
+> (ver [`odometria.md`](odometria.md)).
 
 ---
 
