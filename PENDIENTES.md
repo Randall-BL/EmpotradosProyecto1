@@ -40,10 +40,14 @@ rootfs 129 MB, arranque 19.2 s, RAM 97 MB y CPU 3.6 %.
 El código trae las constantes del simulador, que supone un robot de 30 cm/s. Con los
 motores de 60 rpm a 12 V y las ruedas de 30 mm, el real va a unos 5 cm/s.
 
-- [ ] Medir la velocidad a fondo y ponerla en `ODOM_VEL_MAX_CM_S` (`lib/lib_odom.h`).
-- [ ] Medir la separación entre ruedas y ponerla en `ODOM_ENTRE_EJES_CM`.
-- [ ] Revisar el tope de tiempo de los giros (`GIRO_MS_POR_GRADO`) y el retroceso
-      (`RETROCESO_MS`) en `server/src/main.c`: están pensados para un robot más rápido.
+- [x] Medir la velocidad a fondo y ponerla en `ODOM_VEL_MAX_CM_S` (`lib/lib_odom.h`):
+      2 cm/s.
+- [ ] Medir la separación entre ruedas y ponerla en `ODOM_ENTRE_EJES_CM`. El tope de
+      tiempo de los giros sale de esta constante y de la velocidad.
+- [x] Tope de tiempo de los giros: ahora se calcula con el modelo de los motores
+      (`GIRO_GRADOS_S` en `server/src/main.c`).
+- [ ] Revisar el retroceso (`RETROCESO_MS`) en `server/src/main.c`: está pensado para
+      un robot más rápido.
 - [ ] Calibrar los pulsos del servo y el montaje del MPU-6050
       ([`docs/odometria.md`](docs/odometria.md)).
 

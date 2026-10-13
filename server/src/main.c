@@ -604,9 +604,13 @@ static int actualizar_estado(RobotState *rs) {
 /* Lecturas parecidas a la mejor, dentro de este margen, compiten al azar. */
 #define MARGEN_EMPATE_CM 25.0
 
-/* Tope de tiempo para un giro: a VEL_GIRO el robot gira unos 180 grados/s;
-   el tope deja margen para piso resbaloso o bateria baja. */
-#define GIRO_MS_POR_GRADO 20
+/* Velocidad de un giro en el lugar segun el modelo de los motores, en
+   grados/s: las dos llantas a ODOM_VEL_MAX_CM_S en sentidos opuestos. Con los
+   2 cm/s del robot real son unos 15 grados/s; antes se suponian 180. */
+#define GIRO_GRADOS_S (2.0 * ODOM_VEL_MAX_CM_S / ODOM_ENTRE_EJES_CM * 180.0 / M_PI)
+/* Tope de tiempo para un giro: el doble de lo que deberia tardar, para dejar
+   margen a un piso resbaloso o a la bateria baja. */
+#define GIRO_MARGEN_TOPE 2.0
 /* Grados de tolerancia: un giro menor no se ejecuta, y uno en curso termina
    al quedar a esa distancia del objetivo. */
 #define GIRO_TOLERANCIA    5.0
@@ -651,7 +655,7 @@ static int girar_grados(RobotState *rs, double grados) {
     else              motores_girar_izquierda(VEL_GIRO);
 
     /* Tiempo maximo del giro, por si el rumbo no avanza. */
-    int tope_ms = (int)(fabs(grados) * GIRO_MS_POR_GRADO) + 1000;
+    int tope_ms = (int)(fabs(grados) / GIRO_GRADOS_S * 1000.0 * GIRO_MARGEN_TOPE) + 1000;
     /* 1 mientras el giro no se aborte. */
     int ok = 1;
     for (int t = 0; t < tope_ms; t += PASO_MS) {
