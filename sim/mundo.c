@@ -2,19 +2,26 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * MIT License. Ver LICENSE y NOTICE.md.
  */
 
+/* Interfaz del mundo virtual. */
 #include "mundo.h"
 
+/* sin, cos, exp, fabs y fmod. */
 #include <math.h>
+/* Mutex, e hilo que hace avanzar el mundo. */
 #include <pthread.h>
+/* printf y fprintf. */
 #include <stdio.h>
+/* memset, para limpiar el lienzo del dibujo. */
 #include <string.h>
+/* clock_gettime. */
 #include <time.h>
+/* usleep. */
 #include <unistd.h>
 
 /* La habitacion: 4 x 4 metros con el origen en el centro. */
+/* Limites de la sala, en cm. */
 #define SALA_MIN_X (-200.0)
 #define SALA_MAX_X ( 200.0)
 #define SALA_MIN_Y (-200.0)
@@ -29,6 +36,8 @@
 /* Parametros fisicos "verdaderos" del robot simulado. No son los mismos que
    las constantes de lib_odom: la gracia es justamente que difieran un poco,
    para que se vea el error que acumula la navegacion a la estima. */
+/* Velocidad maxima real de una llanta, separacion real entre llantas y
+   orden minima con la que el motor arranca. */
 #define REAL_VEL_MAX_CM_S   28.0
 #define REAL_ENTRE_EJES_CM  15.5
 #define REAL_PWM_ARRANQUE   60
@@ -39,6 +48,8 @@
    el MPU no tendria nada que aportar sobre el modelo de los motores. */
 #define REAL_TAU_MOTOR_S    0.12
 
+/* Rectangulo alineado con los ejes: esquina inferior izquierda y esquina
+   superior derecha, en cm. */
 typedef struct { double x0, y0, x1, y1; } Caja;
 
 /* Un par de muebles, para que la habitacion no sea una caja vacia. */
@@ -47,6 +58,7 @@ static const Caja g_muebles[] = {
     { -150.0, -60.0, -90.0, -20.0 },  /* mesa      */
     { -30.0, -180.0, 60.0, -140.0 },  /* alfombra? un mueble mas */
 };
+/* Cantidad de muebles de la tabla. */
 #define N_MUEBLES ((int)(sizeof(g_muebles) / sizeof(g_muebles[0])))
 
 /* El hueco de una grada en una esquina: no tiene altura, asi que el HC-SR04 no
@@ -54,13 +66,17 @@ static const Caja g_muebles[] = {
    centro del robot pasa el borde, el robot se cae: se cuenta como caida y se
    lo deja en el borde para que la simulacion siga. */
 static const Caja g_hueco = { 110.0, -195.0, 195.0, -100.0 };
+/* Caidas contadas, y bandera de que el robot esta ahora sobre el hueco,
+   para contar cada caida una sola vez. */
 static int        g_caidas = 0;
 static int        g_cayendo = 0;
 
+/* 1 si el punto esta dentro del hueco de la grada. */
 static int en_hueco(double x, double y) {
     return x > g_hueco.x0 && x < g_hueco.x1 && y > g_hueco.y0 && y < g_hueco.y1;
 }
 
+/* Protege todo el estado del mundo. */
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static double g_x = 0.0, g_y = 0.0, g_rumbo = 0.0;   /* pose verdadera  */
@@ -68,6 +84,7 @@ static int    g_vel_izq = 0, g_vel_der = 0;          /* ordenes de PWM  */
 static double g_v_izq = 0.0, g_v_der = 0.0;          /* llantas, cm/s   */
 static double g_v_cuerpo = 0.0;                      /* avance real     */
 static double g_omega = 0.0;                         /* rad/s, horario  */
+/* 1 si en la ultima integracion el robot quedo pegado a algo. */
 static int    g_choco = 0;
 static int    g_choques = 0;                         /* choques contados */
 
@@ -75,60 +92,83 @@ static int    g_choques = 0;                         /* choques contados */
    anterior, para entregar la aceleracion media desde entonces. */
 static double          g_imu_v_anterior = 0.0;
 static struct timespec g_imu_t;
+/* Instante de la ultima integracion. */
 static struct timespec g_t;
+/* 1 cuando g_t ya tiene un valor valido. */
 static int    g_listo = 0;
+/* 1 mientras el hilo del mundo debe seguir corriendo. */
 static int    g_hilo_vivo = 0;
 
 /* Rastro recorrido, para dibujarlo. */
 #define RASTRO_MAX 4000
+/* Puntos del rastro, y cuantos hay. */
 static double g_rastro_x[RASTRO_MAX], g_rastro_y[RASTRO_MAX];
 static int    g_rastro_n = 0;
 
+/* Convierte la orden de PWM en la velocidad real de la llanta, con los
+   parametros verdaderos del robot simulado. */
 static double pwm_a_cm_s(int pwm) {
+    /* Magnitud de la orden. */
     int m = pwm < 0 ? -pwm : pwm;
+    /* Por debajo del umbral el motor no gira. */
     if (m < REAL_PWM_ARRANQUE) return 0.0;
+    /* Proporcion lineal de la velocidad maxima, con el signo de la orden. */
     double v = (m / 255.0) * REAL_VEL_MAX_CM_S;
     return pwm < 0 ? -v : v;
 }
 
 /* Avanza la simulacion hasta ahora. Se llama con g_lock tomado. */
 static void integrar(void) {
+    /* Instante actual. */
     struct timespec ahora;
     clock_gettime(CLOCK_MONOTONIC, &ahora);
 
+    /* Primera llamada: solo se fija el punto de partida. */
     if (!g_listo) { g_t = ahora; g_listo = 1; return; }
 
+    /* Segundos reales desde la integracion anterior. */
     double dt = (ahora.tv_sec - g_t.tv_sec) + (ahora.tv_nsec - g_t.tv_nsec) / 1e9;
     g_t = ahora;
+    /* Un paso nulo o de mas de un segundo se descarta. */
     if (dt <= 0.0 || dt > 1.0) return;
 
     /* Cada llanta se acerca a la velocidad ordenada como un sistema de primer
        orden; el tramo se integra con el promedio de su inicio y su final. */
+    /* Fraccion del camino hacia la velocidad ordenada que se recorre en dt. */
     double k     = 1.0 - exp(-dt / REAL_TAU_MOTOR_S);
+    /* Velocidad de cada llanta al inicio del paso. */
     double izq0  = g_v_izq, der0 = g_v_der;
+    /* Cada llanta se acerca a su velocidad ordenada. */
     g_v_izq += (pwm_a_cm_s(g_vel_izq) - g_v_izq) * k;
     g_v_der += (pwm_a_cm_s(g_vel_der) - g_v_der) * k;
 
+    /* Velocidad media de cada llanta en el paso, la del centro y la angular. */
     double v_izq = (izq0 + g_v_izq) / 2.0;
     double v_der = (der0 + g_v_der) / 2.0;
     double v     = (v_izq + v_der) / 2.0;
     double omega = (v_izq - v_der) / REAL_ENTRE_EJES_CM;
 
+    /* Rumbo a mitad del paso y posicion candidata. */
     double rumbo_med = g_rumbo + omega * dt / 2.0;
     double nx = g_x + v * sin(rumbo_med) * dt;
     double ny = g_y + v * cos(rumbo_med) * dt;
 
+    /* Nuevo rumbo, llevado al rango de 0 a 2 pi. */
     g_rumbo = fmod(g_rumbo + omega * dt, 2.0 * M_PI);
     if (g_rumbo < 0.0) g_rumbo += 2.0 * M_PI;
 
     /* Las paredes y los muebles frenan: el robot no los atraviesa. */
+    /* Recuerda si ya estaba chocando, para contar cada choque una sola vez. */
     int choco_antes = g_choco;
     g_choco = 0;
+    /* Las cuatro paredes: si el borde del robot las pasa, queda apoyado en
+       la pared. */
     if (nx < SALA_MIN_X + RADIO_ROBOT_CM) { nx = SALA_MIN_X + RADIO_ROBOT_CM; g_choco = 1; }
     if (nx > SALA_MAX_X - RADIO_ROBOT_CM) { nx = SALA_MAX_X - RADIO_ROBOT_CM; g_choco = 1; }
     if (ny < SALA_MIN_Y + RADIO_ROBOT_CM) { ny = SALA_MIN_Y + RADIO_ROBOT_CM; g_choco = 1; }
     if (ny > SALA_MAX_Y - RADIO_ROBOT_CM) { ny = SALA_MAX_Y - RADIO_ROBOT_CM; g_choco = 1; }
 
+    /* Los muebles, agrandados en el radio del robot. */
     for (int i = 0; i < N_MUEBLES; i++) {
         const Caja *c = &g_muebles[i];
         if (nx > c->x0 - RADIO_ROBOT_CM && nx < c->x1 + RADIO_ROBOT_CM &&
@@ -139,13 +179,16 @@ static void integrar(void) {
         }
     }
 
+    /* La grada: si el centro del robot entra al hueco, no avanza. */
     int cayo = en_hueco(nx, ny);
     if (cayo) { nx = g_x; ny = g_y; }
+    /* Una caida nueva se cuenta y se avisa. */
     if (cayo && !g_cayendo) {
         g_caidas++;
         fprintf(stderr, "[sim] CAIDA %d en (%.0f, %.0f) cm, rumbo %.0f\n",
                 g_caidas, nx, ny, g_rumbo * 180.0 / M_PI);
     }
+    /* Recuerda si esta sobre el hueco. */
     g_cayendo = cayo;
 
     /* Cada choque nuevo se avisa: es la medida de si la navegacion evade. */
@@ -158,12 +201,18 @@ static void integrar(void) {
     /* Lo que el cuerpo avanzo de verdad: con el robot trabado contra un
        mueble las llantas giran pero el cuerpo no, y eso es lo que siente el
        acelerometro. */
+    /* Proyeccion del desplazamiento real sobre la direccion de avance,
+       dividida por dt. */
     g_v_cuerpo = ((nx - g_x) * sin(rumbo_med) + (ny - g_y) * cos(rumbo_med)) / dt;
+    /* Velocidad angular de este paso, para el giroscopo simulado. */
     g_omega    = omega;
 
+    /* La posicion candidata pasa a ser la real. */
     g_x = nx;
     g_y = ny;
 
+    /* Agrega un punto al rastro si el robot se movio mas de 2 cm desde el
+       ultimo. */
     if (g_rastro_n < RASTRO_MAX &&
         (g_rastro_n == 0 ||
          fabs(g_x - g_rastro_x[g_rastro_n - 1]) > 2.0 ||
@@ -182,8 +231,10 @@ static void integrar(void) {
  * Con el hilo, el robot se mueve al ritmo del reloj, lea quien lea.
  */
 static void *hilo_mundo(void *arg) {
+    /* El argumento del hilo no se usa. */
     (void)arg;
     while (g_hilo_vivo) {
+        /* Integra cada 20 ms. */
         usleep(20000);
         pthread_mutex_lock(&g_lock);
         integrar();
@@ -192,22 +243,29 @@ static void *hilo_mundo(void *arg) {
     return NULL;
 }
 
+/* Deja el robot quieto en el centro, mirando al norte, con los contadores
+   en cero, y lanza el hilo del mundo si no estaba corriendo. */
 void mundo_init(void) {
     pthread_mutex_lock(&g_lock);
+    /* Pose, ordenes y velocidades en cero. */
     g_x = g_y = g_rumbo = 0.0;
     g_vel_izq = g_vel_der = 0;
     g_v_izq = g_v_der = g_v_cuerpo = g_omega = 0.0;
+    /* Contadores de choques y caidas, y rastro, en cero. */
     g_choco = 0;
     g_choques = 0;
     g_caidas  = 0;
     g_cayendo = 0;
     g_rastro_n = 0;
+    /* Relojes de la integracion y del acelerometro en este instante. */
     clock_gettime(CLOCK_MONOTONIC, &g_t);
     g_imu_t = g_t;
     g_imu_v_anterior = 0.0;
     g_listo = 1;
     pthread_mutex_unlock(&g_lock);
 
+    /* El hilo se lanza una sola vez y queda suelto: nadie espera a que
+       termine. */
     if (!g_hilo_vivo) {
         pthread_t t;
         g_hilo_vivo = 1;
@@ -216,6 +274,7 @@ void mundo_init(void) {
     }
 }
 
+/* Recibe la orden de cada motor. */
 void mundo_set_motores(int vel_izq, int vel_der) {
     pthread_mutex_lock(&g_lock);
     integrar();                  /* cerrar el tramo con la velocidad anterior */
@@ -229,17 +288,22 @@ void mundo_set_motores(int vel_izq, int vel_der) {
 static double rayo_caja(double x, double y, double dx, double dy,
                         double x0, double y0, double x1, double y1, int desde_adentro)
 {
+    /* Intervalo del parametro t en el que el rayo esta dentro de la caja. */
     double t_min = -INFINITY, t_max = INFINITY;
 
+    /* Rayo paralelo al eje Y: o esta entre las dos caras, o nunca toca. */
     if (fabs(dx) < 1e-9) {
         if (x < x0 || x > x1) return -1.0;
     } else {
+        /* Cruces con las dos caras verticales, ordenados, que acotan el
+           intervalo. */
         double ta = (x0 - x) / dx, tb = (x1 - x) / dx;
         if (ta > tb) { double s = ta; ta = tb; tb = s; }
         if (ta > t_min) t_min = ta;
         if (tb < t_max) t_max = tb;
     }
 
+    /* Lo mismo con las caras horizontales. */
     if (fabs(dy) < 1e-9) {
         if (y < y0 || y > y1) return -1.0;
     } else {
@@ -249,6 +313,7 @@ static double rayo_caja(double x, double y, double dx, double dy,
         if (tb < t_max) t_max = tb;
     }
 
+    /* Intervalo vacio, o caja detras del origen: no hay cruce. */
     if (t_max < t_min || t_max < 0.0) return -1.0;
 
     /* Desde adentro (las paredes de la sala) interesa la salida; desde afuera
@@ -257,33 +322,42 @@ static double rayo_caja(double x, double y, double dx, double dy,
     return t >= 0.0 ? t : -1.0;
 }
 
+/* Distancia desde el centro del robot. */
 double mundo_distancia(double rumbo_offset) {
     return mundo_distancia_desde(0.0, rumbo_offset);
 }
 
+/* Distancia al obstaculo mas cercano desde un punto adelantado. */
 double mundo_distancia_desde(double adelante_cm, double rumbo_offset) {
     pthread_mutex_lock(&g_lock);
+    /* Pone el mundo al dia antes de medir. */
     integrar();
 
+    /* Direccion del rayo: el rumbo del robot mas el angulo pedido. */
     double rumbo = g_rumbo + rumbo_offset * M_PI / 180.0;
     double dx = sin(rumbo), dy = cos(rumbo);
+    /* Origen del rayo: adelante_cm por delante del centro. */
     double x = g_x + adelante_cm * sin(g_rumbo);
     double y = g_y + adelante_cm * cos(g_rumbo);
 
     pthread_mutex_unlock(&g_lock);
 
+    /* Distancia a las paredes, desde adentro de la sala. */
     double d = rayo_caja(x, y, dx, dy, SALA_MIN_X, SALA_MIN_Y, SALA_MAX_X, SALA_MAX_Y, 1);
 
+    /* Si algun mueble esta mas cerca, gana. */
     for (int i = 0; i < N_MUEBLES; i++) {
         double dm = rayo_caja(x, y, dx, dy, g_muebles[i].x0, g_muebles[i].y0,
                               g_muebles[i].x1, g_muebles[i].y1, 0);
         if (dm >= 0.0 && (d < 0.0 || dm < d)) d = dm;
     }
 
+    /* Fuera del alcance del sensor no hay eco. */
     if (d < 0.0 || d > ALCANCE_CM) return -1.0;
     return d;
 }
 
+/* Devuelve la pose verdadera; el rumbo, en grados. */
 void mundo_pose(double *x_cm, double *y_cm, double *rumbo_grados) {
     pthread_mutex_lock(&g_lock);
     integrar();
@@ -293,6 +367,7 @@ void mundo_pose(double *x_cm, double *y_cm, double *rumbo_grados) {
     pthread_mutex_unlock(&g_lock);
 }
 
+/* Devuelve la velocidad real del cuerpo y la de giro. */
 void mundo_cinematica(double *v_cm_s, double *giro_dps) {
     pthread_mutex_lock(&g_lock);
     integrar();
@@ -301,15 +376,19 @@ void mundo_cinematica(double *v_cm_s, double *giro_dps) {
     pthread_mutex_unlock(&g_lock);
 }
 
+/* Devuelve lo que mediria el MPU-6050. Ver mundo.h. */
 void mundo_imu(double *avance_cm_s2, double *lateral_cm_s2, double *giro_dps) {
     pthread_mutex_lock(&g_lock);
     integrar();
 
+    /* Segundos desde la consulta anterior. */
     struct timespec ahora;
     clock_gettime(CLOCK_MONOTONIC, &ahora);
     double dt = (ahora.tv_sec - g_imu_t.tv_sec) + (ahora.tv_nsec - g_imu_t.tv_nsec) / 1e9;
 
+    /* Aceleracion media: cambio de velocidad sobre el tiempo transcurrido. */
     double a = dt > 1e-4 ? (g_v_cuerpo - g_imu_v_anterior) / dt : 0.0;
+    /* Guarda la referencia para la proxima consulta. */
     g_imu_v_anterior = g_v_cuerpo;
     g_imu_t          = ahora;
 
@@ -321,6 +400,7 @@ void mundo_imu(double *avance_cm_s2, double *lateral_cm_s2, double *giro_dps) {
     pthread_mutex_unlock(&g_lock);
 }
 
+/* 1 si el robot esta ahora pegado a algo. */
 int mundo_choco(void) {
     pthread_mutex_lock(&g_lock);
     integrar();
@@ -329,6 +409,7 @@ int mundo_choco(void) {
     return c;
 }
 
+/* Choques contados desde mundo_init(). */
 int mundo_choques(void) {
     pthread_mutex_lock(&g_lock);
     int n = g_choques;
@@ -336,6 +417,7 @@ int mundo_choques(void) {
     return n;
 }
 
+/* Caidas contadas desde mundo_init(). */
 int mundo_caidas(void) {
     pthread_mutex_lock(&g_lock);
     int n = g_caidas;
@@ -343,12 +425,14 @@ int mundo_caidas(void) {
     return n;
 }
 
+/* 1 si no hay piso bajo un punto fijo al robot. Ver mundo.h. */
 int mundo_sin_piso(double adelante_cm, double izquierda_cm) {
     pthread_mutex_lock(&g_lock);
     integrar();
     /* Rumbo de brujula: adelante es (sin, cos); la izquierda, (-cos, sin). */
     double x = g_x + adelante_cm * sin(g_rumbo) - izquierda_cm * cos(g_rumbo);
     double y = g_y + adelante_cm * cos(g_rumbo) + izquierda_cm * sin(g_rumbo);
+    /* Consulta si ese punto cae en el hueco. */
     int r = en_hueco(x, y);
     pthread_mutex_unlock(&g_lock);
     return r;
@@ -356,31 +440,40 @@ int mundo_sin_piso(double adelante_cm, double izquierda_cm) {
 
 /* ── Dibujo en la terminal ──────────────────────────────────────────────── */
 
+/* Tamano del dibujo, en caracteres. */
 #define DIBUJO_COLS 61
 #define DIBUJO_FILS 25
 
+/* Dibuja la sala en la terminal. */
 void mundo_dibujar(void) {
+    /* Lienzo de texto, lleno de espacios, con un terminador por fila. */
     char lienzo[DIBUJO_FILS][DIBUJO_COLS + 1];
     memset(lienzo, ' ', sizeof(lienzo));
     for (int f = 0; f < DIBUJO_FILS; f++) lienzo[f][DIBUJO_COLS] = '\0';
 
+    /* Dimensiones de la sala. */
     double ancho = SALA_MAX_X - SALA_MIN_X;
     double alto  = SALA_MAX_Y - SALA_MIN_Y;
 
+    /* Pasan de cm del mundo a columna y fila del lienzo; la fila 0 es el
+       norte. */
     #define A_COL(x) ((int)(((x) - SALA_MIN_X) / ancho * (DIBUJO_COLS - 1)))
     #define A_FIL(y) ((int)((SALA_MAX_Y - (y)) / alto * (DIBUJO_FILS - 1)))
 
+    /* Muebles. */
     for (int i = 0; i < N_MUEBLES; i++)
         for (int f = A_FIL(g_muebles[i].y1); f <= A_FIL(g_muebles[i].y0); f++)
             for (int c = A_COL(g_muebles[i].x0); c <= A_COL(g_muebles[i].x1); c++)
                 if (f >= 0 && f < DIBUJO_FILS && c >= 0 && c < DIBUJO_COLS)
                     lienzo[f][c] = '#';
 
+    /* Hueco de la grada. */
     for (int f = A_FIL(g_hueco.y1); f <= A_FIL(g_hueco.y0); f++)
         for (int c = A_COL(g_hueco.x0); c <= A_COL(g_hueco.x1); c++)
             if (f >= 0 && f < DIBUJO_FILS && c >= 0 && c < DIBUJO_COLS)
                 lienzo[f][c] = '~';
 
+    /* Rastro, solo sobre casillas vacias, y posicion actual del robot. */
     pthread_mutex_lock(&g_lock);
     for (int i = 0; i < g_rastro_n; i++) {
         int f = A_FIL(g_rastro_y[i]), c = A_COL(g_rastro_x[i]);
@@ -391,11 +484,13 @@ void mundo_dibujar(void) {
     double grados = g_rumbo * 180.0 / M_PI;
     pthread_mutex_unlock(&g_lock);
 
+    /* El robot se dibuja con una flecha, segun el cuadrante de su rumbo. */
     if (rf >= 0 && rf < DIBUJO_FILS && rc >= 0 && rc < DIBUJO_COLS) {
         int cuadrante = ((int)((grados + 45.0) / 90.0)) % 4;
         lienzo[rf][rc] = "^>v<"[cuadrante];
     }
 
+    /* Marco superior, filas y marco inferior. */
     printf("+");
     for (int c = 0; c < DIBUJO_COLS; c++) printf("-");
     printf("+\n");
@@ -403,6 +498,7 @@ void mundo_dibujar(void) {
     printf("+");
     for (int c = 0; c < DIBUJO_COLS; c++) printf("-");
     printf("+\n");
+    /* Leyenda. */
     printf("  # mueble   ~ grada   . recorrido   ^>v< robot (%.0f, %.0f) rumbo %.0f\n",
            g_x, g_y, grados);
 }

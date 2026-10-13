@@ -132,8 +132,8 @@ cualquiera de dos cosas:
 
 | Vía | Umbral | Cuándo es la que dispara |
 |---|---|---|
-| **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | En movimiento: a 30 cm/s —la velocidad fija del modelo— salta a ~36 cm de la pared, antes que la distancia |
-| **Distancia** | alguna lectura del cono frontal (60°, 90°, 120°) < `DIST_OBSTACULO_CM` (20 cm) | Robot quieto o muy lento, donde no hay tiempo de choque, y obstáculos que el sensor ve en diagonal |
+| **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | Solo con el robot rápido. A los ~2 cm/s del robot real saltaría a 2.4 cm, dentro del umbral de distancia, así que en la práctica no dispara |
+| **Distancia** | alguna lectura del cono frontal (60°, 90°, 120°) < `DIST_OBSTACULO_CM` (6 cm) | La que dispara en el robot real, lento, y con obstáculos que el sensor ve en diagonal |
 
 Del cono frontal solo cuentan lecturas de menos de 2 s **tomadas mirando hacia donde
 el robot mira ahora** (menos de 20° de diferencia de rumbo): tras un giro, lo que había
@@ -223,9 +223,9 @@ El servidor completo, compilado para ARM y corriendo sobre el simulador:
 | `RADAR_EJE_ADELANTE_CM` | `lib/lib_radar.h` | 10 | Dónde está el sensor respecto del centro |
 | `IMU_SIGNO_AVANCE`, `IMU_SIGNO_GIRO` | `lib/lib_imu.h` | +1, −1 | Orientación del MPU en el chasis |
 | `ODOM_TAU_FUSION_S` | `lib/lib_odom.h` | 1.0 s | Cuánto se confía en el MPU frente al modelo |
-| `ODOM_VEL_MAX_CM_S`, `ODOM_ENTRE_EJES_CM` | `lib/lib_odom.h` | 30, 15 | Modelo de los motores |
+| `ODOM_VEL_MAX_CM_S`, `ODOM_ENTRE_EJES_CM` | `lib/lib_odom.h` | 2, 15 | Modelo de los motores |
 | `TTC_OBSTACULO_S` | `server/src/main.c` | 1.2 s | Anticipación de la evasión |
-| `DIST_OBSTACULO_CM` | `server/src/main.c` | 20 cm | Obstáculo cercano con el robot lento |
+| `DIST_OBSTACULO_CM` | `server/src/main.c` | 6 cm | Obstáculo cercano con el robot lento |
 | `MAP_CELDA_CM` | `lib/robot_state.h` y `server/src/robot_state.h` | 30 cm | Lado de la celda del mapa |
 
 El procedimiento está en [`odometria.md`](odometria.md).

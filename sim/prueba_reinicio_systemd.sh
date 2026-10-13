@@ -8,42 +8,84 @@
 # que systemd lo reinicia con un PID nuevo.
 #
 # Uso:  ./construir_servidor.sh && ./prueba_reinicio_systemd.sh
+# Cualquier comando que falle detiene la prueba.
 set -e
+# Carpeta de este script, en ruta absoluta.
 SIM="$(cd "$(dirname "$0")" && pwd)"
+# Unidad de usuario que se crea para la prueba.
 UNIT=~/.config/systemd/user/robot-server-sim.service
 
+# Crea la carpeta de unidades y la de trabajo, con sus enlaces a la
+# interfaz web y al audio.
 mkdir -p "$(dirname "$UNIT")" "$SIM/run"
 ( cd "$SIM/run" && ln -sfn ../../server/www www && ln -sfn ../../audio audio )
 
+# Escribe la unidad, con las directivas de recuperacion de
+# robot-server.service.
 cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=Robot server (simulador) - prueba de reinicio automatico
+# El limitador de arranques va en [Unit], igual que en robot-server.service:
+# puesto en [Service], systemd lo ignora con un aviso.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 [Service]
 Type=simple
 ExecStart=$SIM/robot-server-sim
 WorkingDirectory=$SIM/run
 Restart=on-failure
 RestartSec=2
-StartLimitIntervalSec=60
-StartLimitBurst=5
 [Install]
 WantedBy=default.target
 UNITEOF
 
+# Detiene el servicio, borra la unidad y recarga systemd.
+limpiar() {
+    systemctl --user stop robot-server-sim.service 2>/dev/null || true
+    rm -f "$UNIT"; systemctl --user daemon-reload
+}
+
+# Sondea GET / hasta que el servidor responde 200 (maximo 15 s) e imprime el
+# ultimo codigo. Un sleep fijo no sirve: antes de abrir el puerto el servidor
+# calibra el MPU y lee las pistas de audio, y sobre un disco lento (p. ej.
+# /mnt/c en WSL) eso pasa de los 3 s.
+esperar_http() {
+    # Hasta 15 intentos, uno por segundo; curl imprime 000 si no hay
+    # conexion.
+    i=0
+    while [ $i -lt 15 ]; do
+        CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/ || true)
+        [ "$CODE" = "200" ] && break
+        i=$((i + 1)); sleep 1
+    done
+    echo "$CODE"
+}
+
+# Carga la unidad y arranca el servicio.
 systemctl --user daemon-reload
 systemctl --user start robot-server-sim.service
-sleep 3
+# Espera a que responda y guarda el PID con que arranco.
+HTTP1=$(esperar_http)
 PID1=$(systemctl --user show robot-server-sim -p MainPID --value)
-echo "arrancado bajo systemd, PID $PID1; sirve HTTP $(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)"
+echo "arrancado bajo systemd, PID $PID1; sirve HTTP $HTTP1"
+# Sin esta guarda, un arranque fallido dejaria PID1=0 y kill -9 0 mataria al
+# grupo de procesos de esta misma prueba.
+[ "$HTTP1" = "200" ] && [ "$PID1" != "0" ] || { echo "FALLO: el servidor no respondio bajo systemd"; limpiar; exit 1; }
 
+# Mata el proceso sin darle oportunidad de cerrar, como en una caida real.
 echo "matando el proceso (kill -9) para simular un crash..."
-kill -9 "$PID1"; sleep 5
+kill -9 "$PID1"; sleep 1
+# Espera a que systemd lo relance y vuelva a responder.
+HTTP2=$(esperar_http)
 
+# PID nuevo y contador de reinicios.
 PID2=$(systemctl --user show robot-server-sim -p MainPID --value)
 NR=$(systemctl --user show robot-server-sim -p NRestarts --value)
-echo "tras el crash: PID $PID2, NRestarts=$NR, sirve HTTP $(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)"
+echo "tras el crash: PID $PID2, NRestarts=$NR, sirve HTTP $HTTP2"
 
-systemctl --user stop robot-server-sim.service
-rm -f "$UNIT"; systemctl --user daemon-reload
+# Limpia antes de dar el veredicto.
+limpiar
 
-[ "$PID1" != "$PID2" ] && [ "$PID2" != "0" ] && echo "OK: systemd reinicio el servidor solo (PID nuevo)" || { echo "FALLO"; exit 1; }
+# Pasa si el PID cambio, no es cero y el servidor respondio 200.
+[ "$PID1" != "$PID2" ] && [ "$PID2" != "0" ] && [ "$HTTP2" = "200" ] \
+    && echo "OK: systemd reinicio el servidor solo (PID nuevo) y volvio a servir" || { echo "FALLO"; exit 1; }

@@ -10,16 +10,23 @@
 # sincronizar los LEDs con el estado global, y en la Raspberry ese simbolo lo
 # aporta el ejecutable del servidor al cargar el .so.
 
+# Cualquier comando que falle detiene el script.
 set -e
+# Trabaja en la carpeta del script, se lo llame desde donde se lo llame.
 cd "$(dirname "$0")"
 
+# Compilador: el del host, o el que venga en la variable CC.
 CC=${CC:-gcc}
+# Fuentes de la biblioteca y del servidor.
 LIB=../lib
 SRV=../server/src
 
 # Todos los modulos de la biblioteca: motores, sensor, servo, radar, MPU,
 # odometria, LEDs, audio y la fachada.
-$CC -Wall -Wextra -O1 -g -I. -I"$LIB" \
+# -I. va antes que -I$LIB: el pigpiod_if2.h de esta carpeta gana. Enlaza con
+# mpg123, ALSA, la biblioteca matematica y pthreads. El modelo de odometria
+# usa la velocidad del robot simulado (28 cm/s en mundo.c), no la del real.
+$CC -Wall -Wextra -O1 -g -I. -I"$LIB" -DODOM_VEL_MAX_CM_S=30.0 \
     "$LIB"/lib_*.c \
     "$SRV"/robot_state.c \
     mundo.c \
@@ -27,4 +34,5 @@ $CC -Wall -Wextra -O1 -g -I. -I"$LIB" \
     prueba_librobot.c \
     -o prueba_librobot -lmpg123 -lasound -lm -lpthread
 
+# Aviso de que el binario quedo listo.
 echo "listo: ./prueba_librobot"

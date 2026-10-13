@@ -8,17 +8,25 @@
 # reales del host (paquetes -dev). Sirve para probar el dashboard en el
 # navegador y para la prueba de reinicio del servicio systemd (issue #12).
 
+# Cualquier comando que falle detiene el script.
 set -e
+# Trabaja en la carpeta del script.
 cd "$(dirname "$0")"
+# Compilador: el del host, o el de la variable CC.
 CC=${CC:-gcc}
+# Fuentes de la biblioteca y del servidor.
 LIB=../lib
 SRV=../server/src
 
-$CC -Wall -O1 -g -I. -I"$LIB" -I"$SRV" \
+# Compila el servidor, la biblioteca y el simulador en un solo binario,
+# enlazado con las bibliotecas reales del host. El modelo de odometria usa la
+# velocidad del robot simulado (28 cm/s en mundo.c), no la del real.
+$CC -Wall -O1 -g -I. -I"$LIB" -I"$SRV" -DODOM_VEL_MAX_CM_S=30.0 \
     "$SRV"/main.c "$SRV"/api.c "$SRV"/auth.c "$SRV"/sha256.c "$SRV"/robot_state.c \
     "$LIB"/lib_*.c \
     mundo.c pigpio_sim.c \
     -o robot-server-sim \
     -lmicrohttpd -lmpg123 -lasound -lm -lpthread
 
+# Aviso de que el binario quedo listo.
 echo "listo: ./robot-server-sim  (dashboard en http://localhost:8080)"

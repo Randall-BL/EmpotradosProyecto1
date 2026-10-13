@@ -2,9 +2,9 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * MIT License. Ver LICENSE y NOTICE.md.
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef LIB_CAIDA_H
 #define LIB_CAIDA_H
 

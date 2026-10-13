@@ -2,9 +2,9 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * MIT License. Ver LICENSE y NOTICE.md.
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef LIB_ODOM_H
 #define LIB_ODOM_H
 
@@ -36,8 +36,14 @@
  * Las constantes de abajo se CALIBRAN EN CAMPO: docs/odometria.md.
  */
 
-/** Velocidad lineal de una llanta con el PWM al maximo, en cm/s. */
-#define ODOM_VEL_MAX_CM_S 30.0
+/** Velocidad lineal de una llanta con el PWM al maximo, en cm/s. Medida en el
+ *  robot real: unos 2 cm/s. Con 30 (el valor del simulador) el tiempo de
+ *  choque se calculaba con una velocidad 15 veces mayor y el robot evadia a
+ *  mas de 30 cm de la pared. El simulador compila con -DODOM_VEL_MAX_CM_S=30.0,
+ *  cerca de los 28 cm/s de su robot simulado. */
+#ifndef ODOM_VEL_MAX_CM_S
+#define ODOM_VEL_MAX_CM_S 2.0
+#endif
 
 /** Distancia entre el centro de las dos llantas, en cm. */
 #define ODOM_ENTRE_EJES_CM 15.0

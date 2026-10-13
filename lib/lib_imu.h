@@ -2,9 +2,9 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * MIT License. Ver LICENSE y NOTICE.md.
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef LIB_IMU_H
 #define LIB_IMU_H
 
@@ -65,6 +65,7 @@ typedef struct {
  *
  * @return 0 si el sensor contesto, -1 si no hay nada en el bus.
  */
+/* pi: sesion abierta con pigpiod. */
 int imu_init(int pi);
 
 /**

@@ -3,19 +3,22 @@
   Proyecto I - Robot Aspiradora Autonomo
   CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
 
-  Archivo derivado del proyecto Proyecto1_RobotYocto---Sistemas-Empotrados,
-  MIT License - Copyright (c) 2026 Javier Tenorio Cervantes. Ver NOTICE.md.
 -->
 
 <html lang="es">
 <head>
+  <!-- Codificacion del documento, y ancho ajustado al de la pantalla del
+       celular. -->
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Robot Yocto - Login</title>
+  <!-- Fuentes del panel. Se cargan de Google Fonts: sin internet, el navegador
+       usa las de reemplazo. -->
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet"/>
   <style>
     /* Definicion de los colores */
 
+    /* Variables de color y de tipografia que usa el resto de la hoja. */
     :root {
       --bg:      #040507;
       --surface: #0d1219;
@@ -29,8 +32,11 @@
       --mono: 'Share Tech Mono', monospace;
       --sans: 'Rajdhani', sans-serif;
     }
+    /* Todos los elementos miden incluyendo borde y relleno, y parten sin
+       margenes. */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* La pagina ocupa toda la altura y centra la tarjeta. */
     body {
       background: var(--bg);
       font-family: var(--mono);
@@ -41,6 +47,9 @@
     }
 
     /* Implementacion Scanline */
+    /* Capa fija de lineas horizontales tenues sobre toda la pagina; no
+       captura
+       clics. */
     body::after {
       content: '';
       position: fixed; inset: 0;
@@ -51,6 +60,7 @@
       pointer-events: none;
     }
 
+    /* Tarjeta del formulario, con una animacion de entrada. */
     .card {
       position: relative;
       width: min(400px, 92vw);
@@ -70,6 +80,8 @@
       border-color: var(--amber);
       border-style: solid;
     }
+    /* Las cuatro esquinas decorativas: dos con pseudoelementos y dos con
+       divs. */
     .card::before { top:-1px;    left:-1px;  border-width: 2px 0 0 2px; }
     .card::after  { top:-1px;    right:-1px; border-width: 2px 2px 0 0; }
     .c-bl { bottom:-1px; left:-1px;  border-width: 0 0 2px 2px; }
@@ -77,6 +89,7 @@
 
     /* header */
     .header { text-align: center; margin-bottom: 36px; }
+    /* Circulo con el icono del robot. */
     .logo {
       width: 60px; height: 60px; border-radius: 50%;
       border: 2px solid var(--amber);
@@ -103,10 +116,12 @@
 
     /* Implementacion del formulario */
     .field { margin-bottom: 18px; }
+    /* Etiqueta de cada campo. */
     label {
       display: block; font-size: 9px; letter-spacing: .22em;
       color: var(--amber); text-transform: uppercase; margin-bottom: 7px;
     }
+    /* Campos de texto: fondo oscuro y linea inferior clara. */
     input[type=text], input[type=password] {
       width: 100%;
       background: rgba(0,0,0,.4);
@@ -118,11 +133,14 @@
       outline: none;
       transition: border-color .2s, box-shadow .2s;
     }
+    /* El campo activo se resalta en azul. */
     input:focus {
       border-color: var(--cyan);
       box-shadow: 0 0 0 1px rgba(0,207,255,.15);
     }
 
+    /* Boton de envio: al pasar el cursor, un fondo claro entra desde la
+       izquierda. */
     .btn {
       width: 100%; margin-top: 6px; padding: 11px;
       background: transparent; border: 1px solid var(--amber);
@@ -139,6 +157,7 @@
     .btn:hover { color: #07090d; }
     .btn:hover::before { transform: translateX(0); }
 
+    /* Mensaje de resultado, oculto hasta que tenga la clase error u ok. */
     .msg {
       margin-top: 14px; padding: 7px 10px;
       font-size: 10px; letter-spacing: .12em; display: none;
@@ -147,6 +166,7 @@
     .msg.error  { display:block; border-left-color:var(--danger); color:var(--danger); background:rgba(255,51,68,.08); }
     .msg.ok     { display:block; border-left-color:var(--green);  color:var(--green);  background:rgba(0,232,122,.08); }
 
+    /* Pie de la tarjeta, donde va el reloj. */
     .footer {
       margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border);
       display: flex; justify-content: space-between;
@@ -156,9 +176,12 @@
   </style>
 </head>
 <body>
+<!-- Tarjeta central. -->
 <div class="card">
+  <!-- Esquinas inferiores decorativas. -->
   <div class="c-bl"></div><div class="c-br"></div>
   <div class="header">
+    <!-- Icono del robot, dibujado en SVG. -->
     <div class="logo">
       <svg viewBox="0 0 32 32" fill="none">
         <rect x="9" y="12" width="14" height="12" rx="2" stroke="#2b93f5" stroke-width="1.5"/>
@@ -176,6 +199,7 @@
     <p class="label">Iniciar sesión</p>
   </div>
 
+  <!-- Formulario de acceso. No tiene action: lo envia el script con fetch. -->
   <form id="form">
     <div class="field">
       <label for="u">▸ Usuario</label>
@@ -189,6 +213,7 @@
     <div class="msg" id="msg"></div>
   </form>
 
+  <!-- Pie con el reloj. -->
   <div class="footer">
     <span></span>
     <span id="clock"></span>
@@ -198,6 +223,7 @@
 
 <script>
   /* Implementacion del Reloj */
+  // Escribe la hora en el pie y se vuelve a programar cada segundo.
   (function tick() {
     document.getElementById('clock').textContent =
       new Date().toTimeString().slice(0, 8);
@@ -205,13 +231,21 @@
   })();
 
   /* Funcionalidad del Login */
+  // Al enviar el formulario se manda el login por fetch, sin recargar la
+  // pagina.
   document.getElementById('form').addEventListener('submit', async e => {
+    // Evita el envio normal del formulario.
     e.preventDefault();
+    // Elemento del mensaje y valores escritos; el usuario, sin espacios en
+    // los
+    // extremos.
     const msg  = document.getElementById('msg');
     const user = document.getElementById('u').value.trim();
     const pass = document.getElementById('p').value;
+    // Limpia el mensaje anterior.
     msg.className = 'msg';
 
+    // Sin usuario o sin clave no se consulta al servidor.
     if (!user || !pass) {
       msg.className = 'msg error';
       msg.textContent = 'Ingrese usuario y contraseña.';
@@ -219,22 +253,27 @@
     }
 
     try {
+      // POST /api/login con las credenciales en JSON.
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: user, password: pass })
       });
+      // 200: el servidor ya mando la cookie de sesion.
       if (res.ok) {
         msg.className = 'msg ok';
         msg.textContent = 'Acceso concedido. Redirigiendo…';
     /* Redireccionar a la ventana del dashboard */
         setTimeout(() => window.location.href = '/dashboard', 700);
       } else {
+        // Otro codigo: se muestra el error que devolvio el servidor, si vino
+        // en JSON.
         const d = await res.json().catch(() => ({}));
         msg.className = 'msg error';
         msg.textContent = '' + (d.error || 'Error de autenticación.');
       }
     } catch (_) {
+      // Fallo de red: el servidor no respondio.
       msg.className = 'msg error';
       msg.textContent = 'No se pudo conectar con el servidor [Servidor Desconectado].';
     }

@@ -2,10 +2,9 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * Archivo derivado del proyecto Proyecto1_RobotYocto---Sistemas-Empotrados,
- * MIT License - Copyright (c) 2026 Javier Tenorio Cervantes. Ver NOTICE.md.
  */
 
+/* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H
 
@@ -38,6 +37,7 @@
  * @brief Configura IN1-IN4 como salidas (PWM si MOTOR_VELOCIDAD_VARIABLE) y
  *        deja los motores frenados.
  */
+/* pi: sesion abierta con pigpiod (lo que devuelve pigpio_start()). */
 void motores_init(int pi);
 
 /**
@@ -80,9 +80,13 @@ void motores_get(int *vel_izq, int *vel_der);
 
 /* ── Movimientos básicos, todos sobre motores_set() ────────────────────────── */
 
+/* Los dos motores hacia adelante, a la misma velocidad. */
 void motores_avanzar(int velocidad);
+/* Los dos motores hacia atras. */
 void motores_retroceder(int velocidad);
+/* Gira sobre su eje hacia la izquierda: izquierdo atras, derecho adelante. */
 void motores_girar_izquierda(int velocidad);
+/* Gira sobre su eje hacia la derecha: izquierdo adelante, derecho atras. */
 void motores_girar_derecha(int velocidad);
 
 /**

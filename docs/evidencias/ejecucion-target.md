@@ -161,4 +161,6 @@ Lo que queda lo domina la WiFi. Del journal completo del arranque del 6 de octub
 
 - `vcgencmd get_throttled`: `vcgencmd` no está en la imagen.
 - Calibración del MPU-6050 y lecturas del radar en el journal, con los periféricos conectados.
-- RAM y CPU en operación normal: [`../metricas.md`](../metricas.md).
+
+La RAM y la CPU en operación normal ya se midieron con el robot armado: ver
+[`../metricas.md`](../metricas.md).

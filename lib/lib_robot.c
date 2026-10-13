@@ -2,11 +2,11 @@
  * Proyecto I - Robot Aspiradora Autonomo
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  *
- * Archivo derivado del proyecto Proyecto1_RobotYocto---Sistemas-Empotrados,
- * MIT License - Copyright (c) 2026 Javier Tenorio Cervantes. Ver NOTICE.md.
  */
 
+/* Prototipos de la fachada. */
 #include "lib_robot.h"
+/* Los modulos que la fachada inicializa y detiene, uno por dispositivo. */
 #include "lib_caida.h"
 #include "lib_imu.h"
 #include "lib_leds.h"
@@ -14,15 +14,22 @@
 #include "lib_odom.h"
 #include "lib_radar.h"
 
+/* pigpio_start y pigpio_stop: abrir y cerrar la sesion con el demonio. */
 #include <pigpiod_if2.h>
+/* fprintf, para los avisos. */
 #include <stdio.h>
 
+/* Sesion con pigpiod, compartida con todos los modulos. */
 static int g_pi    = -1;
+/* 1 cuando el hardware ya esta inicializado. */
 static int g_listo = 0;
 
+/* Inicializa todo el hardware en el orden correcto. Ver lib_robot.h. */
 int robot_init(void) {
+    /* Llamarla dos veces no reinicializa nada. */
     if (g_listo) return 0;
 
+    /* Conecta con pigpiod en esta misma maquina y en el puerto por defecto. */
     g_pi = pigpio_start(NULL, NULL);
     if (g_pi < 0) {
         fprintf(stderr, "[librobot] no se pudo conectar a pigpiod (codigo %d). "
@@ -30,6 +37,7 @@ int robot_init(void) {
         return -1;
     }
 
+    /* Los motores primero: quedan frenados antes de tocar nada mas. */
     motores_init(g_pi);
 
     /* Los sensores de desnivel son opcionales: sin ellos el robot navega
@@ -54,37 +62,48 @@ int robot_init(void) {
 
     /* Primero la odometria y despues el radar: cada lectura del radar se
        guarda con la pose del robot en el instante de medir. */
+    /* Posicion en el origen e hilo de integracion corriendo. */
     odom_reset();
     if (odom_arrancar() < 0)
         fprintf(stderr, "[librobot] no se pudo lanzar el hilo de la odometria\n");
 
+    /* Sensor, servo e hilo de barrido. */
     if (radar_iniciar(g_pi) < 0)
         fprintf(stderr, "[librobot] el radar no pudo arrancar: sin sensores de proximidad\n");
 
+    /* Solo ahora la fachada se declara lista. */
     g_listo = 1;
     return 0;
 }
 
+/* Detiene todo en orden inverso y cierra la sesion. Ver lib_robot.h. */
 void robot_shutdown(void) {
+    /* Sin inicializar no hay nada que cerrar. */
     if (!g_listo) return;
 
     /* El radar primero: deja de mover el servo y de disparar el sensor. */
     radar_detener();
+    /* Despues la odometria, los motores y el bus del MPU. */
     odom_parar();
     motores_detener();
     imu_cerrar();
 
+    /* Apaga los LEDs y cierra la sesion con pigpiod. */
     lib_leds_destroy();
     pigpio_stop(g_pi);
 
+    /* Vuelve al estado de "sin inicializar". */
     g_pi    = -1;
     g_listo = 0;
 }
 
+/* 1 si robot_init() termino bien y no se ha llamado a robot_shutdown(). */
 int robot_activo(void) {
     return g_listo;
 }
 
+/* Atajos a tres angulos del radar: 90 al frente, 180 a la izquierda y 0 a
+   la derecha. */
 double robot_distancia_frontal(void)   { return radar_distancia(RADAR_FRENTE); }
 double robot_distancia_izquierda(void) { return radar_distancia(180);          }
 double robot_distancia_derecha(void)   { return radar_distancia(0);            }
