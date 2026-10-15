@@ -58,6 +58,7 @@ int robot_state_init(void) {
     g_robot.movimiento.velocidad_cm_s = 0.0f;
     g_robot.movimiento.ttc_s          = -1.0f;
     g_robot.movimiento.imu            = 0;
+    g_robot.movimiento.umbral_obstaculo_cm = UMBRAL_OBSTACULO_DEFECTO_CM;
 
     // Ciclo de limpieza: sin limite hasta que el usuario lo configure
     g_robot.ciclo.tipo = CICLO_OFF;

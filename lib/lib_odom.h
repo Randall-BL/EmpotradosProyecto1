@@ -45,8 +45,9 @@
 #define ODOM_VEL_MAX_CM_S 2.0
 #endif
 
-/** Distancia entre el centro de las dos llantas, en cm. */
-#define ODOM_ENTRE_EJES_CM 15.0
+/** Distancia entre el centro de las dos llantas, en cm. Medida en el robot
+ *  real: unos 16 cm. */
+#define ODOM_ENTRE_EJES_CM 16.0
 
 /**
  * Duty cycle por debajo del cual el motor no vence su propia friccion y no

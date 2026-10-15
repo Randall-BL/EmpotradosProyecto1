@@ -29,6 +29,7 @@
  *   GET  /api/audio/playlist
  *   POST /api/audio/playlist
  *   POST /api/ciclo
+ *   POST /api/umbral
  */
 
 /* Cada manejador recibe la conexion y, en los POST, el cuerpo de la
@@ -55,5 +56,7 @@ enum MHD_Result api_audio_playlist_get(struct MHD_Connection *conn);
 enum MHD_Result api_audio_playlist_set(struct MHD_Connection *conn, const char *body, size_t len);
 /* Configura la meta del ciclo de limpieza o empieza uno nuevo. */
 enum MHD_Result api_ciclo        (struct MHD_Connection *conn, const char *body, size_t len);
+/* Cambia la distancia al frente a la que se detecta un obstaculo. */
+enum MHD_Result api_umbral       (struct MHD_Connection *conn, const char *body, size_t len);
 
 #endif /* API_H */

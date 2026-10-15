@@ -528,6 +528,7 @@ Todos los endpoints salvo el login exigen la cookie de sesión.
 | `GET /api/audio/playlist` | — | Ids de la playlist en orden y la posición que suena |
 | `POST /api/audio/playlist` | `{"ids":[3,1,9]}` | Reemplaza la playlist y la guarda en la SD |
 | `POST /api/ciclo` | `{"tipo":"tiempo","minutos":5}`, `{"tipo":"area","m2":4}`, `{"tipo":"off"}` o `{"accion":"nuevo"}` | Configura la meta del ciclo de limpieza o empieza uno nuevo |
+| `POST /api/umbral` | `{"cm":10}` | Distancia al frente a la que se detecta un obstáculo, entre 5 y 100 cm (por defecto 10). Vuelve a 10 al reiniciar el servidor |
 
 `GET /api/status` incluye además `ciclo` (tipo, meta, avance, `completo`) y `caida`
 (sensores izquierdo y derecho, y eventos).

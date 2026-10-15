@@ -68,7 +68,15 @@ typedef struct {
     float velocidad_cm_s;
     float ttc_s;         /* -1 sin riesgo de choque */
     int   imu;           /* 1 si la velocidad sale del MPU, 0 del modelo de motores */
+    /* Distancia al frente por debajo de la cual hay obstaculo, en cm. Se
+       ajusta desde el panel, entre UMBRAL_OBSTACULO_MIN_CM y _MAX_CM. */
+    float umbral_obstaculo_cm;
 } MovimientoState;
+
+/* Umbral de obstaculo al arrancar y limites que acepta el panel, en cm. */
+#define UMBRAL_OBSTACULO_DEFECTO_CM 10.0f
+#define UMBRAL_OBSTACULO_MIN_CM      5.0f
+#define UMBRAL_OBSTACULO_MAX_CM    100.0f
 
 // Led de estados
 typedef struct {

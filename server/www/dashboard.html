@@ -535,6 +535,13 @@
           <div class="map-stat mv-stat">Velocidad<span id="mv-vel">— cm/s</span></div>
           <div class="map-stat mv-stat">Choque en<span id="mv-ttc">—</span></div>
           <div class="map-stat mv-stat">Fuente<span id="mv-src">—</span></div>
+          <div class="map-stat mv-stat">Umbral<span id="mv-umbral-act">— cm</span></div>
+        </div>
+        <!-- Umbral de obstaculo: distancia al frente a la que el robot frena. -->
+        <div class="cyc-row" style="margin-top:10px;align-items:center">
+          <label for="mv-umbral" class="cyc-txt" style="flex:1 1 140px">Umbral de obstáculo (cm)</label>
+          <input type="number" id="mv-umbral" min="5" max="100" step="1" value="10"/>
+          <button class="cyc-btn" onclick="aplicarUmbral()">APLICAR</button>
         </div>
       </div>
     </div>
@@ -632,7 +639,7 @@
 const S = {
   mode: 'autonomous', speed: 50, volume: 70,
   tracks: [], curTrack: null, playing: false, connected: false,
-  playlist: [], plPos: -1, cicloCompleto: false, cicloSync: false, caida: false,
+  playlist: [], plPos: -1, cicloCompleto: false, cicloSync: false, umbralSync: false, caida: false,
 };
 
 /*═════════════════════════════════════════════ FUNCIONALIDADES ═══════════════════════════════════════════════════*/
@@ -1003,6 +1010,23 @@ function updateMovimiento(m) {
   }
   // De donde sale la velocidad: el MPU-6050 o el modelo de los motores.
   document.getElementById('mv-src').textContent = m.imu ? 'MPU' : 'MOTORES';
+  // Umbral de obstaculo que esta usando el robot.
+  if (m.umbral !== undefined)
+    document.getElementById('mv-umbral-act').textContent = m.umbral.toFixed(0) + ' cm';
+  // La primera vez el campo del umbral toma el valor que tiene el robot.
+  if (!S.umbralSync && m.umbral !== undefined) {
+    S.umbralSync = true;
+    document.getElementById('mv-umbral').value = m.umbral;
+  }
+}
+
+// Manda el umbral de obstaculo, entre 5 y 100 cm.
+function aplicarUmbral() {
+  const cm = parseFloat(document.getElementById('mv-umbral').value);
+  if (!(cm >= 5 && cm <= 100)) { document.getElementById('sb-msg').textContent = '⚠ El umbral debe estar entre 5 y 100 cm'; return; }
+  apiFetch('/api/umbral', 'POST', { cm }).then(r => {
+    document.getElementById('sb-msg').textContent = r ? `● Umbral de obstáculo: ${cm} cm` : '⚠ No se pudo cambiar el umbral';
+  });
 }
 
 /* Funcionalidad del Audio */
