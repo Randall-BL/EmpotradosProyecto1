@@ -98,7 +98,8 @@ geometría del robot y a cuánto tarda en frenar.
    - `TTC_OBSTACULO_S` (hoy 1.2 s): el robot tiene que detenerse con margen
      aun cuando la lectura frontal llega justo antes de disparar. Si frena
      demasiado cerca, subirlo.
-   - `DIST_OBSTACULO_CM` (hoy 6 cm): un poco por encima de la distancia de
+   - El umbral de obstáculo (por defecto 10 cm, se cambia desde el panel en
+     la tarjeta de Movimiento, sin recompilar): un poco por encima de la distancia de
      frenado a baja velocidad. A los ~2 cm/s del robot es la vía que dispara.
 
 ## 5. Constantes de odometría (issue #22)
@@ -112,7 +113,7 @@ velocidad converge a la del modelo:
   en el robot. El valor anterior, 30 cm/s, era el del simulador y hacía que el
   tiempo de choque disparara la evasión a más de 30 cm de la pared.
 - **`ODOM_ENTRE_EJES_CM`** — distancia entre el centro de las dos llantas, con
-  regla. Con MPU el rumbo sale del giroscopio, pero sin él se usa esta.
+  regla. Hoy vale 16 cm, medido en el robot. Con MPU el rumbo sale del giroscopio, pero sin él se usa esta.
 - **`ODOM_PWM_ARRANQUE`** — el PWM mínimo con el que las llantas empiezan a
   girar (por debajo, el motor zumba pero no mueve). Subir de 40 en 40 hasta que
   el robot arranque. Solo cuenta en el modo con PWM: con velocidad fija no

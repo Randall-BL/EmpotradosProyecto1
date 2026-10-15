@@ -380,7 +380,8 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
           "\"movimiento\":{"
             "\"velocidad\":%.1f,"
             "\"ttc\":%.2f,"
-            "\"imu\":%s"
+            "\"imu\":%s,"
+            "\"umbral\":%.1f"
           "},"
           "\"leds\":{"
             "\"power\":%s,"
@@ -426,6 +427,7 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
         rs->radar.angulo_servo, radar_json,
         rs->movimiento.velocidad_cm_s, rs->movimiento.ttc_s,
         rs->movimiento.imu ? "true" : "false",
+        rs->movimiento.umbral_obstaculo_cm,
         rs->leds.power     ? "true" : "false",
         rs->leds.autonomous? "true" : "false",
         rs->leds.manual    ? "true" : "false",
@@ -837,5 +839,39 @@ enum MHD_Result api_ciclo(struct MHD_Connection *conn,
 
     printf("[api] ciclo -> %s, meta %.1f %s\n", tipo, nuevo_tipo == CICLO_TIEMPO ? meta / 60.0 : meta,
            nuevo_tipo == CICLO_TIEMPO ? "min" : nuevo_tipo == CICLO_AREA ? "m2" : "");
+    return send_json(conn, MHD_HTTP_OK, "{\"ok\":true}");
+}
+
+/* ═══════════════════════════════════════════════════════════
+    POST /api/umbral
+    {"cm":10}   hay obstaculo cuando algo queda a menos de 10 cm al frente
+═══════════════════════════════════════════════════════════ */
+/* Cambia el umbral de obstaculo. Rige desde la siguiente vuelta del hilo de
+   navegacion y vuelve al valor por defecto al reiniciar el servidor. */
+enum MHD_Result api_umbral(struct MHD_Connection *conn,
+                           const char *body, size_t len)
+{
+    (void)len;
+    /* Un cuerpo ausente se trata como vacio. */
+    if (!body) body = "";
+    /* Estado global. */
+    RobotState *rs = robot_state_get();
+    if (!rs) return send_json(conn, 500, "{\"error\":\"State unavailable\"}");
+
+    /* Distancia pedida, dentro de los limites. */
+    double cm = 0.0;
+    if (!json_num(body, "cm", &cm) ||
+        cm < UMBRAL_OBSTACULO_MIN_CM || cm > UMBRAL_OBSTACULO_MAX_CM) {
+        char err[96];
+        snprintf(err, sizeof(err), "{\"error\":\"cm debe estar entre %.0f y %.0f\"}",
+                 UMBRAL_OBSTACULO_MIN_CM, UMBRAL_OBSTACULO_MAX_CM);
+        return send_json(conn, MHD_HTTP_BAD_REQUEST, err);
+    }
+
+    pthread_mutex_lock(&rs->lock);
+    rs->movimiento.umbral_obstaculo_cm = (float)cm;
+    pthread_mutex_unlock(&rs->lock);
+
+    printf("[api] umbral de obstaculo -> %.1f cm\n", cm);
     return send_json(conn, MHD_HTTP_OK, "{\"ok\":true}");
 }

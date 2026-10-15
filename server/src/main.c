@@ -277,6 +277,8 @@ static enum MHD_Result handle_request(
 
     if (is_post && strcmp(url, "/api/ciclo") == 0)
         return api_ciclo(conn, body, ub->used);
+    if (is_post && strcmp(url, "/api/umbral") == 0)
+        return api_umbral(conn, body, ub->used);
 
     /* Ninguna ruta coincidio. */
     return send_404(conn);
@@ -433,21 +435,30 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
 
 /* Un obstaculo al frente se detecta por cualquiera de dos vias:
    - distancia: alguna lectura del cono frontal (servo a 60, 90 o 120 grados)
-     por debajo de DIST_OBSTACULO_CM;
+     por debajo de su umbral: el umbral de obstaculo al frente, y en diagonal lo
+     que caiga en el pasillo que barre el cuerpo (umbral_obstaculo());
    - tiempo: el tiempo antes de chocar del radar por debajo de
      TTC_OBSTACULO_S. Es la via que reacciona antes cuanto mas rapido va el
      robot: a 25 cm/s saltaria a unos 30 cm de la pared.
    El robot real va a unos 2 cm/s, asi que en la practica manda la distancia:
    a esa velocidad el tiempo de choque solo bajaria de TTC_OBSTACULO_S a
    2.4 cm, ya dentro del umbral de distancia. */
-/* Distancia, en cm, por debajo de la cual hay obstaculo. A 2 cm/s el robot
-   tiene tiempo de sobra para frenar: se deja acercar hasta 6 cm. */
-#define DIST_OBSTACULO_CM 6.0
+/* La distancia por debajo de la cual hay obstaculo al frente se ajusta desde
+   el panel (rs->movimiento.umbral_obstaculo_cm); arranca en
+   UMBRAL_OBSTACULO_DEFECTO_CM, 10 cm. */
 /* Tiempo de choque, en s, por debajo del cual hay obstaculo. */
 #define TTC_OBSTACULO_S    1.2
 /* Semiapertura del cono frontal: cuentan los angulos a 30 grados o menos
    del frente. */
 #define CONO_FRONTAL_GRADOS 30
+
+/* Radio del robot, en cm: mide unos 20 cm de diametro. El sensor va en el
+   borde delantero (RADAR_EJE_ADELANTE_CM). */
+#define ROBOT_RADIO_CM     10.0
+/* Holgura a cada lado del cuerpo: el robot no avanza perfectamente recto. */
+#define MARGEN_LATERAL_CM   3.0
+/* Mitad del ancho del pasillo que barre el cuerpo al avanzar. */
+#define PASILLO_CM (ROBOT_RADIO_CM + MARGEN_LATERAL_CM)
 
 /* Una lectura del cono frontal cuenta solo si es reciente y si el robot sigue
    mirando hacia donde miraba al tomarla: tras un giro, "lo que habia al
@@ -466,22 +477,39 @@ static double diferencia_rumbo(double a, double b) {
     return fabs(fmod(a - b + 540.0, 360.0) - 180.0);
 }
 
-/* Menor distancia vigente en el cono frontal, o -1 si no hay ninguna. */
-static double distancia_al_frente(const RadarLectura *l, int n, double rumbo) {
-    /* Menor distancia encontrada; -1 mientras no haya ninguna. */
-    double d = -1.0;
+/* Distancia por debajo de la cual una lectura tomada a @p desvio grados del
+   frente es obstaculo.
+
+   Al frente es @p umbral_cm, el que se ajusta desde el panel. En diagonal
+   (60 y 120 grados) no basta: el robot suele chocar de costado, y una pared
+   que va a rozar se ve a 30 grados del frente a unos 20-26 cm, pero al
+   avanzar sale del haz enseguida. Por eso en diagonal cuenta toda lectura cuyo punto caiga dentro del pasillo que
+   barre el cuerpo: d * sin(desvio) < PASILLO_CM, es decir
+   d < PASILLO_CM / sin(desvio), unos 26 cm a 30 grados. Nunca menos que
+   @p umbral_cm. */
+static double umbral_obstaculo(int desvio, double umbral_cm) {
+    double s = sin(fabs((double)desvio) * M_PI / 180.0);
+    if (s < 1e-6) return umbral_cm;
+    double d = PASILLO_CM / s;
+    return d > umbral_cm ? d : umbral_cm;
+}
+
+/* 1 si alguna lectura vigente del cono frontal (60, 90 o 120 grados) cae
+   bajo su umbral de obstaculo; @p umbral_cm es el del frente. */
+static int obstaculo_al_frente(const RadarLectura *l, int n, double rumbo,
+                               double umbral_cm) {
     for (int i = 0; i < n; i++) {
+        /* Desvio de la lectura respecto del frente. */
+        int desvio = l[i].angulo - RADAR_FRENTE;
         /* Descarta las lecturas fuera del cono, las nunca medidas o sin eco,
-           las
-           viejas y las tomadas con otro rumbo. */
-        if (abs(l[i].angulo - RADAR_FRENTE) > CONO_FRONTAL_GRADOS) continue;
+           las viejas y las tomadas con otro rumbo. */
+        if (abs(desvio) > CONO_FRONTAL_GRADOS)                     continue;
         if (l[i].seq == 0 || l[i].distancia_cm <= 0.0)             continue;
         if (l[i].edad_s > LECTURA_VIGENTE_S)                       continue;
         if (diferencia_rumbo(l[i].rumbo_grados, rumbo) > LECTURA_GIRO_MAX_GRADOS) continue;
-        /* Se queda con la menor. */
-        if (d < 0.0 || l[i].distancia_cm < d) d = l[i].distancia_cm;
+        if (l[i].distancia_cm < umbral_obstaculo(desvio, umbral_cm)) return 1;
     }
-    return d;
+    return 0;
 }
 
 /* Distancia de la lectura de un angulo dado, o -1 si no esta. */
@@ -510,11 +538,15 @@ static int actualizar_estado(RobotState *rs) {
     double x_cm, y_cm, rumbo;
     odom_get(&x_cm, &y_cm, &rumbo);
 
-    /* Menor distancia vigente al frente. */
-    double d_frente  = distancia_al_frente(l, n, rumbo);
-    /* Hay obstaculo si esta muy cerca o si el choque es inminente. */
-    int    obstaculo = (d_frente > 0.0 && d_frente < DIST_OBSTACULO_CM) ||
-                       (choque.ttc_s >= 0.0 && choque.ttc_s < TTC_OBSTACULO_S);
+    /* Umbral de obstaculo que fijo el panel. */
+    pthread_mutex_lock(&rs->lock);
+    double umbral_cm = rs->movimiento.umbral_obstaculo_cm;
+    pthread_mutex_unlock(&rs->lock);
+
+    /* Hay obstaculo si algo del cono frontal esta en el camino del cuerpo o
+       si el choque es inminente. */
+    int obstaculo = obstaculo_al_frente(l, n, rumbo, umbral_cm) ||
+                    (choque.ttc_s >= 0.0 && choque.ttc_s < TTC_OBSTACULO_S);
 
     /* Se lee en cada actualizacion, tambien en medio de las maniobras: a
        25 cm/s el robot avanza menos de 3 cm entre dos lecturas. */
@@ -701,10 +733,13 @@ static double elegir_giro(void) {
     /* Sin espacio en ninguna direccion: media vuelta. */
     if (mejor < ESPACIO_LIBRE_CM) return 180.0;
 
-    /* Indices de los angulos que compiten por parecerse al mejor. */
+    /* Indices de los angulos que compiten por parecerse al mejor. Tambien
+       tienen que estar despejados: si no, el sorteo podia volver a apuntar a
+       la diagonal donde estaba el obstaculo. */
     int candidatos[RADAR_N_ANGULOS], nc = 0;
     for (int i = 0; i < n; i++)
-        if (l[i].angulo != RADAR_FRENTE && espacio[i] >= mejor - MARGEN_EMPATE_CM)
+        if (l[i].angulo != RADAR_FRENTE && espacio[i] >= mejor - MARGEN_EMPATE_CM &&
+            espacio[i] >= ESPACIO_LIBRE_CM)
             candidatos[nc++] = i;
 
     /* Sorteo entre los candidatos. */
