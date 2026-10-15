@@ -4,6 +4,34 @@
  *
  */
 
+/*
+ * El radar: un hilo que mueve el servo de lado a lado y mide en 7 angulos (0,
+ * 30, 60, 90, 120, 150, 180). Es el modulo con mas estado compartido.
+ *
+ * Variables principales:
+ *
+ * - g_tabla[7]: la ultima lectura de cada angulo. La casilla es angulo / 30 (0
+ *   grados -> 0, 90 grados -> 3, 180 grados -> 6). Cada Entrada tiene la
+ *   RadarLectura (angulo, distancia, seq, posicion del robot) y la hora en que
+ *   se tomo.
+ * - g_seq: contador de lecturas. Cada lectura nueva recibe el numero
+ *   siguiente; seq = 0 significa "nunca medido".
+ * - g_frente: copia congelada de la ultima lectura al frente, para el tiempo
+ *   antes de chocar.
+ * - g_vivo, g_pausado, g_angulo, g_hilo.
+ * - g_lock (candado) y g_cond (variable de condicion).
+ *
+ * Para entender: Una variable de condicion (pthread_cond_t) sirve para que un
+ * hilo duerma hasta que otro le avise. El que espera hace
+ * pthread_cond_wait(&cond, &lock); el que avisa hace
+ * pthread_cond_broadcast(&cond). Aqui se usa para despertar a quien espera un
+ * barrido nuevo y para pausar/reanudar el hilo.
+ *
+ * Para entender: volatile int g_vivo le dice al compilador "esta variable la
+ * cambia otro hilo; leela de memoria cada vez". Sin eso, el compilador podria
+ * optimizar el while (g_vivo) y no ver el cambio.
+ */
+
 /* Tipos RadarLectura y RadarChoque, constantes RADAR_* y prototipos. */
 #include "lib_radar.h"
 /* Odometria: la pose y la velocidad del robot en el instante de medir. */
@@ -80,6 +108,18 @@ static struct {
 
 /* Segundos transcurridos desde el instante t, con el reloj monotono. */
 static double segundos_desde(const struct timespec *t) {
+    /*
+     * Cuantos segundos pasaron desde un instante t.
+     *
+     * Para entender: struct timespec guarda un instante en dos partes:
+     * segundos (tv_sec) y nanosegundos (tv_nsec).
+     * clock_gettime(CLOCK_MONOTONIC, &t) da la hora de un reloj que nunca
+     * retrocede (no le afecta que se cambie la hora del sistema).
+     *
+     * La resta es (segundos de diferencia) + (nanosegundos de diferencia) /
+     * 1e9.
+     */
+
     struct timespec ahora;
     /* Instante actual. */
     clock_gettime(CLOCK_MONOTONIC, &ahora);
@@ -89,6 +129,18 @@ static double segundos_desde(const struct timespec *t) {
 
 /* Diferencia entre dos rumbos, en grados, sin el salto de 360 a 0. */
 static double diferencia_rumbo(double a, double b) {
+    /*
+     * La diferencia entre dos rumbos de brujula, entre 0 y 180, sin el
+     * problema del salto 359 grados -> 0 grados.
+     *
+     *     |fmod(a - b + 540, 360) - 180|
+     *
+     * Ejemplo: a = 350 grados, b = 10 grados. La resta directa da 340 grados,
+     * pero en realidad estan a 20 grados. La formula: 350 - 10 + 540 = 880;
+     * 880 mod 360 = 160; |160 - 180| = 20. El +540 asegura que el numero no
+     * sea negativo antes del modulo.
+     */
+
     /* Se suma 540 antes del modulo para que el resultado quede entre 0 y 180
        aunque la resta sea negativa. */
     return fabs(fmod(a - b + 540.0, 360.0) - 180.0);
@@ -96,12 +148,36 @@ static double diferencia_rumbo(double a, double b) {
 
 /* Duerme ms milisegundos; con cero o un valor negativo no espera. */
 static void dormir_ms(int ms) {
+    /*
+     * Duerme ms milisegundos (usleep recibe microsegundos, por eso x 1000).
+     * Con 0 o negativo no espera.
+     */
+
     if (ms > 0) usleep((useconds_t)ms * 1000);
 }
 
 /* Dispara el sensor y guarda la lectura en la tabla, junto con la pose del
    robot en ese instante. angulo: posicion actual del servo. */
 static void medir(int angulo) {
+    /*
+     * Dispara el sensor y guarda la lectura en la tabla, con la posicion del
+     * robot en ese instante.
+     *
+     * 1. sensor_leer_distancia() - fuera del candado, porque puede tardar
+     *    hasta 100 ms y no conviene bloquear a nadie mientras.
+     * 2. Pide a la odometria la posicion (odom_get), el avance acumulado y la
+     *    velocidad.
+     * 3. Toma la hora.
+     * 4. Con el candado tomado, llena la casilla g_tabla[angulo / 30]: angulo,
+     *    distancia, seq = ++g_seq, posicion y hora.
+     * 5. Si el angulo es 90 (frente), tambien llena g_frente con la distancia,
+     *    la velocidad, el avance y el rumbo. hay = d > 0 indica si hubo eco.
+     * 6. pthread_cond_broadcast despierta a quien este esperando un barrido.
+     *
+     * Para entender: ++g_seq incrementa primero y despues usa el valor. Si
+     * g_seq era 41, la lectura recibe 42.
+     */
+
     /* Medicion. Va fuera del candado: puede tardar decenas de milisegundos. */
     double d = sensor_leer_distancia(&g_sensor);
 
@@ -153,6 +229,30 @@ static void medir(int angulo) {
 /* Cuerpo del hilo de barrido: mueve el servo, espera, mide y pasa al angulo
    siguiente, hasta que radar_detener() baja g_vivo. */
 static void *hilo_radar(void *arg) {
+    /*
+     * El cuerpo del hilo del radar. Corre mientras g_vivo sea 1.
+     *
+     * En cada vuelta:
+     *
+     * 1. Pausa: si g_pausado, duerme en pthread_cond_wait hasta que lo
+     *    despierten. Se usa while y no if porque un hilo puede despertarse "de
+     *    mas"; el while vuelve a revisar.
+     * 2. espera = servo_mover(angulo) - mueve el servo (la rampa bloquea un
+     *    rato) y publica el angulo en g_angulo.
+     * 3. dormir_ms(espera) - espera a que el servo se asiente (100 ms si
+     *    servo_mover fallo).
+     * 4. medir(angulo).
+     * 5. Calcula el siguiente angulo. Si el proximo paso se sale de 0-180,
+     *    invierte el sentido (paso = -paso).
+     *
+     * Recorrido: 90 -> 120 -> 150 -> 180 -> 150 -> ... -> 0 -> 30 -> ... como
+     * un limpiaparabrisas. Cada posicion tarda unos 0,2 s.
+     *
+     * Para entender: Una funcion de hilo en C siempre tiene la forma void
+     * *f(void *arg). (void)arg; le dice al compilador "se que no uso este
+     * parametro" para que no avise.
+     */
+
     /* El argumento del hilo no se usa. */
     (void)arg;
     /* El barrido empieza mirando al frente. */
@@ -195,6 +295,30 @@ static void *hilo_radar(void *arg) {
 /* Configura el sensor y el servo, limpia el estado y lanza el hilo.
    Descripcion completa en lib_radar.h. */
 int radar_iniciar(int pi) {
+    /*
+     * Arranca el radar. Si ya corre (g_vivo), no hace nada.
+     *
+     * 1. Crea la variable de condicion una sola vez, configurada con el reloj
+     *    monotonico (para que las esperas con tiempo limite no se alarguen si
+     *    cambia la hora).
+     * 2. Guarda la sesion y llama a sensor_init (TRIG 17, ECHO 27) y
+     *    servo_init.
+     * 3. Con el candado: limpia la tabla (memset a 0), pone cada casilla con
+     *    su angulo y distancia -1, limpia g_frente, y reinicia g_seq, pausa y
+     *    angulo.
+     * 4. g_vivo = 1 antes de crear el hilo, porque el hilo lo revisa apenas
+     *    arranca.
+     * 5. pthread_create(&g_hilo, NULL, hilo_radar, NULL) lanza el hilo. Si
+     *    falla, vuelve g_vivo a 0 y devuelve -1.
+     *
+     * Para entender: pthread_create(&id, NULL, funcion, argumento) crea un
+     * hilo que ejecuta funcion(argumento) en paralelo. Devuelve 0 si salio
+     * bien.
+     *
+     * Para entender: memset(p, 0, n) llena n bytes con ceros. Es la forma
+     * rapida de "limpiar" una estructura o arreglo.
+     */
+
     /* Ya esta corriendo: no se lanza un segundo hilo. */
     if (g_vivo) return 0;
 
@@ -247,6 +371,20 @@ int radar_iniciar(int pi) {
 
 /* Detiene el hilo y deja el hardware en reposo. */
 void radar_detener(void) {
+    /*
+     * Detiene el radar.
+     *
+     * 1. Con el candado: g_vivo = 0 y broadcast, por si el hilo esta dormido
+     *    en pausa.
+     * 2. pthread_join(g_hilo, NULL) - espera a que el hilo termine la medicion
+     *    en curso y salga.
+     * 3. Suelta el servo y deja TRIG en 0.
+     *
+     * Para entender: pthread_join bloquea hasta que el hilo indicado termine.
+     * Es la forma correcta de apagar un hilo: avisarle con una bandera y
+     * esperarlo.
+     */
+
     /* Si no esta corriendo no hay nada que detener. */
     if (!g_vivo) return;
 
@@ -265,6 +403,11 @@ void radar_detener(void) {
 
 /* Pausa (1) o reanuda (0) el barrido. */
 void radar_pausar(int pausado) {
+    /*
+     * Pone g_pausado en 1 o 0 y despierta al hilo para que vea el cambio. Se
+     * usa en las pruebas para mover el servo a mano.
+     */
+
     pthread_mutex_lock(&g_lock);
     /* Normaliza a 0 o 1 y despierta al hilo para que vea el cambio. */
     g_pausado = pausado ? 1 : 0;
@@ -274,6 +417,8 @@ void radar_pausar(int pausado) {
 
 /* Devuelve el angulo al que apunta el servo, leido bajo el candado. */
 int radar_angulo_actual(void) {
+    /* Devuelve hacia donde apunta el servo, leido con el candado tomado. */
+
     pthread_mutex_lock(&g_lock);
     int a = g_angulo;
     pthread_mutex_unlock(&g_lock);
@@ -282,6 +427,16 @@ int radar_angulo_actual(void) {
 
 /* Copia en out la ultima lectura de cada angulo. Devuelve cuantas copio. */
 int radar_lecturas(RadarLectura *out, int max) {
+    /*
+     * Copia las lecturas de la tabla al arreglo out del que llama (como maximo
+     * max). A cada una le calcula la edad en ese momento: segundos desde que
+     * se tomo, o -1 si nunca se midio (seq == 0). Devuelve cuantas copio.
+     *
+     * Se copia en vez de devolver un puntero a la tabla para que quien llama
+     * trabaje con una foto fija, sin que el hilo del radar la cambie mientras
+     * la lee.
+     */
+
     /* Sin destino o sin espacio no se copia nada. */
     if (!out || max <= 0) return 0;
     /* No se copian mas lecturas de las que caben ni de las que existen. */
@@ -300,6 +455,15 @@ int radar_lecturas(RadarLectura *out, int max) {
 
 /* Devuelve la ultima distancia de un angulo, en cm. */
 double radar_distancia(int angulo) {
+    /*
+     * Devuelve la ultima distancia de un angulo. Solo acepta los 7 angulos del
+     * barrido: si angulo % 30 != 0 (no es multiplo de 30) o esta fuera de
+     * 0-180, devuelve -1.
+     *
+     * Para entender: % es el resto de la division: 120 % 30 = 0, 100 % 30 =
+     * 10.
+     */
+
     /* Solo existen los angulos del barrido: de 0 a 180 en pasos de 30. */
     if (angulo < 0 || angulo > 180 || angulo % RADAR_PASO_GRADOS != 0) return -1.0;
 
@@ -312,6 +476,11 @@ double radar_distancia(int angulo) {
 
 /* Devuelve el numero de la ultima lectura tomada. */
 uint32_t radar_seq(void) {
+    /*
+     * Devuelve el numero de la ultima lectura. Sirve como "marca": se guarda y
+     * despues se pregunta si ya hay lecturas mas nuevas.
+     */
+
     pthread_mutex_lock(&g_lock);
     uint32_t s = g_seq;
     pthread_mutex_unlock(&g_lock);
@@ -321,6 +490,12 @@ uint32_t radar_seq(void) {
 /* Con g_lock tomado. */
 /* Devuelve 1 si todos los angulos tienen una lectura posterior a desde_seq. */
 static int completo(uint32_t desde_seq) {
+    /*
+     * Interna. Revisa las 7 casillas: si alguna tiene seq menor o igual a
+     * desde_seq, el barrido todavia no esta completo y devuelve 0. Se llama
+     * con el candado ya tomado.
+     */
+
     /* Basta un angulo sin lectura nueva para que el barrido no este
        completo. */
     for (int i = 0; i < RADAR_N_ANGULOS; i++)
@@ -330,6 +505,11 @@ static int completo(uint32_t desde_seq) {
 
 /* Version publica de completo(): toma el candado y consulta. */
 int radar_barrido_completo(uint32_t desde_seq) {
+    /*
+     * Version publica de completo(): toma el candado, pregunta y lo suelta. La
+     * usa evadir() en el servidor.
+     */
+
     pthread_mutex_lock(&g_lock);
     int c = completo(desde_seq);
     pthread_mutex_unlock(&g_lock);
@@ -338,6 +518,20 @@ int radar_barrido_completo(uint32_t desde_seq) {
 
 /* Bloquea hasta que todos los angulos se midan de nuevo o venza el plazo. */
 int radar_esperar_barrido(int timeout_ms) {
+    /*
+     * Duerme hasta que los 7 angulos tengan una lectura nueva, o hasta que
+     * pase timeout_ms.
+     *
+     * 1. Calcula la hora limite absoluta: ahora + timeout. Si los nanosegundos
+     *    pasan de mil millones, suma 1 al segundo y resta mil millones (el
+     *    "acarreo").
+     * 2. Toma el candado y guarda desde = g_seq.
+     * 3. Mientras no este completo, duerme en pthread_cond_timedwait. Cada
+     *    medir() lo despierta con su broadcast; entonces vuelve a revisar.
+     * 4. Si la espera vence (ETIMEDOUT), revisa una ultima vez y devuelve 0 o
+     *    -1.
+     */
+
     /* Sin variable de condicion el radar nunca se inicio. */
     if (!g_cond_lista) return -1;
 
@@ -369,6 +563,27 @@ int radar_esperar_barrido(int timeout_ms) {
 
 /* Calcula el estado del tiempo antes de chocar. Ver lib_radar.h. */
 void radar_estado_choque(RadarChoque *out) {
+    /*
+     * Calcula el tiempo antes de chocar con lo que hay al frente y lo deja en
+     * la estructura out.
+     *
+     * 1. Copia g_frente con el candado tomado, y calcula su edad.
+     * 2. Llena out con lo medido y pone ttc_s = -1 (sin riesgo) por defecto.
+     * 3. Sale sin calcular si: no hubo eco al frente, o la lectura tiene mas
+     *    de 2 s.
+     * 4. Sale si el robot giro mas de 20 grados desde la lectura: ese
+     *    obstaculo ya no esta al frente.
+     * 5. Proyecta: d_ahora = d - (avance de ahora - avance al medir).
+     * 6. Si d_ahora <= 0 -> ttc = 0 (ya llego). Si la velocidad es mayor que 2
+     *    cm/s -> ttc = d_ahora / v. Si no, queda en -1.
+     *
+     * Ejemplo: midio 50 cm con avance 100 cm; ahora el avance es 104 cm y va a
+     * 4 cm/s -> (50 - 4) / 4 = 11,5 s.
+     *
+     * En el robot real (~2 cm/s) la condicion v > 2 casi nunca se cumple, asi
+     * que el tiempo de choque casi siempre queda en -1.
+     */
+
     /* Sin destino no hay donde escribir. */
     if (!out) return;
 
@@ -412,6 +627,8 @@ void radar_estado_choque(RadarChoque *out) {
 
 /* Atajo: devuelve solo los segundos del estado de choque. */
 double radar_tiempo_choque(void) {
+    /* Atajo: llama a radar_estado_choque y devuelve solo los segundos. */
+
     RadarChoque c;
     radar_estado_choque(&c);
     return c.ttc_s;
@@ -422,6 +639,27 @@ double radar_tiempo_choque(void) {
 void radar_rayo(const RadarLectura *l, double *origen_x_cm, double *origen_y_cm,
                 double *rumbo_rayo_grados)
 {
+    /*
+     * Dice desde donde y hacia donde apuntaba el sensor cuando tomo una
+     * lectura, en coordenadas del mundo. Lo usa el mapa.
+     *
+     * - Origen: el sensor esta 10 cm adelante del centro del robot, en la
+     *   direccion del rumbo:
+     *
+     *     x = x_robot + 10 x sin(rumbo)
+     *     y = y_robot + 10 x cos(rumbo)
+     *
+     * - Direccion: rumbo del robot + (90 - angulo del servo), llevado a 0-360.
+     *
+     * Ejemplo: robot mirando al norte (0 grados), servo a 0 grados (derecha)
+     * -> rayo hacia 0 + 90 = 90 grados (este). Servo a 180 grados -> 0 - 90 =
+     * -90 -> 270 grados (oeste).
+     *
+     * Para entender: Se usa seno para x y coseno para y porque el rumbo es de
+     * brujula (0 grados = norte = eje y), al reves que en matematicas, donde 0
+     * grados es el eje x.
+     */
+
     /* Sin lectura no hay rayo. */
     if (!l) return;
     /* Rumbo del robot al medir, en radianes. */

@@ -3,6 +3,32 @@
  * CE-1113 Sistemas Empotrados, Instituto Tecnologico de Costa Rica
  */
 
+/*
+ * La odometria: estima donde esta el robot sin sensores en las llantas.
+ *
+ * Macros GRADOS(rad) y RADIANES(gr) para convertir angulos.
+ *
+ * Para entender: Una macro con parametros (#define GRADOS(rad) ((rad) * 180.0
+ * / M_PI)) no es una funcion: el preprocesador reemplaza el texto antes de
+ * compilar. Los parentesis alrededor de rad evitan errores si se pasa una
+ * expresion como a + b.
+ *
+ * Variables (todas protegidas por g_lock):
+ *
+ * - g_x_cm, g_y_cm: posicion (este y norte positivos).
+ * - g_rumbo_rad: rumbo en radianes.
+ * - g_camino_cm: todo lo recorrido (siempre suma). g_avance_cm: avance neto
+ *   (retroceder resta).
+ * - g_v_cm_s: velocidad estimada. g_quieto_s: cuanto llevan los motores
+ *   detenidos.
+ * - g_v_izq_cm_s, g_v_der_cm_s, g_usa_imu.
+ * - g_t_anterior: hora de la integracion anterior.
+ *
+ * Constantes en lib_odom.h: velocidad maxima de una llanta 2 cm/s (el
+ * simulador compila con 30), separacion entre llantas 16 cm, umbral de
+ * arranque 60, constante de fusion 1 s, ZUPT a los 0,3 s y periodo de 20 ms.
+ */
+
 /* Constantes ODOM_* y prototipos del modulo. */
 #include "lib_odom.h"
 /* MPU-6050: aceleracion de avance y velocidad de giro. */
@@ -52,6 +78,17 @@ static volatile int g_hilo_vivo = 0;
 
 /* Convierte el duty cycle ordenado a velocidad lineal de la llanta. */
 static double pwm_a_cm_s(int pwm) {
+    /*
+     * Convierte la orden de un motor (-255 a 255) en velocidad de la llanta en
+     * cm/s.
+     *
+     * - Menos de 60 en valor absoluto -> 0 (el motor no vence su friccion).
+     * - Si no: (orden / 255) x 2 cm/s, con el signo de la orden.
+     *
+     * Con velocidad fija la orden siempre es 0 o +-255, asi que da 0 o +-2
+     * cm/s.
+     */
+
     /* Magnitud de la orden, sin signo. */
     int magnitud = pwm < 0 ? -pwm : pwm;
     /* Por debajo del umbral de arranque el motor no gira. */
@@ -65,6 +102,11 @@ static double pwm_a_cm_s(int pwm) {
 
 /* Fija el instante inicial la primera vez que se llama. */
 void odom_init(void) {
+    /*
+     * Si la odometria nunca arranco, guarda la hora actual como punto de
+     * partida.
+     */
+
     pthread_mutex_lock(&g_lock);
     if (!g_iniciada) {
         clock_gettime(CLOCK_MONOTONIC, &g_t_anterior);
@@ -76,6 +118,11 @@ void odom_init(void) {
 /* Vuelve al origen: posicion, rumbo, acumulados y velocidades en cero, y el
    reloj de integracion en este instante. */
 void odom_reset(void) {
+    /*
+     * Vuelve al origen: posicion, rumbo, acumulados y velocidades en 0, y la
+     * hora de partida en este instante.
+     */
+
     pthread_mutex_lock(&g_lock);
     g_x_cm = g_y_cm = g_rumbo_rad = g_camino_cm = g_avance_cm = 0.0;
     g_v_cm_s = g_quieto_s = 0.0;
@@ -86,6 +133,51 @@ void odom_reset(void) {
 }
 
 void odom_update(void) {
+    /*
+     * El corazon de la odometria. Se llama cada 20 ms y suma el movimiento
+     * ocurrido desde la vez anterior.
+     *
+     * 1. Leer las entradas (fuera del candado, porque hablar con el sensor es
+     * lento):
+     *
+     * - con_imu = hay MPU y la lectura salio bien.
+     * - motores_get(&vel_izq, &vel_der): lo que se ordeno a cada motor.
+     *
+     * 2. Calcular dt, el tiempo real desde la vez anterior. Si es <= 0 o > 1
+     * s, no integra (evita inventar metros tras una pausa larga).
+     *
+     * 3. Modelo de los motores:
+     *
+     *     v_izq, v_der = pwm_a_cm_s(...)
+     *     v_modelo     = (v_izq + v_der) / 2
+     *     omega_model  = (v_izq - v_der) / 16      (rad/s)
+     *
+     * 4a. Con MPU (filtro complementario):
+     *
+     *     alfa = dt / 1.0                  (~ 0.02)
+     *     v   += aceleracion x dt          (lo que dice el MPU)
+     *     v   += alfa x (v_modelo - v)     (acerca 2 % hacia el modelo)
+     *
+     * - ZUPT: si los dos motores estan en 0, suma dt a g_quieto_s; al pasar
+     *   0,3 s fuerza v = 0.
+     * - El giro sale del giroscopio: omega = RADIANES(giro_dps).
+     *
+     * 4b. Sin MPU: v = v_modelo y omega = omega_model.
+     *
+     * 5. Integrar la posicion con el promedio de la velocidad del tramo y el
+     * rumbo de la mitad del tramo (mas preciso en las curvas):
+     *
+     *     rumbo += omega x dt
+     *     x     += v x sin(rumbo_medio) x dt
+     *     y     += v x cos(rumbo_medio) x dt
+     *
+     * Suma al camino |v| x dt y al avance v x dt. Lleva el rumbo a 0-2pi con
+     * fmod.
+     *
+     * Ejemplo: girando sobre el eje con +2 y -2 cm/s -> omega = 4 / 16 = 0,25
+     * rad/s ~ 14,3  grados/s; un giro de 90 grados tarda unos 6 s.
+     */
+
     /* El sensor se lee fuera del candado: es una ida y vuelta a pigpiod. */
     ImuLectura m;
     /* con_imu vale 1 solo si hay sensor y ademas contesto esta lectura. */
@@ -198,6 +290,11 @@ void odom_update(void) {
 /* Cuerpo del hilo: integra y duerme un periodo, hasta que odom_parar() baja
    la bandera. */
 static void *hilo_odom(void *arg) {
+    /*
+     * El cuerpo del hilo: mientras g_hilo_vivo, llama a odom_update() y duerme
+     * 20 ms.
+     */
+
     /* El argumento del hilo no se usa. */
     (void)arg;
     while (g_hilo_vivo) {
@@ -209,6 +306,11 @@ static void *hilo_odom(void *arg) {
 
 /* Lanza el hilo de la odometria. Devuelve 0 si quedo corriendo. */
 int odom_arrancar(void) {
+    /*
+     * Lanza el hilo de odometria si no corria. Sube la bandera antes de
+     * crearlo; si pthread_create falla, la baja y devuelve -1.
+     */
+
     /* Si ya corre no se lanza otro. */
     if (g_hilo_vivo) return 0;
     /* Asegura que el reloj de integracion tenga un punto de partida. */
@@ -224,6 +326,8 @@ int odom_arrancar(void) {
 
 /* Detiene el hilo y espera a que termine. */
 void odom_parar(void) {
+    /* Baja la bandera y espera al hilo con pthread_join. */
+
     if (!g_hilo_vivo) return;
     g_hilo_vivo = 0;
     pthread_join(g_hilo, NULL);
@@ -231,6 +335,11 @@ void odom_parar(void) {
 
 /* Devuelve la pose. Cada puntero puede ser NULL. */
 void odom_get(double *x_cm, double *y_cm, double *rumbo_grados) {
+    /*
+     * Devuelve posicion y rumbo (convertido a grados) por punteros. Cualquiera
+     * puede ser NULL.
+     */
+
     pthread_mutex_lock(&g_lock);
     if (x_cm)        *x_cm        = g_x_cm;
     if (y_cm)        *y_cm        = g_y_cm;
@@ -241,6 +350,8 @@ void odom_get(double *x_cm, double *y_cm, double *rumbo_grados) {
 
 /* Velocidad hacia adelante, leida bajo el candado. */
 double odom_velocidad_cm_s(void) {
+    /* Devuelve la velocidad estimada, leida con el candado. */
+
     pthread_mutex_lock(&g_lock);
     double v = g_v_cm_s;
     pthread_mutex_unlock(&g_lock);
@@ -249,6 +360,11 @@ double odom_velocidad_cm_s(void) {
 
 /* Avance neto acumulado, con signo. */
 double odom_avance_cm(void) {
+    /*
+     * Devuelve el avance neto con signo. El radar lo usa para saber cuanto se
+     * acerco el robot desde una lectura.
+     */
+
     pthread_mutex_lock(&g_lock);
     double a = g_avance_cm;
     pthread_mutex_unlock(&g_lock);
@@ -257,6 +373,8 @@ double odom_avance_cm(void) {
 
 /* Camino total recorrido, sin signo. */
 double odom_distancia_recorrida(void) {
+    /* Devuelve el camino total recorrido, sin signo. */
+
     pthread_mutex_lock(&g_lock);
     double d = g_camino_cm;
     pthread_mutex_unlock(&g_lock);
@@ -265,6 +383,8 @@ double odom_distancia_recorrida(void) {
 
 /* Velocidad del modelo de cada llanta. Cada puntero puede ser NULL. */
 void odom_get_velocidades(double *izq_cm_s, double *der_cm_s) {
+    /* Devuelve la velocidad del modelo de cada llanta. */
+
     pthread_mutex_lock(&g_lock);
     if (izq_cm_s) *izq_cm_s = g_v_izq_cm_s;
     if (der_cm_s) *der_cm_s = g_v_der_cm_s;
@@ -273,6 +393,11 @@ void odom_get_velocidades(double *izq_cm_s, double *der_cm_s) {
 
 /* 1 si la ultima integracion uso el MPU-6050. */
 int odom_usa_imu(void) {
+    /*
+     * Devuelve 1 si la ultima integracion uso el MPU. La web lo muestra como
+     * "MPU" o "MOTORES".
+     */
+
     pthread_mutex_lock(&g_lock);
     int u = g_usa_imu;
     pthread_mutex_unlock(&g_lock);

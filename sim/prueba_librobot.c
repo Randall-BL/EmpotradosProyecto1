@@ -5,6 +5,13 @@
  */
 
 /*
+ * El programa de prueba: usa la biblioteca real contra el mundo simulado y
+ * compara cada resultado con la "verdad". Lleva dos contadores: g_pruebas y
+ * g_fallos. Termina con codigo 0 si todo paso (asi un script puede saber si
+ * fallo).
+ */
+
+/*
  * Programa de prueba de la biblioteca dinamica (issue #19).
  *
  * Ejercita cada modulo de librobot contra el robot simulado y compara el
@@ -46,6 +53,11 @@ static int g_fallos  = 0;
 
 /* Registra una comprobacion: imprime OK o MAL y lleva la cuenta. */
 static void verificar(const char *que, int ok) {
+    /*
+     * Registra una comprobacion: imprime [OK ] o [MAL] con su descripcion y
+     * lleva la cuenta.
+     */
+
     printf("  [%s] %s\n", ok ? "OK " : "MAL", que);
     g_pruebas++;
     if (!ok) g_fallos++;
@@ -54,6 +66,11 @@ static void verificar(const char *que, int ok) {
 /* Deja correr la simulacion mientras la odometria integra, como hace el
    servidor durante una maniobra. */
 static void andar(int ms) {
+    /*
+     * Deja correr la simulacion ms milisegundos en pasos de 50 ms, llamando a
+     * odom_update() en cada uno.
+     */
+
     /* Pasos de 50 ms: duerme y hace integrar a la odometria. */
     for (int t = 0; t < ms; t += 50) {
         usleep(50000);
@@ -63,11 +80,18 @@ static void andar(int ms) {
 
 /* Imprime el titulo de una seccion. */
 static void titulo(const char *t) {
+    /* Imprime el titulo de una seccion: == Motores ==. */
+
     printf("\n== %s ==\n", t);
 }
 
 /* Espera, andando, a que el radar tome una lectura frontal nueva. */
 static int esperar_lectura_frontal(int timeout_ms) {
+    /*
+     * Guarda el seq de la lectura a 90 grados y anda en pasos de 50 ms hasta
+     * que aparezca una mas nueva, o se acabe el plazo.
+     */
+
     /* Numero de secuencia de la lectura frontal antes de esperar. */
     RadarLectura l[RADAR_N_ANGULOS];
     radar_lecturas(l, RADAR_N_ANGULOS);
@@ -84,6 +108,39 @@ static int esperar_lectura_frontal(int timeout_ms) {
 
 /* Programa principal: una seccion por modulo. */
 int main(void) {
+    /*
+     * Las 49 comprobaciones, una seccion por modulo:
+     *
+     * - Arranque: robot_init abre la sesion y el MPU contesta
+     * - Desnivel: En el centro de la sala hay piso
+     * - MPU-6050: La calibracion quito el sesgo de fabrica; el eje vertical
+     *   mide 1 g; la odometria usa el MPU
+     * - Radar: Completa un barrido; cada angulo mide lo que hay en el mundo
+     *   (+-2 cm); radar_rayo pone el eco frontal sobre la pared norte
+     * - Servo: 45 grados -> 1000 us; satura en 500 y 2500; media vuelta en
+     *   ~0,9 s
+     * - LEDs: Prender y apagar cambia el estado
+     * - Motores: Avanzar mueve hacia el norte; retroceder lo devuelve; girar a
+     *   la derecha aumenta el rumbo
+     * - Control diferencial: Con velocidad fija, todo va a +-255 y la curva
+     *   gira sobre el eje; satura en +-255
+     * - Velocidad (MPU): Al arrancar, el MPU sigue la inercia mejor que el
+     *   modelo; en crucero queda a +-15 % de la real; detenido vuelve a 0
+     * - Tiempo de choque: Detecta la pared, coincide +-15 % con el real, baja
+     *   entre lecturas y se anula al frenar
+     * - Odometria: Tras un recorrido en L, el error de posicion es < 20 % y el
+     *   de rumbo < 5 grados
+     * - Audio: Volumen, estado y lista (si hay tarjeta de sonido)
+     * - Cierre: Todo queda apagado: sesion, motores, servo sin pulsos, I2C
+     *   libre
+     *
+     * Al final dibuja el recorrido con mundo_dibujar.
+     *
+     * Para entender: #if MOTOR_VELOCIDAD_VARIABLE aparece tambien aqui: segun
+     * como se compilo la biblioteca, se compila una u otra version de la
+     * prueba de motores.
+     */
+
     printf("Prueba de librobot contra el robot simulado\n");
 
     titulo("Arranque");

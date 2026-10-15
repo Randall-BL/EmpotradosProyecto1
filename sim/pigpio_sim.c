@@ -4,6 +4,32 @@
  *
  */
 
+/*
+ * Un pigpiod falso. Implementa las mismas funciones que la biblioteca llama
+ * (gpio_write, gpio_read, set_servo_pulsewidth, i2c_*...), pero en vez de
+ * mover pines mueve un robot virtual de mundo.c.
+ *
+ * Como se engancha sin tocar lib/: la biblioteca hace #include
+ * <pigpiod_if2.h>. Al compilar con -I. dentro de sim/, el compilador encuentra
+ * primero el pigpiod_if2.h de esta carpeta. Y al enlazar, las funciones salen
+ * de este archivo en vez de la biblioteca real de pigpio.
+ *
+ * Estado que guarda:
+ *
+ * - g_gpio_in[4]: lo que la biblioteca escribio en IN1-IN4.
+ * - g_leds[4].
+ * - Un reloj virtual: g_t0 (arranque) y g_tick_extra (microsegundos que suman
+ *   los ecos simulados).
+ * - g_sensor: la fase de una medicion del HC-SR04 (una pequena maquina de
+ *   estados).
+ * - El servo: de donde sale, a donde va, desde cuando y el ultimo pulso.
+ * - El MPU: abierto, dormido, y un generador de ruido repetible.
+ *
+ * Constantes "fisicas" del simulador: servo a 600  grados/s, sesgo del MPU de
+ * 0,02 g y 1,5  grados/s, sensores de desnivel 12 cm adelante y 8 cm a cada
+ * lado, 58,3 us de eco por centimetro.
+ */
+
 /* La misma interfaz que ve la biblioteca: aqui se implementa. */
 #include "pigpiod_if2.h"
 /* El mundo virtual sobre el que se mide y se mueve. */
@@ -128,6 +154,8 @@ static unsigned        g_servo_pulso = 0;
 
 /* Segundos transcurridos desde t. */
 static double segundos_desde(const struct timespec *t) {
+    /* Segundos desde un instante, igual que en lib_radar.c. */
+
     struct timespec ahora;
     clock_gettime(CLOCK_MONOTONIC, &ahora);
     return (ahora.tv_sec - t->tv_sec) + (ahora.tv_nsec - t->tv_nsec) / 1e9;
@@ -136,6 +164,16 @@ static double segundos_desde(const struct timespec *t) {
 /* Donde esta el servo ahora: viaja a velocidad constante hacia el destino.
    Con g_lock_sim tomado. */
 static double servo_angulo_real(void) {
+    /*
+     * Donde esta el servo ahora mismo. El servo viaja a 600  grados/s: lo
+     * recorrido = 600 x segundos desde la orden. Si ya recorrio lo que
+     * faltaba, esta en el destino; si no, en un punto intermedio.
+     *
+     * Esto hace que, si la biblioteca disparara el sensor antes de que el
+     * servo llegue, mida en la direccion equivocada, igual que en el robot
+     * real.
+     */
+
     /* Grados que pudo recorrer desde que recibio la orden. */
     double recorrido = SERVO_GRADOS_POR_S * segundos_desde(&g_servo_t);
     /* Grados que le faltaban al recibirla. */
@@ -155,6 +193,12 @@ static uint32_t g_ruido = 12345;   /* generador congruencial: ruido repetible */
 
 /* Ruido uniforme en [-amplitud, amplitud]. */
 static double ruido(double amplitud) {
+    /*
+     * Un numero "aleatorio" entre -amplitud y +amplitud, con un generador
+     * congruencial (x = x x 1103515245 + 12345). Siempre da la misma
+     * secuencia, asi las pruebas son repetibles.
+     */
+
     /* Generador congruencial lineal: el mismo ruido en cada corrida. */
     g_ruido = g_ruido * 1103515245u + 12345u;
     /* Toma 16 bits del estado y los lleva al rango [-1, 1]. */
@@ -164,6 +208,11 @@ static double ruido(double amplitud) {
 /* Escribe un valor como entero de 16 bits con signo, en big-endian,
    saturando al rango. */
 static void poner_be16(char *b, double valor) {
+    /*
+     * Lo contrario de be16 de lib_imu.c: redondea un valor, lo recorta a
+     * -32768..32767 y lo escribe en dos bytes, el alto primero.
+     */
+
     long v = lround(valor);
     if (v >  32767) v =  32767;
     if (v < -32768) v = -32768;
@@ -175,6 +224,11 @@ static void poner_be16(char *b, double valor) {
 
 /* Indice de IN1..IN4 en g_gpio_in, o -1 si el GPIO no es de un motor. */
 static int indice_in(unsigned gpio) {
+    /*
+     * Convierte un numero de GPIO (5, 6, 23, 24) en su indice 0-3 con un
+     * switch, o -1 si no es un pin de motor.
+     */
+
     switch (gpio) {
         case IN1: return 0;
         case IN2: return 1;
@@ -188,6 +242,12 @@ static int indice_in(unsigned gpio) {
    que un GPIO en alto la deja en bajo. Es la placa real, no la biblioteca: si
    la biblioteca no compensa la inversion, aqui el robot anda al reves. */
 static int entrada_l298n(int i) {
+    /*
+     * Lo que le llega al L298N: 255 - lo escrito en el GPIO. Imita la
+     * inversion del optoacoplador, para comprobar que la biblioteca la
+     * compensa.
+     */
+
     return PWM_RANGO - g_gpio_in[i];
 }
 
@@ -196,6 +256,12 @@ static int entrada_l298n(int i) {
    que solo IN2 lo esta, y frenado el resto (las dos iguales). Con una sola
    entrada modulando por vez, el neto es la diferencia de los dos ciclos. */
 static void empujar_motores(void) {
+    /*
+     * Calcula la orden neta de cada motor (entrada de avance - entrada de
+     * retroceso) y se la pasa al mundo con mundo_set_motores. Izquierdo en
+     * IN3/IN4, derecho en IN1/IN2, como en el robot armado.
+     */
+
     /* Como en el robot armado: el motor izquierdo va a la salida B del L298N
        (IN3/IN4) y el derecho a la A (IN1/IN2). */
     mundo_set_motores(entrada_l298n(2) - entrada_l298n(3),
@@ -207,6 +273,12 @@ static void empujar_motores(void) {
 /* Abre la "sesion": reinicia el mundo, los pines, el servo, el MPU y el
    reloj. Devuelve un handle valido. */
 int pigpio_start(const char *addrStr, const char *portStr) {
+    /*
+     * Abre la "sesion": reinicia el mundo (robot al centro), los pines, el
+     * servo (a 90 grados, sin pulsos), el MPU (cerrado y dormido) y el reloj
+     * virtual. Devuelve 1.
+     */
+
     /* La direccion y el puerto del demonio no aplican. */
     (void)addrStr; (void)portStr;
     /* Robot en el centro, quieto. */
@@ -235,6 +307,8 @@ int pigpio_start(const char *addrStr, const char *portStr) {
 
 /* Cierra la sesion: frena el robot virtual. */
 void pigpio_stop(int pi) {
+    /* Frena el robot virtual. */
+
     (void)pi;
     mundo_set_motores(0, 0);
     printf("[sim] pigpiod simulado cerrado\n");
@@ -242,24 +316,38 @@ void pigpio_stop(int pi) {
 
 /* El modo de los pines no se simula. */
 int set_mode(int pi, unsigned gpio, unsigned mode) {
+    /*
+     * No hace nada: el modo de los pines no se simula. Existe para que la
+     * biblioteca compile.
+     */
+
     (void)pi; (void)gpio; (void)mode;
     return 0;
 }
 
 /* La frecuencia de la PWM no se simula. */
 int set_PWM_frequency(int pi, unsigned user_gpio, unsigned frequency) {
+    /* No hace nada (no se simula). */
+
     (void)pi; (void)user_gpio; (void)frequency;
     return 0;
 }
 
 /* El rango de la PWM se da por sentado: PWM_RANGO. */
 int set_PWM_range(int pi, unsigned user_gpio, unsigned range) {
+    /* No hace nada (se asume rango 255). */
+
     (void)pi; (void)user_gpio; (void)range;
     return 0;
 }
 
 /* Fija el ciclo de trabajo de una entrada de motor y recalcula el empuje. */
 int set_PWM_dutycycle(int pi, unsigned user_gpio, unsigned dutycycle) {
+    /*
+     * Guarda el ciclo de trabajo de una entrada de motor y recalcula el
+     * empuje. Solo se usaria con la variante con PWM.
+     */
+
     (void)pi;
     int i = indice_in(user_gpio);
     if (i < 0) return -1;                  /* no hay motor en ese pin */
@@ -271,6 +359,20 @@ int set_PWM_dutycycle(int pi, unsigned user_gpio, unsigned dutycycle) {
 
 /* Escritura digital de un pin: motores, LEDs o el TRIG del sensor. */
 int gpio_write(int pi, unsigned gpio, unsigned level) {
+    /*
+     * Escribe un pin. Segun cual:
+     *
+     * - IN1-IN4: guarda 255 o 0 y recalcula los motores.
+     * - LEDs: guarda el estado e imprime [sim] LED ... ENCENDIDO cuando
+     *   cambia.
+     * - TRIG del sensor:
+     *    - Al subir: la medicion queda "armada".
+     *    - Al bajar (estando armada): dispara. Lee donde esta el servo en ese
+     *      instante, pregunta al mundo la distancia en esa direccion
+     *      (mundo_distancia_desde) y la convierte en duracion del eco
+     *      (distancia x 58,3 us). Pasa a la fase "esperando que ECHO suba".
+     */
+
     (void)pi;
     /* Normaliza a 0 o 1. */
     int nivel = level ? 1 : 0;
@@ -330,12 +432,32 @@ int gpio_write(int pi, unsigned gpio, unsigned level) {
 
 /* Las resistencias de pull no se simulan. */
 int set_pull_up_down(int pi, unsigned gpio, unsigned pud) {
+    /* No hace nada (no se simula). */
+
     (void)pi; (void)gpio; (void)pud;
     return 0;
 }
 
 /* Lectura digital de un pin: sensores de desnivel o el ECHO. */
 int gpio_read(int pi, unsigned gpio) {
+    /*
+     * Lee un pin.
+     *
+     * - Desnivel: pregunta al mundo si hay piso bajo esa esquina.
+     * - ECHO: avanza la maquina de estados del sensor una fase por lectura:
+     *    1. "Esperando que suba": si no hubo eco, suma 10 ms al reloj virtual
+     *       y devuelve 0 (asi la biblioteca llega a su limite de 50 ms
+     *       enseguida). Si hubo eco, pasa a la fase siguiente y devuelve 0.
+     *    2. "Pulso en alto": suma la duracion del eco al reloj virtual y
+     *       devuelve 1.
+     *    3. "Fin": devuelve 0.
+     *
+     * El truco esta en el paso 2: la biblioteca mide el ancho del pulso con
+     * get_current_tick, y como el reloj virtual salto justo la duracion del
+     * eco, mide exactamente la distancia correcta sin tener que esperar de
+     * verdad.
+     */
+
     (void)pi;
     /* Cada sensor de desnivel consulta si hay piso bajo su posicion. */
     if (gpio == CAIDA_IZQ_PIN) return mundo_sin_piso(CAIDA_ADELANTE_CM,  CAIDA_LATERAL_CM);
@@ -375,6 +497,11 @@ int gpio_read(int pi, unsigned gpio) {
 /* Reloj de microsegundos: el tiempo real desde el arranque, mas lo que
    duraron los ecos simulados. */
 uint32_t get_current_tick(int pi) {
+    /*
+     * El reloj en microsegundos: tiempo real desde el arranque mas
+     * g_tick_extra, lo que sumaron los ecos simulados.
+     */
+
     (void)pi;
     /* Antes de pigpio_start solo cuenta el tiempo extra. */
     if (!g_reloj_listo) return g_tick_extra;
@@ -392,6 +519,12 @@ uint32_t get_current_tick(int pi) {
 /* Recibe el pulso del servo y lo pone a viajar hacia el angulo que le
    corresponde. */
 int set_servo_pulsewidth(int pi, unsigned user_gpio, unsigned pulsewidth) {
+    /*
+     * Recibe el pulso del servo. Rechaza pulsos fuera de 500-2500 (salvo 0).
+     * El viaje nuevo parte de donde esta el servo ahora; el destino se calcula
+     * del pulso ((pulso - 500) x 180 / 2000). Con pulso 0 se queda donde esta.
+     */
+
     (void)pi;
     if (user_gpio != SERVO_PIN) return PI_BAD_USER_GPIO;   /* no hay servo ahi */
     /* Un pulso distinto de cero tiene que estar en el rango del servo. */
@@ -416,6 +549,11 @@ int set_servo_pulsewidth(int pi, unsigned user_gpio, unsigned pulsewidth) {
 
 /* Devuelve el ultimo ancho de pulso recibido. La usa la prueba. */
 int get_servo_pulsewidth(int pi, unsigned user_gpio) {
+    /*
+     * Devuelve el ultimo pulso recibido. La prueba lo usa para comprobar que
+     * servo_mover(45) mando 1000 us.
+     */
+
     (void)pi;
     if (user_gpio != SERVO_PIN) return PI_BAD_USER_GPIO;
     pthread_mutex_lock(&g_lock_sim);
@@ -428,6 +566,11 @@ int get_servo_pulsewidth(int pi, unsigned user_gpio) {
 
 /* Abre el MPU-6050 simulado: solo existe en el bus 1, direccion 0x68. */
 int i2c_open(int pi, unsigned i2c_bus, unsigned i2c_addr, unsigned i2c_flags) {
+    /*
+     * Solo acepta el bus 1 y la direccion 0x68 (si no, falla como fallaria sin
+     * sensor). Lo marca abierto y dormido, como el sensor real.
+     */
+
     (void)pi; (void)i2c_flags;
     if (i2c_bus != MPU_BUS || i2c_addr != MPU_DIR) return PI_I2C_OPEN_FAILED;
     pthread_mutex_lock(&g_lock_sim);
@@ -440,6 +583,8 @@ int i2c_open(int pi, unsigned i2c_bus, unsigned i2c_addr, unsigned i2c_flags) {
 
 /* Cierra el MPU simulado. */
 int i2c_close(int pi, unsigned handle) {
+    /* Marca el MPU como cerrado. */
+
     (void)pi;
     if (handle != MPU_HANDLE) return PI_BAD_HANDLE;
     pthread_mutex_lock(&g_lock_sim);
@@ -450,6 +595,11 @@ int i2c_close(int pi, unsigned handle) {
 
 /* Escribe un registro; solo PWR_MGMT_1 tiene efecto. */
 int i2c_write_byte_data(int pi, unsigned handle, unsigned i2c_reg, unsigned bVal) {
+    /*
+     * Solo el registro 0x6B (energia) tiene efecto: el bit 6 duerme o
+     * despierta el sensor. Las demas escrituras se aceptan sin hacer nada.
+     */
+
     (void)pi;
     if (handle != MPU_HANDLE || !g_mpu_abierto) return PI_BAD_HANDLE;
     /* PWR_MGMT_1: el bit 6 (SLEEP) duerme el sensor. Los demas registros de
@@ -465,6 +615,11 @@ int i2c_write_byte_data(int pi, unsigned handle, unsigned i2c_reg, unsigned bVal
 
 /* Lee un registro: la identidad o el estado de energia. */
 int i2c_read_byte_data(int pi, unsigned handle, unsigned i2c_reg) {
+    /*
+     * Contesta WHO_AM_I (0x68) y el estado de energia. Cualquier otro registro
+     * devuelve 0.
+     */
+
     (void)pi;
     if (handle != MPU_HANDLE || !g_mpu_abierto) return PI_BAD_HANDLE;
     if (i2c_reg == 0x75) return MPU_DIR;                    /* WHO_AM_I */
@@ -476,6 +631,21 @@ int i2c_read_byte_data(int pi, unsigned handle, unsigned i2c_reg) {
 int i2c_read_i2c_block_data(int pi, unsigned handle, unsigned i2c_reg,
                             char *buf, unsigned count)
 {
+    /*
+     * La rafaga de 14 bytes del MPU.
+     *
+     * 1. Solo acepta la lectura completa desde 0x3B.
+     * 2. Si esta dormido, devuelve todo en 0 (por eso imu_init tiene que
+     *    despertarlo).
+     * 3. Pide al mundo la aceleracion y el giro verdaderos del robot.
+     * 4. Les suma el sesgo de fabrica (0,02 g y 1,5  grados/s) y ruido. La
+     *    calibracion de la biblioteca tiene que quitar ese sesgo; la prueba lo
+     *    comprueba.
+     * 5. Pone la gravedad en Z (1 g), 25  C de temperatura, y escribe cada
+     *    valor en su posicion con poner_be16. El giro va con el signo
+     *    invertido, como lo mide el sensor real.
+     */
+
     (void)pi;
     if (handle != MPU_HANDLE || !g_mpu_abierto) return PI_BAD_HANDLE;
     /* Solo se admite la rafaga completa a partir de ACCEL_XOUT_H. */

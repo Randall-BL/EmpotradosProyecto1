@@ -4,6 +4,30 @@
  *
  */
 
+/*
+ * Usuarios, sesiones y proteccion contra fuerza bruta. Constantes en auth.h:
+ *
+ * Constante            Valor   Que es
+ * ------------------   -----   ------------------------------------------
+ * MAX_SESSIONS         4       Sesiones abiertas a la vez
+ * SESSION_TTL_SECS     600     Una sesion vence tras 10 min sin actividad
+ * SESSION_TOKEN_LEN    64      Caracteres del token
+ * BRUTE_MAX_ATTEMPTS   5       Fallos permitidos
+ * BRUTE_WINDOW_SECS    300     ...en 5 minutos
+ * BRUTE_BLOCK_SECS     600     Bloqueo de 10 minutos
+ * BRUTE_TRACK_IPS      32      IPs que se vigilan
+ *
+ * Tablas:
+ *
+ * - USERS[]: usuario y hash SHA-256 de su contrasena. Hay uno: user1.
+ * - g_sessions[4]: cada casilla tiene token, usuario, hora del ultimo pedido y
+ *   si esta activa.
+ * - g_brute[32]: cada casilla tiene una IP, cuantos fallos lleva, cuando
+ *   empezo a contar y hasta cuando esta bloqueada.
+ *
+ * Un solo candado g_lock protege las dos tablas.
+ */
+
 /* Constantes de seguridad, AuthResult y prototipos. */
 #include "auth.h"
 /* sha256_hex(), para comparar la contrasena contra su resumen. */
@@ -83,6 +107,16 @@ static BruteEntry g_brute[BRUTE_TRACK_IPS];
 
 // Generar Token
 static void gen_token(char *buf) {
+    /*
+     * Genera el token de sesion: 64 caracteres hexadecimales aleatorios.
+     *
+     * 1. Lee 32 bytes de /dev/urandom (la fuente de azar del sistema
+     *    operativo, apta para seguridad).
+     * 2. Escribe cada byte como 2 digitos hex.
+     * 3. Si no pudo leer /dev/urandom, usa rand() como respaldo (menos
+     *    seguro).
+     */
+
     /* Bytes aleatorios: cada uno da dos caracteres hexadecimales del token. */
     unsigned char raw[SESSION_TOKEN_LEN / 2];
     /* 1 si se leyeron todos los bytes del generador del sistema. */
@@ -113,6 +147,19 @@ static void gen_token(char *buf) {
    largo completo, asi el tiempo que tarda no revela en que posicion
    difieren. Devuelve 0 si son iguales. */
 static int const_time_cmp(const char *a, const char *b, size_t len) {
+    /*
+     * Compara dos tokens siempre en el mismo tiempo.
+     *
+     * Una comparacion normal se detiene en el primer caracter distinto. Un
+     * atacante podria medir cuanto tarda la respuesta y adivinar el token
+     * caracter por caracter. Esta funcion recorre siempre los 64 y acumula las
+     * diferencias con |= y ^ (XOR). Devuelve 0 solo si todos son iguales.
+     *
+     * Para entender: a ^ b (XOR) da 0 si los dos bits son iguales y 1 si son
+     * distintos. Acumulado con |=, cualquier diferencia deja el resultado
+     * distinto de 0.
+     */
+
     unsigned char diff = 0;
     for (size_t i = 0; i < len; i++)
         diff |= (unsigned char)a[i] ^ (unsigned char)b[i];
@@ -121,6 +168,11 @@ static int const_time_cmp(const char *a, const char *b, size_t len) {
 
 // Expirar sesiones inactivas
 static void expire_old(void) {
+    /*
+     * Marca como inactiva toda sesion sin actividad por mas de 10 minutos. Se
+     * llama antes de casi cualquier consulta.
+     */
+
     /* Hora actual. */
     time_t now = time(NULL);
     /* Marca como inactiva toda sesion sin actividad por mas de
@@ -135,6 +187,11 @@ static void expire_old(void) {
 
 // Encontrar sesion por token
 static Session *find_by_token(const char *token) {
+    /*
+     * Busca la sesion activa con ese token. Si el token no tiene exactamente
+     * 64 caracteres, ni busca.
+     */
+
     /* Un token ausente o de otro largo no puede ser valido. */
     if (!token || strlen(token) != SESSION_TOKEN_LEN) return NULL;
     /* Busca entre las sesiones activas, comparando en tiempo constante. */
@@ -147,6 +204,8 @@ static Session *find_by_token(const char *token) {
 
 // Encontrar sesion por user
 static Session *find_by_user(const char *username) {
+    /* Busca la sesion activa de un usuario. */
+
     /* Busca una sesion activa de ese usuario. */
     for (int i = 0; i < MAX_SESSIONS; i++)
         if (g_sessions[i].active &&
@@ -157,6 +216,8 @@ static Session *find_by_user(const char *username) {
 
 // Cuenta de sesiones activas
 static int count_active(void) {
+    /* Cuenta las sesiones activas. */
+
     /* Cuenta las casillas en uso. */
     int n = 0;
     for (int i = 0; i < MAX_SESSIONS; i++)
@@ -166,6 +227,8 @@ static int count_active(void) {
 
 // Verificar slots de sesiones vacios
 static Session *find_free_slot(void) {
+    /* Devuelve la primera casilla libre, o NULL si estan las 4 ocupadas. */
+
     /* Devuelve la primera casilla libre, o NULL si estan todas ocupadas. */
     for (int i = 0; i < MAX_SESSIONS; i++)
         if (!g_sessions[i].active) return &g_sessions[i];
@@ -178,6 +241,8 @@ static Session *find_free_slot(void) {
 
 /* Limpia las dos tablas y crea el mutex. Devuelve 0 o -1. */
 int auth_init(void) {
+    /* Limpia las dos tablas y crea el candado. */
+
     memset(g_sessions, 0, sizeof(g_sessions));
     memset(g_brute,    0, sizeof(g_brute));
     if (pthread_mutex_init(&g_lock, NULL) != 0) return -1;
@@ -188,11 +253,18 @@ int auth_init(void) {
 
 /* Libera el mutex. */
 void auth_destroy(void) {
+    /* Destruye el candado. */
+
     pthread_mutex_destroy(&g_lock);
 }
 
 // Valida usuario + contraseña (compara contra hash SHA-256)
 int auth_validate(const char *username, const char *password) {
+    /*
+     * Calcula el SHA-256 de la contrasena recibida y lo compara con el de la
+     * tabla para ese usuario. Devuelve 1 si coinciden.
+     */
+
     /* Sin usuario o sin contrasena no hay nada que validar. */
     if (!username || !password) return 0;
     /* Resumen de la contrasena recibida: 64 caracteres hex y el terminador. */
@@ -210,6 +282,17 @@ int auth_validate(const char *username, const char *password) {
 //   - Si el usuario ya tiene sesión, se invalida (una sesión por usuario)
 //   - Si ya hay MAX_SESSIONS usuarios distintos → AUTH_ERR_FULL
 AuthResult auth_create_session(const char *username, char *out_token) {
+    /*
+     * Abre una sesion para un usuario ya validado. Todo con el candado tomado.
+     *
+     * 1. Borra las vencidas.
+     * 2. Una sesion por usuario: si ya tenia una, la cierra (el login nuevo
+     *    "patea" al viejo).
+     * 3. Si ya hay 4 activas, devuelve AUTH_ERR_FULL (la API responde 503).
+     * 4. Toma una casilla libre, genera el token, guarda usuario y hora, y
+     *    copia el token a out_token para que la API lo mande en la cookie.
+     */
+
     /* Toda la funcion corre bajo el candado. Primero se descartan las
        sesiones
        vencidas. */
@@ -257,6 +340,16 @@ AuthResult auth_create_session(const char *username, char *out_token) {
 
 // Verifica cookie de sesión en una request
 int auth_check_request(struct MHD_Connection *conn) {
+    /*
+     * Revisa si un pedido viene de alguien con sesion.
+     *
+     * 1. Busca la cookie session en el pedido (MHD_lookup_connection_value).
+     *    Sin cookie -> 0.
+     * 2. Con el candado: borra vencidas, busca el token y, si lo encuentra,
+     *    renueva su hora (por eso la sesion vence tras 10 minutos de
+     *    *inactividad*, no 10 minutos desde el login).
+     */
+
     /* Busca la cookie "session" en la peticion. */
     const char *cookie = MHD_lookup_connection_value(
         conn, MHD_COOKIE_KIND, "session");
@@ -274,6 +367,8 @@ int auth_check_request(struct MHD_Connection *conn) {
 
 // Invalida sesión
 void auth_invalidate(const char *token) {
+    /* Busca la sesion de ese token y la desactiva (logout). */
+
     /* Busca la sesion de ese token y la marca como inactiva. */
     pthread_mutex_lock(&g_lock);
     Session *s = find_by_token(token);
@@ -286,6 +381,8 @@ void auth_invalidate(const char *token) {
 
 /* Cuenta las sesiones activas, descartando antes las vencidas. */
 int auth_active_sessions(void) {
+    /* Borra las vencidas y cuenta las activas. La usa el watchdog. */
+
     pthread_mutex_lock(&g_lock);
     expire_old();
     int n = count_active();
@@ -300,6 +397,14 @@ int auth_active_sessions(void) {
 /* Devuelve la entrada de una IP. Si la IP no esta en la tabla, reutiliza
    la entrada mas antigua. */
 static BruteEntry *brute_get(const char *ip) {
+    /*
+     * Devuelve la casilla de una IP en la tabla de vigilancia.
+     *
+     * Recorre las 32 casillas: si encuentra la IP, la devuelve. De paso
+     * recuerda la casilla con la ventana mas vieja. Si la IP es nueva, recicla
+     * esa casilla mas vieja: la limpia, le pone la IP y la hora actual.
+     */
+
     /* Hora actual, para estrenar la ventana de una IP nueva. */
     time_t now = time(NULL);
     /* Candidata a reutilizar: la de ventana mas vieja. */
@@ -321,6 +426,15 @@ static BruteEntry *brute_get(const char *ip) {
 
 // Autorizacion de IP para inicio de seion
 int auth_ip_allowed(const char *ip) {
+    /*
+     * Puede esta IP intentar un login?
+     *
+     * - Si esta bloqueada y el bloqueo no ha vencido -> 0 (la API responde
+     *   429).
+     * - Si su ventana de 5 minutos ya paso, reinicia el contador.
+     * - Si no -> 1.
+     */
+
     /* Sin IP no se puede vigilar: se permite. */
     if (!ip) return 1;
     time_t now = time(NULL);
@@ -348,6 +462,11 @@ int auth_ip_allowed(const char *ip) {
 
 // Restringir usuario si intenta iniciar sesion muchas veces sin exito
 void auth_ip_failed(const char *ip) {
+    /*
+     * Anota un fallo de la IP (reiniciando la cuenta si la ventana vencio). Al
+     * llegar a 5 fallos, la bloquea 10 minutos.
+     */
+
     /* Sin IP no hay a quien anotarle el fallo. */
     if (!ip) return;
     time_t now = time(NULL);
@@ -376,6 +495,8 @@ void auth_ip_failed(const char *ip) {
 
 // Validar ip con inicio de sesion exitoso
 void auth_ip_success(const char *ip) {
+    /* Un login correcto borra los fallos y el bloqueo de esa IP. */
+
     /* Sin IP no hay nada que limpiar. */
     if (!ip) return;
     pthread_mutex_lock(&g_lock);
