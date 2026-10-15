@@ -5,6 +5,43 @@
 
  */
 
+/*
+ * El programa principal del robot. Tiene cuatro partes:
+ *
+ * 1. Servidor web: el enrutador handle_request y funciones para servir
+ *    archivos y respuestas de error.
+ * 2. Hilos de apoyo: uptime y watchdog.
+ * 3. El cerebro: el mapa, la deteccion de obstaculos, las maniobras de
+ *    evasion, el ciclo de limpieza y el hilo de navegacion.
+ * 4. main(): enciende todo, espera y apaga en orden.
+ *
+ * Constantes importantes (estan entre las funciones):
+ *
+ * - SERVER_PORT = 8080: Puerto web
+ * - WWW_ROOT = ./www: Carpeta de las paginas (/opt/robot/www)
+ * - MAX_UPLOAD_BYTES = 32 KB: Cuerpo maximo de un POST
+ * - WATCHDOG_INTERVAL_SECS = 7: Cada cuanto revisa sesiones
+ * - MAP_ALCANCE_CM = 150: Ecos mas lejanos no se marcan en el mapa
+ * - TTC_OBSTACULO_S = 1,2: Tiempo de choque que cuenta como obstaculo
+ * - CONO_FRONTAL_GRADOS = 60: Se miran los angulos 30 a 150
+ * - ROBOT_RADIO_CM / PASILLO_CM = 10: Medio ancho del robot
+ * - LECTURA_VIGENTE_S = 2: Edad maxima de una lectura
+ * - VEL_CRUCERO, VEL_GIRO, VEL_RETROCESO = 210, 200, 180: Con velocidad fija,
+ *   todas son "a tope"
+ * - RETROCESO_MS / RETROCESO_CAIDA_MS = 500 / 800: Cuanto retrocede
+ * - ESPACIO_LIBRE_CM = 40: Menos que esto en todo -> media vuelta
+ * - MARGEN_EMPATE_CM = 25: Angulos asi de parecidos se sortean
+ * - GIRO_TOLERANCIA = 5 grados: Precision de los giros
+ *
+ * Para entender: _Static_assert(condicion, "mensaje") es una revision que hace
+ * el compilador: si RADAR_LECTURAS_MAX fuera menor que RADAR_N_ANGULOS, el
+ * programa ni compilaria.
+ *
+ * Variables globales: g_running (1 mientras el servidor corre; volatile),
+ * g_daemon (el servidor HTTP), g_mapa_seq (ultima lectura del radar ya puesta
+ * en el mapa) y g_caida (ultima lectura de los sensores de desnivel).
+ */
+
 /* libmicrohttpd: el servidor HTTP embebido. */
 #include <microhttpd.h>
 /* printf, fprintf, snprintf y setvbuf. */
@@ -72,6 +109,12 @@ typedef struct {
 // Serving File
 /* Devuelve el tipo MIME que corresponde a la extension del archivo. */
 static const char *mime_for(const char *path) {
+    /*
+     * Devuelve el tipo de contenido segun la extension del archivo (.html ->
+     * text/html; charset=utf-8, .css, .js, .png, .svg...). strrchr busca el
+     * ultimo punto del nombre.
+     */
+
     /* Ultimo punto del nombre: de ahi en adelante esta la extension. */
     const char *d = strrchr(path, '.');
     /* Sin extension, o con una desconocida, se sirve como binario generico. */
@@ -90,6 +133,18 @@ static const char *mime_for(const char *path) {
 static enum MHD_Result serve_file(struct MHD_Connection *conn,
                                    const char *rel)
 {
+    /*
+     * Envia un archivo de la carpeta www.
+     *
+     * 1. Arma la ruta: ./www + /login.html.
+     * 2. Lo abre con open. Si no existe, devuelve MHD_NO.
+     * 3. fstat da su tamano y confirma que es un archivo normal (no una
+     *    carpeta).
+     * 4. MHD_create_response_from_fd crea una respuesta que lee directo del
+     *    archivo (libmicrohttpd lo cierra al terminar).
+     * 5. Agrega el tipo y no-cache y la encola con codigo 200.
+     */
+
     /* Ruta completa del archivo. */
     char path[512];
     snprintf(path, sizeof(path), "%s%s", WWW_ROOT, rel);
@@ -121,6 +176,11 @@ static enum MHD_Result serve_file(struct MHD_Connection *conn,
 static enum MHD_Result send_redirect(struct MHD_Connection *conn,
                                       const char *to)
 {
+    /*
+     * Responde 302 con la cabecera Location, que hace que el navegador vaya a
+     * otra direccion. Se usa para mandar al login a quien no tiene sesion.
+     */
+
     struct MHD_Response *r =
         MHD_create_response_from_buffer(0, NULL, MHD_RESPMEM_PERSISTENT);
     MHD_add_response_header(r, "Location", to);
@@ -131,6 +191,11 @@ static enum MHD_Result send_redirect(struct MHD_Connection *conn,
 
 /* Responde 404 con un JSON de error. */
 static enum MHD_Result send_404(struct MHD_Connection *conn) {
+    /*
+     * Responde 404 con {"error":"Not found"}. MHD_RESPMEM_PERSISTENT indica
+     * que el texto es fijo y no hace falta copiarlo.
+     */
+
     const char *b = "{\"error\":\"Not found\"}";
     struct MHD_Response *r =
         MHD_create_response_from_buffer(strlen(b), (void *)b,
@@ -143,6 +208,8 @@ static enum MHD_Result send_404(struct MHD_Connection *conn) {
 
 /* Responde 401 con un JSON de error. */
 static enum MHD_Result send_401(struct MHD_Connection *conn) {
+    /* Responde 401 con {"error":"Unauthorized"}. */
+
     const char *b = "{\"error\":\"Unauthorized\"}";
     struct MHD_Response *r =
         MHD_create_response_from_buffer(strlen(b), (void *)b,
@@ -169,6 +236,43 @@ static enum MHD_Result handle_request(
     size_t     *upload_data_size,
     void      **con_cls)
 {
+    /*
+     * El enrutador: libmicrohttpd la llama varias veces por cada pedido.
+     *
+     * Para entender: Esta funcion no la llama el codigo del proyecto: se le
+     * pasa a MHD_start_daemon como puntero a funcion (un "callback"), y
+     * libmicrohttpd la llama cada vez que pasa algo en una conexion.
+     *
+     * Primera llamada (*con_cls == NULL): reserva con calloc un acumulador
+     * UploadBuf para el cuerpo y lo deja asociado a la conexion en *con_cls.
+     * Devuelve MHD_YES ("sigue").
+     *
+     * Llamadas con datos (*upload_data_size > 0): agranda el buffer con
+     * realloc, copia el trozo y pone el terminador '\0'. Si pasa de 32 KB,
+     * corta la conexion. Pone *upload_data_size = 0 para avisar que lo
+     * consumio.
+     *
+     * Ultima llamada (cuerpo completo):
+     *
+     * 1. OPTIONS -> responde 204 con cabeceras CORS.
+     * 2. GET / o /index.html -> login.html.
+     * 3. POST /api/login -> api_login (la unica ruta de la API sin sesion).
+     * 4. Control de acceso: si auth_check_request dice que no hay sesion ->
+     *    401 para rutas /api/ o redireccion a / para paginas.
+     * 5. GET /dashboard -> dashboard.html.
+     * 6. Cada ruta de la API, comparando metodo y URL con strcmp, va a su
+     *    funcion de api.c.
+     * 7. Si nada coincidio -> 404.
+     *
+     * Para entender: void con_cls es un puntero a un puntero: libmicrohttpd le
+     * da a la funcion un "casillero" por conexion donde guardar lo que quiera
+     * entre llamadas.
+     *
+     * Para entender: calloc(1, tamano) es como malloc pero deja la memoria en
+     * 0. realloc(p, nuevo) agranda un bloque ya reservado, copiando lo que
+     * tenia.
+     */
+
     /* Parametros que no se usan. */
     (void)cls; (void)version;
 
@@ -290,6 +394,11 @@ static void request_done(void *cls, struct MHD_Connection *conn,
                           void **con_cls,
                           enum MHD_RequestTerminationCode toe)
 {
+    /*
+     * La llama libmicrohttpd cuando termina cada pedido. Libera el cuerpo
+     * acumulado y el UploadBuf, y deja el casillero en NULL.
+     */
+
     /* Parametros que no se usan. */
     (void)cls; (void)conn; (void)toe;
     UploadBuf *ub = *con_cls;
@@ -305,6 +414,11 @@ static volatile int g_running = 1;
 
 /* Hilo que cuenta los segundos que lleva encendido el servidor. */
 static void *uptime_thread(void *arg) {
+    /*
+     * Hilo: mientras el servidor corra, duerme 1 s y suma 1 a rs->uptime_secs
+     * con el candado.
+     */
+
     (void)arg;
     while (g_running) {
         /* Una vez por segundo suma uno al contador, bajo el candado. */
@@ -329,6 +443,12 @@ static void *uptime_thread(void *arg) {
 /* Pasa a modo autonomo si no lo estaba, y avisa con el sonido.
    reason: texto para el journal. */
 static void set_auto_mode(const char *reason) {
+    /*
+     * Si el modo era manual, lo cambia a autonomo, actualiza los LEDs en la
+     * pizarra, suelta el candado y toca el aviso de autonomo. Si ya era
+     * autonomo, no hace nada.
+     */
+
     /* Estado global. */
     RobotState *rs = robot_state_get();
     if (!rs) return;
@@ -350,6 +470,12 @@ static void set_auto_mode(const char *reason) {
 /* Hilo watchdog: si nadie tiene sesion abierta, el robot no debe quedar en
    manual esperando ordenes. */
 static void *watchdog_thread(void *arg) {
+    /*
+     * Hilo: cada 7 s cuenta las sesiones activas. Si hay 0, llama a
+     * set_auto_mode. Asi el robot no se queda en manual esperando ordenes de
+     * alguien que ya cerro la pagina.
+     */
+
     (void)arg;
     while (g_running) {
         /* Espera el intervalo y cuenta las sesiones activas. */
@@ -376,6 +502,22 @@ static void *watchdog_thread(void *arg) {
 /* Pasa de cm del mundo (este y norte positivos) a la grilla: el origen queda
    en el centro del mapa y la fila 0 apunta al norte. 0 si cae afuera. */
 static int celda_de(double x_cm, double y_cm, int *col, int *fil) {
+    /*
+     * Convierte una posicion en centimetros a columna y fila del mapa.
+     * Devuelve 1 si cae dentro de la grilla.
+     *
+     *     columna = 15 + redondear(x / 30)
+     *     fila    = 15 - redondear(y / 30)
+     *
+     * Se resta en la fila porque en la pantalla la fila 0 esta arriba (el
+     * norte), y y crece hacia el norte.
+     *
+     * Ejemplo: x = 65, y = -20 -> columna 15 + 2 = 17, fila 15 - (-1) = 16.
+     *
+     * Para entender: lround redondea al entero mas cercano: 2,17 -> 2; -0,67
+     * -> -1.
+     */
+
     /* Columna: crece hacia el este desde el centro. */
     *col = MAP_COLS / 2 + (int)lround(x_cm / MAP_CELDA_CM);
     /* Fila: crece hacia el sur, por eso se resta. */
@@ -387,6 +529,23 @@ static int celda_de(double x_cm, double y_cm, int *col, int *fil) {
 /* Proyecta una lectura del radar sobre la grilla, con la pose que tenia el
    robot al medirla. Se llama con rs->lock tomado. */
 static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
+    /*
+     * Pone una lectura del radar en el mapa. Se llama con el candado tomado.
+     *
+     * 1. Sin eco -> no concluye nada y sale.
+     * 2. radar_rayo da el origen y el rumbo del rayo. Calcula el vector del
+     *    rayo: dx = sin(rumbo), dy = cos(rumbo).
+     * 3. Limpia el camino: recorre el rayo en pasos de 10 cm hasta media celda
+     *    antes del eco (o hasta 150 cm). Toda celda que estaba como obstaculo
+     *    vuelve a "desconocida", porque el sonido paso por ahi sin rebotar.
+     * 4. Si el eco esta a mas de 150 cm, no lo marca (de lejos el sensor es
+     *    impreciso).
+     * 5. Calcula la celda del eco: origen + distancia x (dx, dy).
+     * 6. Si cae en la celda del propio robot, no la marca (el robot se
+     *    encerraria solo).
+     * 7. Marca esa celda como obstaculo.
+     */
+
     /* Sin eco puede no haber nada, o puede ser una pared oblicua que desvio
        el pulso: no se concluye nada. */
     if (l->distancia_cm <= 0.0) return;
@@ -477,6 +636,11 @@ static volatile int g_caida = 0;
 
 /* Diferencia entre dos rumbos en grados, entre 0 y 180. */
 static double diferencia_rumbo(double a, double b) {
+    /*
+     * La misma que en lib_radar.c: diferencia entre dos rumbos entre 0 y 180,
+     * con el truco del +540.
+     */
+
     return fabs(fmod(a - b + 540.0, 360.0) - 180.0);
 }
 
@@ -490,6 +654,25 @@ static double diferencia_rumbo(double a, double b) {
    delante. Asi, dos obstaculos con 20 cm o mas entre ellos no detienen al
    robot, y uno en el camino pero lejos tampoco. */
 static int en_camino(double d, int desvio, double umbral_cm) {
+    /*
+     * Una lectura esta en el camino del robot?
+     *
+     * Descompone la distancia d segun el angulo respecto del frente (desvio):
+     *
+     *     lateral  = d x sin(|desvio|)    que tan al costado
+     *     adelante = d x cos(|desvio|)    que tan adelante
+     *
+     * Devuelve 1 si lateral < 10 cm (dentro del ancho del robot) y adelante <
+     * umbral.
+     *
+     * Lectura (umbral de 10 cm)        lateral   adelante   Estorba?
+     * ------------------------------   -------   --------   ----------------
+     * 90 grados (desvio 0) a 8 cm      0         8          Si
+     * 120 grados (desvio 30) a 15 cm   7,5       13         No todavia
+     * 120 grados a 10 cm               5         8,7        Si
+     * 150 grados (desvio 60) a 18 cm   15,6      9          No: pasa al lado
+     */
+
     double rad      = fabs((double)desvio) * M_PI / 180.0;
     double lateral  = d * sin(rad);
     double adelante = d * cos(rad);
@@ -500,6 +683,23 @@ static int en_camino(double d, int desvio, double umbral_cm) {
    a menos de @p umbral_cm por delante. */
 static int obstaculo_al_frente(const RadarLectura *l, int n, double rumbo,
                                double umbral_cm) {
+    /*
+     * Revisa las lecturas del radar y devuelve 1 si alguna estorba. Descarta
+     * las que:
+     *
+     * - estan fuera del cono (desvio mayor a 60 grados, o sea 0 grados y 180
+     *   grados);
+     * - nunca se midieron o no tuvieron eco;
+     * - tienen mas de 2 s;
+     * - se tomaron con un rumbo que difiere mas de 20 grados del actual (el
+     *   robot giro y eso ya no esta al frente).
+     *
+     * Para las que quedan, pregunta a en_camino.
+     *
+     * Para entender: continue dentro de un for salta directo a la siguiente
+     * vuelta.
+     */
+
     for (int i = 0; i < n; i++) {
         /* Desvio de la lectura respecto del frente. */
         int desvio = l[i].angulo - RADAR_FRENTE;
@@ -516,6 +716,11 @@ static int obstaculo_al_frente(const RadarLectura *l, int n, double rumbo,
 
 /* Distancia de la lectura de un angulo dado, o -1 si no esta. */
 static double lectura_en(const RadarLectura *l, int n, int angulo) {
+    /*
+     * Busca en las lecturas la de un angulo dado y devuelve su distancia, o
+     * -1.
+     */
+
     for (int i = 0; i < n; i++)
         if (l[i].angulo == angulo) return l[i].distancia_cm;
     return -1.0;
@@ -528,6 +733,29 @@ static double lectura_en(const RadarLectura *l, int n, int angulo) {
    No mueve motores ni suena nada: se llama tambien en medio de las maniobras,
    para que el panel y el mapa sigan vivos mientras el robot retrocede o gira. */
 static int actualizar_estado(RobotState *rs) {
+    /*
+     * Lee todos los sensores y escribe en la pizarra. Devuelve 1 si hay
+     * obstaculo. No mueve motores: se llama tambien en medio de las maniobras
+     * para que la web y el mapa sigan vivos.
+     *
+     * 1. Copia las lecturas del radar, el estado del tiempo de choque, la
+     *    posicion y el umbral.
+     * 2. Obstaculo = obstaculo_al_frente(...) o tiempo de choque entre 0 y 1,2
+     *    s.
+     * 3. Lee los sensores de desnivel y los guarda en g_caida.
+     * 4. Con el candado de la pizarra:
+     *    - Distancias al frente (90 grados), izquierda (180 grados) y derecha
+     *      (0 grados).
+     *    - Angulo del servo y las 7 lecturas para la web.
+     *    - Velocidad, tiempo de choque y si viene del MPU.
+     *    - Estado de cada sensor de desnivel ((caida & CAIDA_IZQ) != 0).
+     *    - LED rojo = obstaculo o desnivel; recuerda si cambio.
+     *    - Mapa: pone cada lectura nueva (su seq es mayor que g_mapa_seq) y
+     *      actualiza g_mapa_seq. Asi cada lectura se dibuja una sola vez.
+     *    - Marca la celda del robot como visitada y guarda su rumbo.
+     * 5. Fuera del candado, si el LED rojo cambio, lo prende o apaga.
+     */
+
     /* Copia de las lecturas del radar. */
     RadarLectura l[RADAR_N_ANGULOS];
     int n = radar_lecturas(l, RADAR_N_ANGULOS);
@@ -651,6 +879,8 @@ static int actualizar_estado(RobotState *rs) {
 
 /* Devuelve el modo de operacion, leido bajo el candado. */
 static OperationMode modo_actual(RobotState *rs) {
+    /* Devuelve el modo leido con el candado tomado. */
+
     pthread_mutex_lock(&rs->lock);
     OperationMode m = rs->mode;
     pthread_mutex_unlock(&rs->lock);
@@ -662,6 +892,19 @@ static OperationMode modo_actual(RobotState *rs) {
    modo manual. La odometria ya no depende de esto: corre en su propio hilo
    dentro de librobot. */
 static int esperar_ms(RobotState *rs, int ms) {
+    /*
+     * Una espera "despierta" para usar en medio de las maniobras.
+     *
+     * Duerme en trozos de 50 ms y despues de cada uno:
+     *
+     * - llama a actualizar_estado (la web y el mapa siguen al dia mientras el
+     *   robot retrocede o gira);
+     * - si el servidor se esta apagando o el usuario paso a manual, devuelve 0
+     *   para abortar la maniobra.
+     *
+     * Si completo la espera, devuelve 1.
+     */
+
     /* Duerme en trozos de PASO_MS y refresca el estado en cada uno. */
     for (int t = 0; t < ms; t += PASO_MS) {
         usleep(PASO_MS * 1000);
@@ -676,6 +919,23 @@ static int esperar_ms(RobotState *rs, int ms) {
    derecha). Lazo cerrado sobre el rumbo de la odometria —el giroscopo del
    MPU-6050 cuando esta—, no sobre un tiempo fijo. */
 static int girar_grados(RobotState *rs, double grados) {
+    /*
+     * Gira sobre su eje hasta cambiar el rumbo en grados (positivo = derecha).
+     * Mira el rumbo real (el giroscopio), no un tiempo fijo.
+     *
+     * 1. Si el giro es menor a 5 grados, no lo hace.
+     * 2. Guarda el rumbo de partida y arranca el giro hacia el lado que indica
+     *    el signo.
+     * 3. Calcula un tiempo tope: |grados| / 14,3  grados/s x 2 + 1 s (14,3
+     *    grados/s es lo que gira el robot real). Para 90 grados son ~13,6 s.
+     * 4. Cada 50 ms (esperar_ms):
+     *    - Si hay que abortar o aparece un desnivel, para.
+     *    - Lee el rumbo y suma lo girado desde la vuelta anterior, con el
+     *      truco de +540 para no saltar de 359 a 0, con signo.
+     *    - Si ya giro lo pedido menos 5 grados, termina.
+     * 5. Siempre termina frenando.
+     */
+
     /* Un giro mas chico que la tolerancia no vale la pena. */
     if (fabs(grados) < GIRO_TOLERANCIA) return 1;
 
@@ -719,6 +979,29 @@ static int girar_grados(RobotState *rs, double grados) {
 
    Devuelve el giro en grados de brujula: positivo a la derecha. */
 static double elegir_giro(void) {
+    /*
+     * Elige hacia donde girar despues de un obstaculo. Es la parte "aleatoria"
+     * del algoritmo de rebote.
+     *
+     * 1. Toma las 7 lecturas. Sin eco cuenta como 400 cm (lo mas libre
+     *    posible).
+     * 2. Busca la mayor distancia sin contar el frente.
+     * 3. Si la mejor es menor a 40 cm -> media vuelta (180).
+     * 4. Candidatos: los angulos (sin el frente) con distancia >= mejor - 25
+     *    cm y >= 40 cm.
+     * 5. Sortea uno con rand() % cantidad.
+     * 6. Devuelve 90 - angulo: el servo a 0 grados (derecha) da +90; a 180
+     *    grados (izquierda) da -90.
+     *
+     * Ejemplo: 0 grados=120, 30 grados=80, 60 grados=30, 90 grados=8, 120
+     * grados=25, 150 grados=60, 180 grados=110. Mejor = 120. Candidatos: 0
+     * grados y 180 grados. Sale +90 o -90 al azar.
+     *
+     * Para entender: rand() da un numero pseudoaleatorio; % nc lo lleva a
+     * 0..nc-1. La semilla se fija en main con srand(time(NULL)), para que cada
+     * arranque sortee distinto.
+     */
+
     /* Lecturas del barrido. */
     RadarLectura l[RADAR_N_ANGULOS];
     int n = radar_lecturas(l, RADAR_N_ANGULOS);
@@ -753,6 +1036,17 @@ static double elegir_giro(void) {
 /* Rutina ante un obstaculo: detenerse, retroceder, mirar alrededor con un
    barrido completo del radar y girar hacia el lado mas despejado. */
 static void evadir(RobotState *rs) {
+    /*
+     * La maniobra ante un obstaculo.
+     *
+     * 1. Frena y espera 100 ms.
+     * 2. Retrocede 500 ms y frena. Si la espera se aborto, sale.
+     * 3. Guarda desde = radar_seq() y espera (hasta 3 s, en trozos de 50 ms) a
+     *    que el radar complete un barrido nuevo: las lecturas anteriores se
+     *    tomaron desde otro lugar.
+     * 4. elegir_giro(), lo imprime y girar_grados().
+     */
+
     /* Frena y espera un instante. */
     motores_detener();
     if (!esperar_ms(rs, 100)) return;
@@ -783,6 +1077,17 @@ static void evadir(RobotState *rs) {
 #define RETROCESO_CAIDA_MS 800
 
 static void evadir_caida(RobotState *rs, int caida) {
+    /*
+     * La maniobra ante un desnivel. El ultrasonico no ve una grada, asi que no
+     * consulta el radar.
+     *
+     * 1. Frena, espera 100 ms y retrocede 800 ms (mas que con un obstaculo: el
+     *    borde esta debajo del robot).
+     * 2. Elige el giro: borde a la izquierda -> +120 (a la derecha); a la
+     *    derecha -> -120; los dos -> 180.
+     * 3. girar_grados.
+     */
+
     /* Frena y espera un instante. */
     motores_detener();
     if (!esperar_ms(rs, 100)) return;
@@ -810,6 +1115,8 @@ static void evadir_caida(RobotState *rs, int caida) {
 
 /* Segundos del reloj monotono, con fraccion. */
 static double reloj_s(void) {
+    /* La hora del reloj monotonico en segundos con decimales. */
+
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return t.tv_sec + t.tv_nsec / 1e9;
@@ -818,6 +1125,20 @@ static double reloj_s(void) {
 /* Suma al ciclo el tiempo transcurrido en modo autonomo y el area nueva
    recorrida. Devuelve 1 la vez que el ciclo se completa. */
 static int avanzar_ciclo(RobotState *rs, OperationMode modo, double dt) {
+    /*
+     * Suma tiempo y area al ciclo de limpieza. Devuelve 1 solo en la vuelta en
+     * que el ciclo se completa.
+     *
+     * Solo cuenta en modo autonomo y si el ciclo no termino:
+     *
+     * - segundos += dt.
+     * - area = (visitadas ahora - visitadas al inicio) x 0,3 m x 0,3 m.
+     * - Si hay meta y el progreso llego a 1: marca completo, suma uno a
+     *   completados e imprime.
+     *
+     * Ejemplo: meta 4 m2 -> hacen falta ~45 celdas nuevas.
+     */
+
     /* 1 solo en la llamada en que el ciclo se completa. */
     int termino = 0;
     pthread_mutex_lock(&rs->lock);
@@ -847,6 +1168,11 @@ static int avanzar_ciclo(RobotState *rs, OperationMode modo, double dt) {
 
 /* 1 si los dos motores empujan hacia adelante. */
 static int avanzando(void) {
+    /*
+     * Devuelve 1 si los dos motores tienen orden positiva (el robot va hacia
+     * adelante).
+     */
+
     /* Ultima orden de cada motor. */
     int izq, der;
     motores_get(&izq, &der);
@@ -856,6 +1182,8 @@ static int avanzando(void) {
 
 /* 1 si el ciclo de limpieza ya termino. */
 static int ciclo_completo(RobotState *rs) {
+    /* Devuelve si el ciclo termino, leido con el candado. */
+
     pthread_mutex_lock(&rs->lock);
     int c = rs->ciclo.completo;
     pthread_mutex_unlock(&rs->lock);
@@ -869,6 +1197,37 @@ static int ciclo_completo(RobotState *rs) {
    a obstaculos y desniveles, lleva el ciclo de limpieza y, en modo
    autonomo, decide el movimiento. */
 static void *autonomous_thread(void *arg) {
+    /*
+     * El cerebro del robot: el hilo de navegacion, 10 vueltas por segundo.
+     *
+     * Guarda tres valores de la vuelta anterior: modo_anterior,
+     * obstaculo_anterior, caida_anterior, y la hora.
+     *
+     * En cada vuelta:
+     *
+     * 1. Consigue la pizarra (si todavia no existe, espera 100 ms).
+     * 2. obstaculo = actualizar_estado(rs) y lee el modo.
+     * 3. Reaccion al obstaculo, solo cuando aparece (obstaculo &&
+     *    !obstaculo_anterior): si iba hacia adelante, frena; toca el aviso.
+     *    Pasa en cualquier modo, tambien en manual.
+     * 4. Lo mismo con el desnivel, y ademas suma uno a rs->caida.eventos.
+     * 5. Ciclo de limpieza: avanzar_ciclo con el tiempo real transcurrido. Si
+     *    se completo, frena y toca el aviso de fin.
+     * 6. Cambio de modo: si cambio desde la vuelta anterior, frena.
+     * 7. Solo en autonomo, en este orden:
+     *    - ciclo completo -> frenado;
+     *    - desnivel -> evadir_caida;
+     *    - obstaculo -> evadir;
+     *    - si no -> motores_avanzar(210).
+     * 8. Duerme 100 ms.
+     *
+     * Al apagarse el servidor (g_running = 0) sale del ciclo y frena.
+     *
+     * Para entender: "Detectar el flanco" (comparar con la vuelta anterior)
+     * evita que el aviso suene 10 veces por segundo mientras el obstaculo
+     * sigue ahi.
+     */
+
     /* El argumento del hilo no se usa. */
     (void)arg;
 
@@ -970,6 +1329,16 @@ static struct MHD_Daemon *g_daemon = NULL;
 /* Manejador de SIGINT y SIGTERM: baja la bandera para que los hilos
    terminen y detiene el servidor HTTP. */
 static void on_signal(int s) {
+    /*
+     * Se ejecuta cuando llega SIGINT (Ctrl+C) o SIGTERM (cuando systemd
+     * detiene el servicio). Pone g_running = 0 para que los hilos terminen y
+     * detiene el servidor HTTP.
+     *
+     * Para entender: Una senal es un aviso que el sistema operativo manda a un
+     * proceso. signal(SIGTERM, on_signal) en main dice "cuando llegue esta
+     * senal, ejecuta esta funcion".
+     */
+
     (void)s;
     g_running = 0;
     if (g_daemon) MHD_stop_daemon(g_daemon);
@@ -980,6 +1349,40 @@ static void on_signal(int s) {
    Servidor MAIN
 ══════════════════════════════════════════════════════════ */
 int main(void) {
+    /*
+     * Donde empieza el programa.
+     *
+     * 1. setvbuf(stdout, NULL, _IOLBF, 0) - los printf salen linea por linea.
+     *    Sin esto, bajo systemd se juntarian en bloques de 4 KB y el journal
+     *    los mostraria tarde.
+     * 2. Imprime el encabezado.
+     * 3. robot_state_init() crea la pizarra.
+     * 4. srand(time(NULL)) fija la semilla del sorteo de giros.
+     * 5. robot_init() enciende el hardware. Si falla, sale con 1 (systemd lo
+     *    reintentara).
+     * 6. lib_audio_init(NULL) y auth_init() (si fallan, solo avisan).
+     * 7. Fija el modo autonomo.
+     * 8. Registra on_signal para SIGINT y SIGTERM.
+     * 9. MHD_start_daemon(...) arranca el servidor HTTP. Si falla (por
+     *    ejemplo, con el puerto ocupado), libera todo y sale con 1. Sus
+     *    opciones:
+     *    - un hilo por conexion;
+     *    - puerto 8080;
+     *    - handle_request como manejador;
+     *    - request_done al terminar cada pedido;
+     *    - 30 s de tiempo maximo por conexion.
+     * 10. Toca los avisos de inicio y de autonomo (~6 s, bloquea) y sincroniza
+     *     los LEDs.
+     * 11. Lanza los hilos de uptime, watchdog y navegacion.
+     * 12. while (g_running) sleep(1); - el hilo principal solo espera.
+     * 13. Apagado: espera a los tres hilos con pthread_join y libera cada
+     *     modulo: sesiones, audio, hardware, pizarra, LEDs.
+     *
+     * Para entender: MHD_start_daemon recibe una lista de opciones de largo
+     * variable, terminada en MHD_OPTION_END. Cada opcion es un par
+     * nombre-valor.
+     */
+
     /* Bajo systemd la salida va a un pipe, no a una terminal, y printf la
        acumularia en bloques de 4 KB: journalctl mostraria los eventos tarde
        o nunca si el proceso muere. Linea a linea, como en la consola. */
