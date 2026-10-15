@@ -42,7 +42,7 @@ motores de 60 rpm a 12 V y las ruedas de 30 mm, el real va a unos 5 cm/s.
 
 - [x] Medir la velocidad a fondo y ponerla en `ODOM_VEL_MAX_CM_S` (`lib/lib_odom.h`):
       2 cm/s.
-- [ ] Medir la separación entre ruedas y ponerla en `ODOM_ENTRE_EJES_CM`. El tope de
+- [x] Medir la separación entre ruedas y ponerla en `ODOM_ENTRE_EJES_CM`: 16 cm. El tope de
       tiempo de los giros sale de esta constante y de la velocidad.
 - [x] Tope de tiempo de los giros: ahora se calcula con el modelo de los motores
       (`GIRO_GRADOS_S` en `server/src/main.c`).

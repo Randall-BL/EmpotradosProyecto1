@@ -133,7 +133,13 @@ cualquiera de dos cosas:
 | Vía | Umbral | Cuándo es la que dispara |
 |---|---|---|
 | **Tiempo** | tiempo de choque < `TTC_OBSTACULO_S` (1.2 s) | Solo con el robot rápido. A los ~2 cm/s del robot real saltaría a 2.4 cm, dentro del umbral de distancia, así que en la práctica no dispara |
-| **Distancia** | alguna lectura del cono frontal (60°, 90°, 120°) < `DIST_OBSTACULO_CM` (6 cm) | La que dispara en el robot real, lento, y con obstáculos que el sensor ve en diagonal |
+| **Distancia** | una lectura del cono frontal (servo a 30°, 60°, 90°, 120° y 150°) cuyo punto cae **en el camino del cuerpo**: a menos de `PASILLO_CM` (10 cm) de la línea de avance, `d · sen(desvío)`, y a menos del umbral de obstáculo por delante del sensor, `d · cos(desvío)`. El umbral es 10 cm por defecto y se ajusta desde el panel | La que dispara en el robot real, lento |
+
+El robot mide unos 20 cm de diámetro, así que barre un pasillo de 20 cm al avanzar. Dos
+obstáculos con un hueco de 20 cm o más entre ellos no lo detienen, porque ninguno cae
+dentro del pasillo; uno que sí cae, pero está más lejos que el umbral, tampoco. Los
+ángulos de 30° y 150° están en el cono porque un obstáculo que el robot va a rozar con
+el costado sale del haz de 60°/120° al acercarse y aparece en ellos.
 
 Del cono frontal solo cuentan lecturas de menos de 2 s **tomadas mirando hacia donde
 el robot mira ahora** (menos de 20° de diferencia de rumbo): tras un giro, lo que había
@@ -223,9 +229,11 @@ El servidor completo, compilado para ARM y corriendo sobre el simulador:
 | `RADAR_EJE_ADELANTE_CM` | `lib/lib_radar.h` | 10 | Dónde está el sensor respecto del centro |
 | `IMU_SIGNO_AVANCE`, `IMU_SIGNO_GIRO` | `lib/lib_imu.h` | +1, −1 | Orientación del MPU en el chasis |
 | `ODOM_TAU_FUSION_S` | `lib/lib_odom.h` | 1.0 s | Cuánto se confía en el MPU frente al modelo |
-| `ODOM_VEL_MAX_CM_S`, `ODOM_ENTRE_EJES_CM` | `lib/lib_odom.h` | 2, 15 | Modelo de los motores |
+| `ODOM_VEL_MAX_CM_S`, `ODOM_ENTRE_EJES_CM` | `lib/lib_odom.h` | 2, 16 | Modelo de los motores |
 | `TTC_OBSTACULO_S` | `server/src/main.c` | 1.2 s | Anticipación de la evasión |
-| `DIST_OBSTACULO_CM` | `server/src/main.c` | 6 cm | Obstáculo cercano con el robot lento |
+| `UMBRAL_OBSTACULO_DEFECTO_CM` | `robot_state.h` | 10 cm | Umbral de obstáculo al arrancar; se cambia en vivo desde el panel (`POST /api/umbral`, 5 a 100 cm) |
+| `ROBOT_RADIO_CM`, `MARGEN_LATERAL_CM` | `server/src/main.c` | 10, 0 cm | Pasillo que barre el cuerpo (robot de ~20 cm de diámetro). Subir el margen si roza por no avanzar recto |
+| `CONO_FRONTAL_GRADOS` | `server/src/main.c` | 60° | Ángulos que cuentan para el obstáculo: servo de 30° a 150° |
 | `MAP_CELDA_CM` | `lib/robot_state.h` y `server/src/robot_state.h` | 30 cm | Lado de la celda del mapa |
 
 El procedimiento está en [`odometria.md`](odometria.md).
