@@ -434,9 +434,9 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
 ══════════════════════════════════════════════════════════ */
 
 /* Un obstaculo al frente se detecta por cualquiera de dos vias:
-   - distancia: alguna lectura del cono frontal (servo a 60, 90 o 120 grados)
-     por debajo de su umbral: el umbral de obstaculo al frente, y en diagonal lo
-     que caiga en el pasillo que barre el cuerpo (umbral_obstaculo());
+   - distancia: alguna lectura del cono frontal (servo de 30 a 150 grados)
+     que caiga en el camino del cuerpo, a menos del umbral hacia adelante
+     (en_camino());
    - tiempo: el tiempo antes de chocar del radar por debajo de
      TTC_OBSTACULO_S. Es la via que reacciona antes cuanto mas rapido va el
      robot: a 25 cm/s saltaria a unos 30 cm de la pared.
@@ -448,15 +448,18 @@ static void map_marcar_lectura(RobotState *rs, const RadarLectura *l) {
    UMBRAL_OBSTACULO_DEFECTO_CM, 10 cm. */
 /* Tiempo de choque, en s, por debajo del cual hay obstaculo. */
 #define TTC_OBSTACULO_S    1.2
-/* Semiapertura del cono frontal: cuentan los angulos a 30 grados o menos
-   del frente. */
-#define CONO_FRONTAL_GRADOS 30
+/* Semiapertura del cono frontal: cuentan los angulos a 60 grados o menos
+   del frente (servo a 30, 60, 90, 120 y 150). Los de 30 y 150 ven lo que el
+   robot tiene casi al costado: un obstaculo que va a rozar con el cuerpo sale
+   del haz de 60/120 grados al acercarse y aparece en ellos. */
+#define CONO_FRONTAL_GRADOS 60
 
 /* Radio del robot, en cm: mide unos 20 cm de diametro. El sensor va en el
    borde delantero (RADAR_EJE_ADELANTE_CM). */
 #define ROBOT_RADIO_CM     10.0
-/* Holgura a cada lado del cuerpo: el robot no avanza perfectamente recto. */
-#define MARGEN_LATERAL_CM   3.0
+/* Holgura a cada lado del cuerpo. En 0, un hueco de 20 cm entre dos
+   obstaculos ya deja pasar al robot; subirla si roza por no ir recto. */
+#define MARGEN_LATERAL_CM   0.0
 /* Mitad del ancho del pasillo que barre el cuerpo al avanzar. */
 #define PASILLO_CM (ROBOT_RADIO_CM + MARGEN_LATERAL_CM)
 
@@ -477,25 +480,24 @@ static double diferencia_rumbo(double a, double b) {
     return fabs(fmod(a - b + 540.0, 360.0) - 180.0);
 }
 
-/* Distancia por debajo de la cual una lectura tomada a @p desvio grados del
-   frente es obstaculo.
+/* 1 si el punto que vio una lectura esta en el camino del robot.
 
-   Al frente es @p umbral_cm, el que se ajusta desde el panel. En diagonal
-   (60 y 120 grados) no basta: el robot suele chocar de costado, y una pared
-   que va a rozar se ve a 30 grados del frente a unos 20-26 cm, pero al
-   avanzar sale del haz enseguida. Por eso en diagonal cuenta toda lectura cuyo punto caiga dentro del pasillo que
-   barre el cuerpo: d * sin(desvio) < PASILLO_CM, es decir
-   d < PASILLO_CM / sin(desvio), unos 26 cm a 30 grados. Nunca menos que
-   @p umbral_cm. */
-static double umbral_obstaculo(int desvio, double umbral_cm) {
-    double s = sin(fabs((double)desvio) * M_PI / 180.0);
-    if (s < 1e-6) return umbral_cm;
-    double d = PASILLO_CM / s;
-    return d > umbral_cm ? d : umbral_cm;
+   La lectura se pasa al marco del robot: con el desvio respecto del frente,
+   el punto queda d * sin(desvio) a un costado de la linea de avance y
+   d * cos(desvio) por delante del sensor. Estorba solo si cae dentro del
+   pasillo que barre el cuerpo (a menos de PASILLO_CM de la linea, es decir,
+   el hueco que deja es de menos de 20 cm) y a menos de @p umbral_cm por
+   delante. Asi, dos obstaculos con 20 cm o mas entre ellos no detienen al
+   robot, y uno en el camino pero lejos tampoco. */
+static int en_camino(double d, int desvio, double umbral_cm) {
+    double rad      = fabs((double)desvio) * M_PI / 180.0;
+    double lateral  = d * sin(rad);
+    double adelante = d * cos(rad);
+    return lateral < PASILLO_CM && adelante < umbral_cm;
 }
 
-/* 1 si alguna lectura vigente del cono frontal (60, 90 o 120 grados) cae
-   bajo su umbral de obstaculo; @p umbral_cm es el del frente. */
+/* 1 si alguna lectura vigente del cono frontal esta en el camino del robot,
+   a menos de @p umbral_cm por delante. */
 static int obstaculo_al_frente(const RadarLectura *l, int n, double rumbo,
                                double umbral_cm) {
     for (int i = 0; i < n; i++) {
@@ -507,7 +509,7 @@ static int obstaculo_al_frente(const RadarLectura *l, int n, double rumbo,
         if (l[i].seq == 0 || l[i].distancia_cm <= 0.0)             continue;
         if (l[i].edad_s > LECTURA_VIGENTE_S)                       continue;
         if (diferencia_rumbo(l[i].rumbo_grados, rumbo) > LECTURA_GIRO_MAX_GRADOS) continue;
-        if (l[i].distancia_cm < umbral_obstaculo(desvio, umbral_cm)) return 1;
+        if (en_camino(l[i].distancia_cm, desvio, umbral_cm)) return 1;
     }
     return 0;
 }
