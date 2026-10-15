@@ -183,6 +183,7 @@ Cómo navega, cómo estima la velocidad y cómo construye el mapa:
 ├── scripts/                Grabado de la microSD, medición de métricas, generación de la playlist
 ├── docs/                   Documentación técnica y evidencias
 ├── pruebas/                Registros de las pruebas ejecutadas y plan de la prueba final
+├── Capturas/               Video del robot funcionando y foto del montaje
 ├── modelo-3d/              Carcasa impresa en 3D: modelo paramétrico (CadQuery), STL, STEP y vistas
 ├── documentación/          Documentos DI y AC, y diagramas de hardware (LaTeX y PDF)
 ├── CONTRIBUTING.md         Flujo de trabajo Git y convenciones de código
@@ -781,6 +782,7 @@ margen de sobra en la Raspberry Pi 4.
 
 | Resultado | Evidencia |
 |---|---|
+| En el robot armado, en modo autónomo, se detiene ante una tabla que se le pone al frente, gira y sigue avanzando | [Video](Capturas/demo-evasion.mp4), ver [El robot funcionando](#el-robot-funcionando) |
 | La prueba de la biblioteca pasa sus 49 comprobaciones sobre el simulador | [`pruebas/02-librobot-simulador.md`](pruebas/02-librobot-simulador.md), [`sim/README.md`](sim/README.md) |
 | Compilada para ARM y ejecutada bajo `qemu-aarch64`, pasó las 47 comprobaciones que tenía entonces | [`docs/evidencias/ejecucion-cruzada-qemu.md`](docs/evidencias/ejecucion-cruzada-qemu.md), [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | Dos minutos en modo autónomo sobre el simulador: 18 evasiones y ningún choque | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
@@ -797,6 +799,23 @@ margen de sobra en la Raspberry Pi 4.
 | El Toolchain-SDK se genera, se instala y compila para ARM | [`docs/evidencias/sdk-prueba.md`](docs/evidencias/sdk-prueba.md) |
 | El arranque del servidor en la Raspberry Pi 4 bajó de 130 s a 19.2 s | Commit `5890dbb`, [`docs/metricas.md`](docs/metricas.md#justificación-de-la-desviación-en-el-arranque) |
 
+### El robot funcionando
+
+[![Cuatro cuadros del video: el robot avanza hacia la tabla, llega a ella, gira y se aleja hacia un mueble](Capturas/demo-evasion-secuencia.jpg)](Capturas/demo-evasion.mp4)
+
+**[Video de la demostración](Capturas/demo-evasion.mp4)** (32 s, 14 de octubre de 2026). En
+modo autónomo, el robot avanza hacia una tabla que se le pone al frente, se detiene, gira
+hacia el lado libre y sigue avanzando hasta un mueble. Lleva el power bank encima y el
+HC-SR04 sobre el servo al frente. Los cuadros de arriba son de 0:03, 0:11, 0:19 y 0:28;
+la imagen enlaza al video.
+
+![Primera versión del montaje](Capturas/montaje-primera-version.jpeg)
+
+Primera versión del montaje, el 29 de setiembre de 2026: la Raspberry Pi 4, la placa
+perforada con los optoacopladores, el L298N y el HC-SR04, con los motores y el
+ventilador de esa versión. Después se rehízo el chasis y se cambiaron los motores: ver
+[Del primer diseño al final](docs/hardware-chasis.md#del-primer-diseño-al-final).
+
 ### Modelo físico
 
 Carcasa circular de 215 mm impresa en 3D, en dos piezas que cierran a presión. El diseño
@@ -808,9 +827,6 @@ completo está en [`docs/hardware-chasis.md`](docs/hardware-chasis.md) y los arc
 | ![Carcasa armada](modelo-3d/vistas/vista_6_armada.png) | ![Vista explosionada](modelo-3d/vistas/succion_6_explosionada.png) |
 
 Las imágenes son vistas del modelo 3D.
-
-> **PENDIENTE:** fotos del robot armado y un video de la demostración (navegación
-> autónoma, modo manual, audio, LEDs y mapa), en `docs/evidencias/`.
 
 ---
 
@@ -860,6 +876,7 @@ ejecutar con Yocto y con el robot está en
 | [`docs/hardware-chasis.md`](docs/hardware-chasis.md) | Carcasa impresa en 3D, tracción, succión y distribución interna |
 | [`modelo-3d/`](modelo-3d/) | Modelo paramétrico de la carcasa, piezas para imprimir y vistas |
 | [`docs/evidencias/`](docs/evidencias/) | Logs de compilación cruzada y evidencias de ejecución |
+| [`Capturas/`](Capturas/) | Video del robot funcionando y foto del montaje |
 | [`pruebas/`](pruebas/) | Registro de cada prueba ejecutada, con su salida, y el plan de la prueba final |
 | [`meta-robot/README.md`](meta-robot/README.md) | Contenido de la capa Yocto y cómo agregarla al build |
 
