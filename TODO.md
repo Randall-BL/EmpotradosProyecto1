@@ -223,8 +223,8 @@
 - [x] **Diagrama de arquitectura de software**
 - [x] **Documentación de la API** de la biblioteca dinámica
 - [x] **Evidencias** de la compilación cruzada automatizada (fragmento del log de Yocto + ejecución en el target)
-- [~] **Reporte de métricas** de eficiencia de recursos y herramientas utilizadas para medirlas — faltan la RAM y la CPU
-- [~] Resultados más relevantes del proyecto con **evidencias de ejecución** (fotos, videos, capturas) — faltan las fotos y el video del robot
+- [x] **Reporte de métricas** de eficiencia de recursos y herramientas utilizadas para medirlas — `docs/metricas.md`, sección 10 del README
+- [x] Resultados más relevantes del proyecto con **evidencias de ejecución** (fotos, videos, capturas) — video de la evasión y foto del montaje en `Capturas/`, sección 11 del README
 - [x] Lista de todo paquete agregado sobre la imagen base + **justificación de cada uno** — `docs/paquetes.md`
 
 ---

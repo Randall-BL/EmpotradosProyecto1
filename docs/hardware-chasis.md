@@ -190,4 +190,6 @@ resuelve la tracción y la succión.
 - [x] Modelo paramétrico en CadQuery, con las piezas en STL y STEP
 - [x] Comprobación de fuerza y velocidad contra el motor
 - [x] Carcasa impresa y robot armado
-- [ ] Fotos del robot armado, en `docs/evidencias/`
+- [x] Video del robot armado navegando, en [`../Capturas/`](../Capturas/)
+- [ ] Fotos del robot armado, en [`../Capturas/`](../Capturas/): por ahora solo está la de
+      la primera versión del montaje

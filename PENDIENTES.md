@@ -1,6 +1,6 @@
 # Pendientes para la entrega
 
-**Entrega:** 6 de octubre de 2026 · **Estado al:** 11 de octubre de 2026
+**Entrega:** 6 de octubre de 2026 · **Estado al:** 15 de octubre de 2026
 
 Lo que falta se resuelve con el robot en la mano. La documentación ya describe el robot
 real: velocidad fija y sensores como desviaciones acordadas con el profesor, alimentación
@@ -55,10 +55,12 @@ motores de 60 rpm a 12 V y las ruedas de 30 mm, el real va a unos 5 cm/s.
 
 ## 3. Evidencias por capturar en el robot — issue #33
 
-- [ ] Fotos: el robot armado (arriba, frente y por dentro) y las tres pestañas del panel
-      web. Enlazarlas desde la sección 11 del README.
-- [ ] Video corto de la demostración: navegación autónoma, cambio a manual, audio, LEDs
-      y mapa. Sirve además como plan B de la presentación.
+- [x] Video de la demostración: `Capturas/demo-evasion.mp4`, enlazado desde la sección
+      11 del README. Muestra la evasión en modo autónomo; no muestra el cambio a manual,
+      el audio ni el mapa.
+- [x] Foto de la primera versión del montaje: `Capturas/montaje-primera-version.jpeg`.
+- [ ] Fotos del robot armado (arriba, frente y por dentro) y de las tres pestañas del
+      panel web, en `Capturas/` y enlazadas desde la sección 11 del README.
 - [ ] Opcional: `kill -9` del servidor en la Raspberry Pi para mostrar el reinicio
       automático en el target; hoy la prueba está hecha sobre el simulador.
 
@@ -79,7 +81,7 @@ Solo queda uno; los demás están cerrados.
 
 | Issue | Qué falta para cerrarlo |
 |---|---|
-| #33 README | Las fotos y el video de la sección 3. Las métricas ya están en el README |
+| #33 README | Nada obligatorio: el video y la foto ya están en el README. Se cierra al fusionar ese cambio |
 
 ---
 
