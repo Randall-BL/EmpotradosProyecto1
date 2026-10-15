@@ -4,6 +4,22 @@
  *
  */
 
+/*
+ * Los 4 LEDs indicadores. El header define los pines (16, 20, 21, 26) y el
+ * enum LedId (0 a 3), que se usa como indice en las tablas.
+ *
+ * Variables:
+ *
+ * - LED_NAMES[] y LED_PINS[]: nombre y pin de cada LED, en el orden del enum.
+ *   LED_PINS[LED_MANUAL] es 21.
+ * - g_leds[]: el ultimo estado de cada uno.
+ * - g_lock, g_initialized, g_pi.
+ *
+ * Este modulo es el unico de la biblioteca que llama a algo del servidor:
+ * robot_state_get() en lib_leds_sync_from_state. Funciona porque, al cargar la
+ * biblioteca, esa funcion ya esta en el ejecutable del servidor.
+ */
+
 /* Identificadores LedId, pines LED_GPIO_* y prototipos del modulo. */
 #include "lib_leds.h"
 /* Estado global del robot: lo usa lib_leds_sync_from_state(). */
@@ -59,6 +75,15 @@ static int g_initialized = 0;
    crear el mutex. */
 int lib_leds_init(int pi)  
 {
+    /*
+     * 1. Si ya se inicializo, sale.
+     * 2. Guarda la sesion, limpia la tabla y crea el candado
+     *    (pthread_mutex_init); si falla, devuelve -1.
+     * 3. Pone los 4 pines como salida en 0 e imprime cada uno.
+     * 4. Marca g_initialized = 1 y enciende el LED verde (el sistema esta
+     *    arriba).
+     */
+
     /* Llamarla dos veces no es un error: la segunda no hace nada. */
     if (g_initialized) return 0;
     g_pi = pi;  //  guardar handle
@@ -91,6 +116,18 @@ int lib_leds_init(int pi)
 // Encender o Apagar el LED
 void lib_leds_set(LedId led, int state)
 {
+    /*
+     * Prende o apaga un LED.
+     *
+     * 1. Ignora la orden si el modulo no esta listo o el numero de LED no
+     *    existe.
+     * 2. state = state ? 1 : 0 normaliza (cualquier valor distinto de 0 cuenta
+     *    como 1).
+     * 3. Con el candado: guarda el estado anterior y el nuevo.
+     * 4. Escribe el pin fuera del candado.
+     * 5. Si cambio, lo imprime en el log.
+     */
+
     /* Ignora la orden si el modulo no esta inicializado o si el identificador
        no existe. */
     if (!g_initialized || led < 0 || led >= LED_COUNT) return;
@@ -118,6 +155,11 @@ void lib_leds_set(LedId led, int state)
 // Obtener el estado actual del LED
 int lib_leds_get(LedId led)
 {
+    /*
+     * Devuelve el estado guardado de un LED (0 si no existe o el modulo no
+     * esta listo).
+     */
+
     /* Fuera de rango o sin inicializar se informa como apagado. */
     if (!g_initialized || led < 0 || led >= LED_COUNT) return 0;
 
@@ -132,6 +174,11 @@ int lib_leds_get(LedId led)
 // Apagar LEDS y liberar los GPIO
 void lib_leds_destroy(void)
 {
+    /*
+     * Apaga cada LED, devuelve su pin a entrada (el reposo de un GPIO),
+     * destruye el candado y marca el modulo como no inicializado.
+     */
+
     /* Si nunca se inicializo no hay nada que apagar. */
     if (!g_initialized) return;
     printf("[leds] Apagando LEDs\n");
@@ -149,6 +196,12 @@ void lib_leds_destroy(void)
 // Sincronizar los LEDS
 void lib_leds_sync_from_state(void)
 {
+    /*
+     * Copia, con el candado de la pizarra, los 4 valores de rs->leds, lo
+     * suelta y llama a lib_leds_set para cada uno. Asi los LEDs fisicos quedan
+     * igual que la pizarra.
+     */
+
     /* Estado global que mantiene el servidor. */
     RobotState *rs = robot_state_get();
     /* Sin estado global no hay de donde copiar. */

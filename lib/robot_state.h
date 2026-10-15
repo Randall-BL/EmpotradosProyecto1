@@ -4,6 +4,46 @@
  *
  */
 
+/*
+ * Este archivo no tiene funciones: solo define la forma de la pizarra, la
+ * estructura RobotState que comparten todos los hilos. Hay dos copias,
+ * lib/robot_state.h y server/src/robot_state.h, que deben mantenerse iguales:
+ * la biblioteca la necesita porque lib_leds.c lee los LEDs desde ahi.
+ *
+ * Para entender: typedef struct { ... } Nombre; crea un tipo nuevo que agrupa
+ * varias variables. Despues se usa como cualquier tipo: MapState m; y se
+ * accede con punto, m.robot_x. Si lo que tienes es un puntero, se usa flecha:
+ * rs->map.robot_x.
+ *
+ * Que guarda cada parte:
+ *
+ * - MapState: La grilla de 31x31 celdas (uint8_t grid[31][31]), la celda del
+ *   robot y su rumbo
+ * - CellState: Lo que puede valer una celda: 0 desconocida, 1 visitada, 2
+ *   obstaculo
+ * - OperationMode: 0 autonomo, 1 manual
+ * - ProximitySensors: Distancias al frente, atras, izquierda y derecha (atras
+ *   nunca se llena: no hay sensor)
+ * - RadarPunto / RadarState: Las 7 lecturas del radar tal como se mandan a la
+ *   web
+ * - MovimientoState: Velocidad, tiempo antes de chocar, si viene del MPU, y el
+ *   umbral de obstaculo
+ * - LedStates: 1 o 0 para cada uno de los 4 LEDs
+ * - AudioTrack / AudioState: Copia del estado del audio (la API en realidad lo
+ *   lee directo de lib_audio)
+ * - CicloTipo / CicloState: Meta del ciclo de limpieza y su avance
+ * - CaidaState: Si cada sensor de desnivel ve piso y cuantos eventos hubo
+ * - RobotState: Todo lo anterior junto, mas uptime_secs y el candado lock
+ *
+ * Para entender: enum { A = 0, B = 1 } le pone nombre a numeros. El compilador
+ * los trata como enteros, pero el codigo se lee mejor: rs->mode == MODE_MANUAL
+ * en vez de rs->mode == 1.
+ *
+ * Al final declara las funciones de la pizarra, que estan implementadas en
+ * server/src/robot_state.c: robot_state_init, robot_state_get,
+ * robot_state_destroy y las tres del ciclo de limpieza.
+ */
+
 /* Guarda de inclusion: el contenido se procesa una sola vez por archivo. */
 #ifndef ROBOT_STATE_H
 #define ROBOT_STATE_H
