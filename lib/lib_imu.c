@@ -4,6 +4,29 @@
  *
  */
 
+/*
+ * Lee el MPU-6050 (acelerometro y giroscopio) por el bus I2C, a traves de
+ * pigpiod.
+ *
+ * Arriba define:
+ *
+ * - Las direcciones de los registros del sensor (REG_PWR_MGMT_1 0x6B,
+ *   REG_WHO_AM_I 0x75, etc.). Un registro es una "casilla" dentro del chip que
+ *   se lee o escribe por I2C.
+ * - Las escalas: LSB_POR_G 16384 (cuentas por cada g) y LSB_POR_DPS 131
+ *   (cuentas por cada  grados/s).
+ * - Crudo: una muestra ya en unidades, pero con el sesgo del sensor.
+ * - g_lock creado con PTHREAD_MUTEX_INITIALIZER (una forma de crear un candado
+ *   sin llamar a una funcion).
+ * - g_h: el "handle" del dispositivo I2C, un numero que da pigpiod al abrirlo.
+ *   -1 = cerrado.
+ * - g_sesgo_ax, g_sesgo_ay, g_sesgo_gz: el error propio del sensor, medido al
+ *   calibrar.
+ *
+ * En lib_imu.h: bus 1, direccion 0x68, IMU_SIGNO_GIRO = -1 y 100 muestras de
+ * calibracion.
+ */
+
 /* Tipo ImuLectura, constantes IMU_* y prototipos. */
 #include "lib_imu.h"
 
@@ -80,12 +103,40 @@ static double g_sesgo_ax = 0.0, g_sesgo_ay = 0.0, g_sesgo_gz = 0.0;
 /* Arma un entero de 16 bits con signo a partir de dos bytes en orden
    big-endian, que es como los entrega el sensor: primero el byte alto. */
 static int16_t be16(const char *b) {
+    /*
+     * Arma un numero de 16 bits con signo a partir de dos bytes, el alto
+     * primero (big-endian), que es como los manda el sensor.
+     *
+     *     (byte0 << 8) | byte1
+     *
+     * Ejemplo: bytes 0x01 y 0x48 -> 0x0148 = 328.
+     *
+     * Para entender: << 8 desplaza los bits 8 lugares a la izquierda
+     * (multiplica por 256). | es "o" bit a bit: aqui junta las dos mitades. El
+     * (int16_t) final hace que 0xFFFF se lea como -1 y no como 65535.
+     */
+
     return (int16_t)(((uint8_t)b[0] << 8) | (uint8_t)b[1]);
 }
 
 /* Una rafaga de 14 bytes trae las tres aceleraciones, la temperatura y los
    tres giros de la misma muestra: leerlos por separado mezclaria instantes. */
 static int leer_crudo(int pi, int h, Crudo *c) {
+    /*
+     * Lee los 14 registros seguidos que empiezan en 0x3B y los convierte a
+     * unidades.
+     *
+     * Bytes           Que es                Conversion
+     * -------------   -------------------   -------------------
+     * 0-1, 2-3, 4-5   Aceleracion X, Y, Z   / 16384 -> g
+     * 6-7             Temperatura           / 340 + 36,53 ->  C
+     * 8-11            Giro X e Y            no se usan
+     * 12-13           Giro Z                / 131 ->  grados/s
+     *
+     * Se leen todos de una vez para que sean del mismo instante. Si no llegan
+     * los 14 bytes, devuelve -1.
+     */
+
     /* Buffer de la rafaga: 6 bytes de aceleracion, 2 de temperatura y 6 de
        giro. */
     char b[14];
@@ -109,11 +160,39 @@ static int leer_crudo(int pi, int h, Crudo *c) {
 /* Escribe un byte en un registro. Devuelve 0 si pigpiod lo acepto y -1 si
    no. */
 static int escribir(int pi, int h, unsigned reg, unsigned valor) {
+    /*
+     * Escribe un byte en un registro del sensor. Devuelve 0 si pigpiod acepto,
+     * -1 si no.
+     */
+
     return i2c_write_byte_data(pi, (unsigned)h, reg, valor) == 0 ? 0 : -1;
 }
 
 /* Abre el sensor y lo configura. Descripcion completa en lib_imu.h. */
 int imu_init(int pi) {
+    /*
+     * Abre y configura el sensor.
+     *
+     * 1. Si ya esta abierto, sale.
+     * 2. i2c_open(pi, 1, 0x68, 0) - abre el bus 1 en la direccion 0x68. Si
+     *    falla, sugiere revisar que I2C este activado.
+     * 3. Lee WHO_AM_I. Si nadie contesta, revisa el cableado. Si contesta algo
+     *    distinto de 0x68, avisa que puede ser un clon pero sigue.
+     * 4. Escribe la configuracion. Basta que una escritura falle para cerrar y
+     *    devolver -1:
+     *    - PWR_MGMT_1 = 1: despertar (arranca dormido) usando el reloj del
+     *      giroscopio.
+     *    - CONFIG = 5: filtro de 10 Hz, para ignorar la vibracion de los
+     *      motores.
+     *    - SMPLRT_DIV = 9: 1000 / (1+9) = 100 muestras por segundo.
+     *    - Rangos +-250  grados/s y +-2 g (valor 0x00, el mas fino).
+     * 5. Espera 50 ms y publica g_pi y g_h con los sesgos en 0.
+     *
+     * Para entender: a < 0 || b < 0 || ... en C se evalua de izquierda a
+     * derecha y se detiene en el primer verdadero. Por eso, si la primera
+     * escritura falla, las demas ni se intentan.
+     */
+
     /* Si ya esta abierto no se abre otra vez. */
     pthread_mutex_lock(&g_lock);
     if (g_h >= 0) { pthread_mutex_unlock(&g_lock); return 0; }
@@ -175,6 +254,18 @@ int imu_init(int pi) {
 
 /* Mide el sesgo del sensor promediando lecturas con el robot quieto. */
 int imu_calibrar(int muestras) {
+    /*
+     * Mide el error propio del sensor. El robot tiene que estar quieto.
+     *
+     * 1. Toma muestras lecturas (100), una cada 5 ms: medio segundo.
+     * 2. Suma las aceleraciones X, Y, Z y el giro Z de las lecturas que
+     *    salieron bien.
+     * 3. El promedio de cada una es su sesgo: lo que marca el sensor cuando
+     *    deberia marcar 0.
+     * 4. Imprime los sesgos y la aceleracion vertical, que deberia ser ~ +1 g
+     *    (si da -1 g, el modulo esta al reves).
+     */
+
     /* Copia la sesion y el handle para leer sin retener el candado. */
     pthread_mutex_lock(&g_lock);
     int pi = g_pi, h = g_h;
@@ -218,6 +309,20 @@ int imu_calibrar(int muestras) {
 
 /* Entrega una lectura en unidades fisicas y sin sesgo. */
 int imu_leer(ImuLectura *out) {
+    /*
+     * Entrega una lectura limpia.
+     *
+     * 1. Copia sesion, handle y sesgos con el candado.
+     * 2. Lee una muestra cruda.
+     * 3. Resta el sesgo y convierte a cm/s2: (ax - sesgo) x 980.665.
+     * 4. El giro se multiplica por IMU_SIGNO_GIRO (-1): el sensor cuenta
+     *    positivo hacia la izquierda y el rumbo de brujula crece hacia la
+     *    derecha.
+     *
+     * Ejemplo: el sensor marca 0,022 g con un sesgo de 0,020 -> 0,002 g x
+     * 980,665 ~ 2 cm/s2.
+     */
+
     /* Copia sesion, handle y sesgos bajo el candado. */
     pthread_mutex_lock(&g_lock);
     int pi = g_pi, h = g_h;
@@ -244,6 +349,8 @@ int imu_leer(ImuLectura *out) {
 
 /* Devuelve 1 si el sensor esta abierto. */
 int imu_disponible(void) {
+    /* Devuelve 1 si el sensor esta abierto (g_h >= 0). */
+
     pthread_mutex_lock(&g_lock);
     int ok = g_h >= 0;
     pthread_mutex_unlock(&g_lock);
@@ -252,6 +359,8 @@ int imu_disponible(void) {
 
 /* Cierra el dispositivo I2C y deja el modulo sin sensor. */
 void imu_cerrar(void) {
+    /* Cierra el dispositivo I2C si estaba abierto y deja g_h y g_pi en -1. */
+
     pthread_mutex_lock(&g_lock);
     /* Solo se cierra si habia un handle abierto. */
     if (g_h >= 0) i2c_close(g_pi, (unsigned)g_h);

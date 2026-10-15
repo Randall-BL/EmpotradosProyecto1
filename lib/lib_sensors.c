@@ -4,6 +4,15 @@
  *
  */
 
+/*
+ * Lee el sensor ultrasonico HC-SR04. El header define SensorUltrasonico, una
+ * estructura con los dos pines del sensor (pinTrigger y pinEcho). Asi el mismo
+ * codigo serviria para varios sensores; en el robot hay uno solo, el del
+ * radar.
+ *
+ * Guarda g_pi, la sesion con pigpiod.
+ */
+
 /* Tipo SensorUltrasonico y prototipos del modulo. */
 #include "lib_sensors.h"
 /* Cliente de pigpiod: GPIO y reloj de microsegundos (get_current_tick). */
@@ -18,6 +27,20 @@ static int g_pi = -1;
    pi: sesion con pigpiod. sensor: estructura a llenar.
    trigger, echo: GPIO (BCM) de cada senal. */
 void sensor_init(int pi, SensorUltrasonico* sensor, int trigger, int echo) {
+    /*
+     * Prepara un sensor. Recibe la sesion, un puntero a la estructura a llenar
+     * y los dos pines.
+     *
+     * 1. Guarda la sesion en g_pi.
+     * 2. Escribe los pines en la estructura: sensor->pinTrigger = trigger;.
+     * 3. TRIG como salida (la Raspberry le da la orden de medir) y ECHO como
+     *    entrada (el sensor contesta).
+     * 4. Deja TRIG en 0, en reposo.
+     *
+     * Para entender: sensor->pinTrigger es lo mismo que (*sensor).pinTrigger:
+     * el campo de la estructura a la que apunta el puntero.
+     */
+
     /* Guarda la sesion para las lecturas posteriores. */
     g_pi = pi;
     /* Recuerda que pin dispara y cual escucha. */
@@ -35,6 +58,34 @@ void sensor_init(int pi, SensorUltrasonico* sensor, int trigger, int echo) {
 /* Hace una medicion y devuelve la distancia en centimetros, o -1.0 si no
    hubo eco. Bloquea mientras mide: hasta 50 ms en cada espera. */
 double sensor_leer_distancia(SensorUltrasonico* sensor) {
+    /*
+     * Mide una distancia en centimetros, o devuelve -1 si no hubo eco. Bloquea
+     * mientras mide.
+     *
+     * 1. Disparo: TRIG a 1, espera 10 us (usleep(10)), TRIG a 0. El sensor
+     *    emite un chillido ultrasonico.
+     * 2. Espera que ECHO suba: un ciclo while lee ECHO hasta que vale 1. En
+     *    cada vuelta guarda la hora en inicio. Si pasan mas de 50 ms (50 000
+     *    us), devuelve -1: el sensor no respondio.
+     * 3. Mide cuanto dura ECHO en 1: otro while hasta que ECHO vuelve a 0,
+     *    guardando la hora en fin. Si pasa de 50 ms, devuelve -1: el obstaculo
+     *    esta demasiado lejos.
+     * 4. Calcula: duracion = fin - inicio (en us), y
+     *
+     *     distancia = duracion x 34300 / 2 000 000
+     *
+     * 34 300 cm/s es la velocidad del sonido; se divide entre 2 porque el
+     * sonido va y vuelve, y entre 1 000 000 para pasar de us a s.
+     *
+     * Ejemplo: ECHO estuvo en alto 1166 us -> 1166 x 34300 / 2 000 000 ~ 20
+     * cm.
+     *
+     * Para entender: uint32_t es un entero sin signo de 32 bits. El reloj de
+     * pigpiod da la vuelta (vuelve a 0) cada ~72 minutos; con numeros sin
+     * signo, fin - inicio sigue dando bien aunque haya dado la vuelta en
+     * medio.
+     */
+
     /* Pulso de disparo: TRIG en alto durante 10 us. Con eso el HC-SR04 emite
        una rafaga de ultrasonido. */
     gpio_write(g_pi, sensor->pinTrigger, 1);

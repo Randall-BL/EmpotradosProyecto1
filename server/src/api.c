@@ -5,6 +5,16 @@
 
  */
 
+/*
+ * Una funcion por cada endpoint de la API. Todas reciben la conexion (struct
+ * MHD_Connection *conn) y, las de POST, el cuerpo del pedido como texto. Todas
+ * devuelven lo que devuelve libmicrohttpd al encolar la respuesta (MHD_YES o
+ * MHD_NO).
+ *
+ * Arriba hay cinco funciones de ayuda: una para responder JSON y cuatro para
+ * leer campos del JSON que manda la web.
+ */
+
 /* Prototipos de los manejadores de cada endpoint. */
 #include "api.h"
 /* Sesiones, validacion de credenciales y proteccion por IP. */
@@ -39,6 +49,18 @@ static enum MHD_Result send_json(struct MHD_Connection *conn,
                                   unsigned int status,
                                   const char *body)
 {
+    /*
+     * Responde con un JSON y un codigo HTTP.
+     *
+     * 1. MHD_create_response_from_buffer(largo, texto, MHD_RESPMEM_MUST_COPY)
+     *    - crea la respuesta. MUST_COPY hace que libmicrohttpd copie el texto,
+     *    asi puede ser una variable local que se borra al salir.
+     * 2. Agrega las cabeceras Content-Type: application/json y Cache-Control:
+     *    no-cache.
+     * 3. MHD_queue_response la encola para enviarla y MHD_destroy_response
+     *    suelta la referencia propia.
+     */
+
     /* Crea la respuesta. MUST_COPY: libmicrohttpd copia el texto, asi el
        buffer del llamador puede ser local. */
     struct MHD_Response *r =
@@ -63,6 +85,24 @@ static enum MHD_Result send_json(struct MHD_Connection *conn,
 static int json_str(const char *json, const char *key,
                     char *out, size_t out_len)
 {
+    /*
+     * Busca una clave de texto en el JSON, sin una biblioteca de JSON.
+     *
+     * Con {"mode":"manual"} y la clave mode:
+     *
+     * 1. Arma el texto a buscar con comillas: "mode".
+     * 2. strstr lo encuentra y devuelve un puntero ahi.
+     * 3. Avanza el puntero mas alla de la clave, los espacios y los :.
+     * 4. Si lo que sigue no es una comilla, no es texto: devuelve 0.
+     * 5. Copia caracter por caracter hasta la comilla de cierre -> manual.
+     *
+     * Es simple y alcanza para lo que manda el panel, pero no es un lector
+     * completo: por ejemplo, no entiende comillas escapadas dentro del valor.
+     *
+     * Para entender: Un puntero a char puede avanzar por un texto: p++ pasa al
+     * siguiente caracter, *p es el caracter actual.
+     */
+
     /* La clave tal como aparece en el JSON, entre comillas. */
     char needle[128];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
@@ -86,6 +126,11 @@ static int json_str(const char *json, const char *key,
 /* Busca "key" y convierte su valor a entero. Devuelve 1 si lo encontro. */
 static int json_int(const char *json, const char *key, int *out)
 {
+    /*
+     * Igual que json_str, pero copia los digitos (y el signo -) y los
+     * convierte con atoi. Acepta el numero entre comillas.
+     */
+
     /* La clave entre comillas y un buffer para los digitos. */
     char needle[128], buf[32];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
@@ -112,6 +157,11 @@ static int json_int(const char *json, const char *key, int *out)
 /* Busca "key" y convierte su valor a double. Devuelve 1 si lo encontro. */
 static int json_num(const char *json, const char *key, double *out)
 {
+    /*
+     * Igual, para numeros con decimales. Usa strtod, que convierte y ademas
+     * dice donde termino el numero; si no avanzo, no habia numero.
+     */
+
     char needle[128];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
     const char *p = strstr(json, needle);
@@ -131,6 +181,15 @@ static int json_num(const char *json, const char *key, double *out)
 // Arreglo de enteros: "key":[1,2,3]. Devuelve cuantos leyo, -1 si no esta.
 static int json_int_array(const char *json, const char *key, int *out, int max)
 {
+    /*
+     * Lee un arreglo de enteros: "ids":[3,1,9].
+     *
+     * 1. Busca la clave y despues el [.
+     * 2. Hasta el ]: intenta leer un numero con strtol. Si no pudo (una coma o
+     *    un espacio), avanza un caracter. Si pudo, lo guarda.
+     * 3. Si hay mas numeros de los que caben, o no cierra con ], devuelve -1.
+     */
+
     /* La clave entre comillas. */
     char needle[128];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
@@ -166,6 +225,30 @@ static int json_int_array(const char *json, const char *key, int *out, int max)
 enum MHD_Result api_login(struct MHD_Connection *conn,
                            const char *body, size_t len)
 {
+    /*
+     * POST /api/login.
+     *
+     * 1. Sin cuerpo -> 400.
+     * 2. Saca usuario y contrasena con json_str.
+     * 3. Obtiene la IP del cliente: pide a libmicrohttpd la direccion (struct
+     *    sockaddr) y, si es IPv4, escribe los 4 bytes con puntos.
+     * 4. Si la IP esta bloqueada -> 429.
+     * 5. Si la contrasena no coincide -> anota el fallo de la IP y responde
+     *    401.
+     * 6. Crea la sesion. Si estan las 4 ocupadas -> 503.
+     * 7. Limpia los fallos de esa IP.
+     * 8. Responde 200 con la cabecera:
+     *
+     *     Set-Cookie: session=<token>; HttpOnly; Path=/; Max-Age=600
+     *
+     * HttpOnly impide que JavaScript lea la cookie; Max-Age=600 la hace vencer
+     * a los 10 minutos.
+     *
+     * Para entender: union MHD_ConnectionInfo es una "union": varias
+     * interpretaciones posibles de la misma memoria. Aqui se usa el campo
+     * client_addr.
+     */
+
     /* El largo no se usa: el cuerpo llega terminado en cero. */
     (void)len;
     /* Sin cuerpo no hay credenciales. */
@@ -255,6 +338,12 @@ enum MHD_Result api_login(struct MHD_Connection *conn,
 /* Cierra la sesion del cliente y detiene la musica. */
 enum MHD_Result api_logout(struct MHD_Connection *conn)
 {
+    /*
+     * POST /api/logout. Busca el token en la cookie y cierra esa sesion,
+     * detiene la musica y responde con una cookie vacia de Max-Age=0, que hace
+     * que el navegador la borre.
+     */
+
     /* Token de la cookie, si el cliente la mando. */
     const char *cookie =
         MHD_lookup_connection_value(conn, MHD_COOKIE_KIND, "session");
@@ -284,6 +373,30 @@ enum MHD_Result api_logout(struct MHD_Connection *conn)
 ═══════════════════════════════════════════════════════════ */
 enum MHD_Result api_status(struct MHD_Connection *conn)
 {
+    /*
+     * GET /api/status: el JSON grande que la web pide cada 500 ms.
+     *
+     * 1. Lee el audio directamente de lib_audio (volumen, estado, cancion,
+     *    posicion, posicion de playlist).
+     * 2. Con el candado de la pizarra tomado:
+     *    - Mapa: arma [[0,0,1,...],[...],...] fila por fila con snprintf. La
+     *      variable gn lleva cuantos bytes se escribieron, para que el
+     *      siguiente snprintf escriba a continuacion. Tambien cuenta visitadas
+     *      y obstaculos.
+     *    - Radar: arma [{"a":0,"d":45.2,"edad":0.31},...].
+     *    - Todo junto: un solo snprintf gigante en un buffer de 12 KB. Cada
+     *      %s, %d, %.1f del formato se llena con el argumento correspondiente,
+     *      en el mismo orden.
+     * 3. Suelta el candado y responde 200.
+     *
+     * Para entender: snprintf(buf, tamano, formato, ...) es como printf pero
+     * escribe en un texto y nunca pasa de tamano. Devuelve cuantos caracteres
+     * escribio (o habria escrito).
+     *
+     * Los booleanos se escriben con cond ? "true" : "false", porque C no tiene
+     * un formato para ellos.
+     */
+
     /* Estado global. */
     RobotState *rs = robot_state_get();
     if (!rs) return send_json(conn, 500, "{\"error\":\"State unavailable\"}");
@@ -458,6 +571,20 @@ enum MHD_Result api_status(struct MHD_Connection *conn)
 enum MHD_Result api_set_mode(struct MHD_Connection *conn,
                               const char *body, size_t len)
 {
+    /*
+     * POST /api/mode.
+     *
+     * - Si el modo es "manual": cambia a manual y anota los LEDs en la
+     *   pizarra. Suelta el candado, toca el aviso de manual (bloquea unos
+     *   segundos) y prende/apaga los LEDs fisicos.
+     * - Cualquier otro texto cuenta como autonomo: cambia el modo, anota los
+     *   LEDs, empieza un ciclo de limpieza nuevo, toca el aviso y actualiza
+     *   los LEDs.
+     *
+     * El candado se suelta antes del aviso, porque si no la pizarra quedaria
+     * bloqueada mientras suena.
+     */
+
     (void)len;
     /* Modo pedido: "manual", o cualquier otro texto, que se toma como
        autonomo. */
@@ -519,6 +646,18 @@ enum MHD_Result api_set_mode(struct MHD_Connection *conn,
 enum MHD_Result api_move(struct MHD_Connection *conn,
                           const char *body, size_t len)
 {
+    /*
+     * POST /api/move, el control manual.
+     *
+     * 1. Copia el modo y si hay desnivel. Si no esta en manual -> 403.
+     * 2. Lee direction y speed (50 si no viene).
+     * 3. Escala la velocidad de 0-100 a 0-255 (con velocidad fija da igual).
+     * 4. Segun la direccion: forward (o up), backward (o down), left, right,
+     *    stop.
+     * 5. Si pide avanzar y hay desnivel, frena y responde 409.
+     * 6. Direccion desconocida -> 400.
+     */
+
     (void)len;
     /* Estado global. */
     RobotState *rs = robot_state_get();
@@ -587,6 +726,21 @@ enum MHD_Result api_move(struct MHD_Connection *conn,
 /* Devuelve la lista de pistas con su id, nombre y duracion. */
 enum MHD_Result api_audio_list(struct MHD_Connection *conn)
 {
+    /*
+     * GET /api/audio/list. Copia la lista de canciones y arma
+     * {"tracks":[{"id":1,"name":"...","duration":"3:25"},...]}.
+     *
+     * El buffer se pide con malloc del tamano justo (canciones x (nombre + 64)
+     * + 32) y se libera con free despues de responder.
+     *
+     * Para entender: malloc(n) pide n bytes de memoria al sistema mientras el
+     * programa corre; hay que devolverlos con free. Si devuelve NULL, no hubo
+     * memoria.
+     *
+     * La duracion se escribe como segundos / 60 y segundos % 60 con %d:%02d:
+     * 205 s -> 3:25.
+     */
+
     /* Copia la lista de pistas de la biblioteca. */
     LibAudioTrack tracks[LIB_AUDIO_TRACKS_MAX];
     int count = lib_audio_get_tracks(tracks, LIB_AUDIO_TRACKS_MAX);
@@ -632,6 +786,18 @@ enum MHD_Result api_audio_list(struct MHD_Connection *conn)
 enum MHD_Result api_audio_control(struct MHD_Connection *conn,
                                    const char *body, size_t len)
 {
+    /*
+     * POST /api/audio/control. Lee action y la despacha:
+     *
+     * - play: llama a lib_audio_play(track_id); error posible 400 si no existe
+     * - play_playlist: llama a lib_audio_play_playlist(index); error posible
+     *   400 si esta vacia
+     * - seek: llama a lib_audio_seek(position); error posible 400 si falta o
+     *   es negativa; 409 si no hay cancion
+     * - pause / resume / stop: llama a la funcion del mismo nombre
+     * - otra: error posible 400
+     */
+
     (void)len;
     /* Accion pedida e id de pista, que solo usa play. */
     char action[32] = {0};
@@ -703,6 +869,11 @@ enum MHD_Result api_audio_control(struct MHD_Connection *conn,
 enum MHD_Result api_audio_volume(struct MHD_Connection *conn,
                                   const char *body, size_t len)
 {
+    /*
+     * POST /api/audio/volume. Lee volume (50 si falta), lo recorta a 0-100 y
+     * llama a lib_audio_set_volume.
+     */
+
     (void)len;
     // Volumen por defecto
     int vol = 50;
@@ -729,6 +900,11 @@ enum MHD_Result api_audio_volume(struct MHD_Connection *conn,
 /* Devuelve los ids de la playlist, en orden, y la posicion que suena. */
 enum MHD_Result api_audio_playlist_get(struct MHD_Connection *conn)
 {
+    /*
+     * GET /api/audio/playlist. Responde {"ids":[3,1,9],"pos":-1}: los ids en
+     * orden y la posicion que suena.
+     */
+
     /* Copia la playlist de la biblioteca. */
     int ids[LIB_AUDIO_TRACKS_MAX];
     int n = lib_audio_playlist_get(ids, LIB_AUDIO_TRACKS_MAX);
@@ -753,6 +929,12 @@ enum MHD_Result api_audio_playlist_get(struct MHD_Connection *conn)
 enum MHD_Result api_audio_playlist_set(struct MHD_Connection *conn,
                                         const char *body, size_t len)
 {
+    /*
+     * POST /api/audio/playlist. Lee el arreglo ids con json_int_array (400 si
+     * no es valido) y llama a lib_audio_playlist_set, que valida y guarda (400
+     * si falla).
+     */
+
     (void)len;
     /* Lee el arreglo "ids" del cuerpo. */
     int ids[LIB_AUDIO_TRACKS_MAX];
@@ -780,6 +962,19 @@ enum MHD_Result api_audio_playlist_set(struct MHD_Connection *conn,
 enum MHD_Result api_ciclo(struct MHD_Connection *conn,
                            const char *body, size_t len)
 {
+    /*
+     * POST /api/ciclo.
+     *
+     * - {"accion":"nuevo"} -> reinicia el ciclo con la meta que ya habia.
+     * - {"tipo":"off"} -> sin limite.
+     * - {"tipo":"tiempo","minutos":5} -> valida 0 < minutos <= 600 y guarda la
+     *   meta en segundos (x 60).
+     * - {"tipo":"area","m2":4} -> valida 0 < m2 <= 1000.
+     * - Otro tipo -> 400.
+     *
+     * Si es valido, guarda tipo y meta y empieza un ciclo nuevo.
+     */
+
     (void)len;
     /* Un cuerpo ausente se trata como vacio. */
     if (!body) body = "";
@@ -851,6 +1046,13 @@ enum MHD_Result api_ciclo(struct MHD_Connection *conn,
 enum MHD_Result api_umbral(struct MHD_Connection *conn,
                            const char *body, size_t len)
 {
+    /*
+     * POST /api/umbral. Lee cm; si esta fuera de 5-100, responde 400 con los
+     * limites. Si no, lo guarda en rs->movimiento.umbral_obstaculo_cm. Rige
+     * desde la siguiente vuelta del hilo de navegacion y vuelve a 10 cm al
+     * reiniciar el servidor.
+     */
+
     (void)len;
     /* Un cuerpo ausente se trata como vacio. */
     if (!body) body = "";

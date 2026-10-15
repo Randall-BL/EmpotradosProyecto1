@@ -5,6 +5,25 @@
 
  */
 
+/*
+ * Implementacion propia de SHA-256, la funcion de "resumen" (hash) con la que
+ * se guardan las contrasenas.
+ *
+ * Un hash convierte cualquier texto en 64 caracteres hexadecimales. No se
+ * puede revertir: del hash no se recupera la contrasena. Para validar un login
+ * se calcula el hash de lo que escribio el usuario y se compara con el
+ * guardado.
+ *
+ * - ROTR(x, n): rota los bits de x n lugares a la derecha (lo que sale por un
+ *   lado entra por el otro).
+ * - K[64]: 64 constantes fijadas por el estandar.
+ * - Sha256Ctx: el estado del calculo (8 numeros de 32 bits, un bloque de 64
+ *   bytes en construccion y el largo procesado).
+ *
+ * No hace falta entender las matematicas internas: es una traduccion directa
+ * del estandar FIPS 180-4.
+ */
+
 
 //Script para cifrado y descifrado de password
 
@@ -58,6 +77,16 @@ typedef struct {
 
 // Funcion para transformar cifrado sha256
 static void sha256_transform(Sha256Ctx *ctx, const uint8_t data[64]) {
+    /*
+     * Procesa un bloque de 64 bytes.
+     *
+     * 1. Convierte los 64 bytes en 16 numeros de 32 bits.
+     * 2. Genera 48 numeros mas a partir de esos, con rotaciones y XOR (^).
+     * 3. Copia el estado a 8 variables a-h y hace 64 rondas: en cada una
+     *    mezcla las variables con un numero del paso 2 y una constante K[i].
+     * 4. Suma el resultado al estado.
+     */
+
     /* Variables de trabajo a..h, dos temporales y el plan de mensaje de 64
        palabras. */
     uint32_t a,b,c,d,e,f,g,h,t1,t2,m[64];
@@ -103,6 +132,11 @@ static void sha256_transform(Sha256Ctx *ctx, const uint8_t data[64]) {
 /* Estado inicial: contadores en cero y los ocho valores de arranque del
    estandar. */
 static void sha256_init(Sha256Ctx *ctx) {
+    /*
+     * Pone los contadores en 0 y el estado con los 8 valores iniciales del
+     * estandar.
+     */
+
     ctx->bitlen = 0; ctx->buflen = 0;
     ctx->state[0]=0x6a09e667; ctx->state[1]=0xbb67ae85;
     ctx->state[2]=0x3c6ef372; ctx->state[3]=0xa54ff53a;
@@ -113,6 +147,11 @@ static void sha256_init(Sha256Ctx *ctx) {
 /* Agrega datos al calculo, byte por byte. Cada vez que se completa un
    bloque de 64 bytes, lo procesa. */
 static void sha256_update(Sha256Ctx *ctx, const uint8_t *data, size_t len) {
+    /*
+     * Agrega bytes al bloque en construccion. Cada vez que junta 64, lo
+     * procesa con sha256_transform y empieza otro.
+     */
+
     for (size_t i = 0; i < len; i++) {
         /* Copia el byte al bloque en construccion. */
         ctx->buf[ctx->buflen++] = data[i];
@@ -129,6 +168,13 @@ static void sha256_update(Sha256Ctx *ctx, const uint8_t *data, size_t len) {
 /* Cierra el calculo: aplica el relleno del estandar y entrega los 32 bytes
    del resumen. */
 static void sha256_final(Sha256Ctx *ctx, uint8_t hash[32]) {
+    /*
+     * Cierra el calculo con el "relleno" del estandar: agrega un byte 0x80,
+     * ceros, y en los ultimos 8 bytes el largo total del mensaje en bits. Si
+     * no cabe en el bloque actual, procesa uno extra. Al final convierte los 8
+     * numeros del estado en 32 bytes.
+     */
+
     /* Posicion donde terminan los datos en el bloque. */
     uint32_t i = ctx->buflen;
     /* El relleno empieza con un bit en 1: el byte 0x80. */
@@ -173,6 +219,20 @@ static void sha256_final(Sha256Ctx *ctx, uint8_t hash[32]) {
 
 // Funcion publica
 void sha256_hex(const char *input, size_t len, char out[65]) {
+    /*
+     * La unica funcion publica: recibe un texto y devuelve su hash en 64
+     * caracteres hex.
+     *
+     * init -> update con todo el texto -> final -> cada byte se escribe como
+     * dos digitos con snprintf(out + i*2, 3, "%02x", hash[i]).
+     *
+     * Ejemplo: "password1" -> 0b14d501a594442a... (el que esta en la tabla de
+     * usuarios de auth.c).
+     *
+     * Para entender: "%02x" imprime un numero en hexadecimal con al menos 2
+     * digitos, rellenando con 0: 11 -> 0b.
+     */
+
     /* Contexto del calculo y resumen binario de 32 bytes. */
     Sha256Ctx ctx;
     uint8_t   hash[32];

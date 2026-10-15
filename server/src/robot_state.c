@@ -5,6 +5,12 @@
 
  */
 
+/*
+ * Implementa la pizarra. Hay una sola variable RobotState g_robot (static,
+ * privada) y una funcion para obtener un puntero a ella. Este patron se llama
+ * *singleton*: una unica instancia compartida.
+ */
+
 /* Tipos del estado y prototipos. */
 #include "robot_state.h"
 /* printf y fprintf. */
@@ -21,6 +27,18 @@ static int        g_initialized = 0;
 
 /* Crea el estado con sus valores iniciales y su mutex. Devuelve 0 o -1. */
 int robot_state_init(void) {
+    /*
+     * Crea la pizarra con sus valores iniciales.
+     *
+     * 1. Si ya existe, sale.
+     * 2. memset pone todo en 0.
+     * 3. Fija lo que no es 0: modo autonomo; LEDs de encendido y autonomo
+     *    prendidos; audio detenido al 70 %; servo a 90; tiempo de choque -1;
+     *    umbral 10 cm; ciclo sin limite; mapa desconocido con el robot en la
+     *    celda central (15, 15) mirando al norte.
+     * 4. Crea el candado. Solo despues marca g_initialized = 1.
+     */
+
     /* Llamarla dos veces no reinicializa. */
     if (g_initialized) return 0;
 
@@ -85,11 +103,18 @@ int robot_state_init(void) {
 
 /* Devuelve el estado, o NULL si todavia no se creo. */
 RobotState *robot_state_get(void) {
+    /*
+     * Devuelve &g_robot (la direccion de la pizarra) si ya existe, o NULL.
+     * Todos los demas usan esta funcion para llegar a la pizarra.
+     */
+
     return g_initialized ? &g_robot : NULL;
 }
 
 /* Destruye el mutex y marca el estado como no creado. */
 void robot_state_destroy(void) {
+    /* Destruye el candado y marca la pizarra como no creada. */
+
     if (!g_initialized) return;
     pthread_mutex_destroy(&g_robot.lock);
     g_initialized = 0;
@@ -101,6 +126,11 @@ void robot_state_destroy(void) {
 
 /* Cuenta las celdas del mapa marcadas como visitadas. */
 int robot_mapa_visitadas(const RobotState *rs) {
+    /*
+     * Recorre las 31 x 31 celdas y cuenta las que valen CELL_VISITED. Se llama
+     * con el candado tomado.
+     */
+
     /* Contador. */
     int n = 0;
     /* Recorre todas las filas y columnas. */
@@ -113,6 +143,12 @@ int robot_mapa_visitadas(const RobotState *rs) {
 /* El area de un ciclo se mide con las celdas que se visitan durante el: las
    que ya estaban visitadas de ciclos anteriores no cuentan. */
 void robot_ciclo_reiniciar(RobotState *rs) {
+    /*
+     * Empieza un ciclo de limpieza nuevo: tiempo y area en 0, completo = 0, y
+     * anota cuantas celdas ya estaban visitadas para no contarlas en este
+     * ciclo.
+     */
+
     /* Tiempo y area del ciclo en cero. */
     rs->ciclo.segundos         = 0.0;
     rs->ciclo.area_m2          = 0.0;
@@ -124,6 +160,16 @@ void robot_ciclo_reiniciar(RobotState *rs) {
 
 /* Avance del ciclo actual, entre 0 y 1. */
 double robot_ciclo_progreso(const RobotState *rs) {
+    /*
+     * Avance del ciclo entre 0 y 1.
+     *
+     * - Sin ciclo o sin meta -> 0.
+     * - Por tiempo: segundos / meta. Por area: area_m2 / meta.
+     * - Tope en 1.
+     *
+     * Ejemplo: meta de 5 minutos (300 s), lleva 120 s -> 0,4.
+     */
+
     /* Sin ciclo configurado, o sin meta, no hay avance que informar. */
     if (rs->ciclo.tipo == CICLO_OFF || rs->ciclo.meta <= 0.0) return 0.0;
     /* Lo hecho se mide en segundos o en metros cuadrados, segun el tipo. */
