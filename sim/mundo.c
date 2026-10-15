@@ -4,6 +4,27 @@
  *
  */
 
+/*
+ * El mundo virtual: una sala de 4 x 4 m (de -200 a 200 cm en x e y) con 3
+ * muebles y una grada en una esquina. Guarda la posicion verdadera del robot,
+ * que la odometria intenta adivinar.
+ *
+ * Constantes "reales" del robot simulado, a proposito distintas de las de la
+ * biblioteca, para que las pruebas muestren el error de la odometria:
+ *
+ * Simulado                Biblioteca
+ * ---------------------   ----------------------------------------------
+ * 28 cm/s por llanta      30 cm/s (compilado con -DODOM_VEL_MAX_CM_S=30)
+ * 15,5 cm entre llantas   16 cm
+ *
+ * REAL_TAU_MOTOR_S = 0.12: las llantas tardan ~0,12 s en llegar a su velocidad
+ * (inercia). Sin eso, el acelerometro simulado no tendria nada que medir.
+ *
+ * Caja es un rectangulo (dos esquinas). g_muebles[] y g_hueco son cajas.
+ * Tambien guarda el rastro del robot (hasta 4000 puntos) para dibujarlo al
+ * final.
+ */
+
 /* Interfaz del mundo virtual. */
 #include "mundo.h"
 
@@ -73,6 +94,8 @@ static int        g_cayendo = 0;
 
 /* 1 si el punto esta dentro del hueco de la grada. */
 static int en_hueco(double x, double y) {
+    /* 1 si un punto esta dentro del rectangulo de la grada. */
+
     return x > g_hueco.x0 && x < g_hueco.x1 && y > g_hueco.y0 && y < g_hueco.y1;
 }
 
@@ -108,6 +131,11 @@ static int    g_rastro_n = 0;
 /* Convierte la orden de PWM en la velocidad real de la llanta, con los
    parametros verdaderos del robot simulado. */
 static double pwm_a_cm_s(int pwm) {
+    /*
+     * Como en lib_odom.c, pero con los valores reales del simulador: (orden /
+     * 255) x 28 cm/s, y 0 por debajo de 60.
+     */
+
     /* Magnitud de la orden. */
     int m = pwm < 0 ? -pwm : pwm;
     /* Por debajo del umbral el motor no gira. */
@@ -119,6 +147,34 @@ static double pwm_a_cm_s(int pwm) {
 
 /* Avanza la simulacion hasta ahora. Se llama con g_lock tomado. */
 static void integrar(void) {
+    /*
+     * Avanza la simulacion hasta el instante actual. Se llama con el candado
+     * tomado.
+     *
+     * 1. Calcula dt real (descarta <= 0 o > 1 s).
+     * 2. Inercia: cada llanta se acerca a su velocidad ordenada con k = 1 -
+     *    e^(-dt / 0,12). Con dt = 20 ms, k ~ 0,15: recorre 15 % de lo que le
+     *    falta.
+     * 3. Velocidad del centro y de giro con la velocidad media de cada llanta
+     *    en el tramo.
+     * 4. Posicion candidata con el rumbo de la mitad del tramo (igual que la
+     *    odometria).
+     * 5. Choques:
+     *    - Paredes: si el borde del robot (radio 12 cm) pasa una pared, lo
+     *      deja apoyado en ella.
+     *    - Muebles: si entraria en un mueble (agrandado por el radio), se
+     *      queda donde estaba.
+     *    - Grada: si el centro entra al hueco, se queda donde estaba y se
+     *      cuenta una caida.
+     *    - Cada choque o caida nueva se avisa por stderr.
+     * 6. Velocidad real del cuerpo: lo que se movio de verdad sobre la
+     *    direccion de avance, dividido por dt. Si esta trabado contra un
+     *    mueble, las llantas giran pero esto da 0; eso es lo que siente el
+     *    acelerometro.
+     * 7. Guarda la posicion y agrega un punto al rastro si se movio mas de 2
+     *    cm.
+     */
+
     /* Instante actual. */
     struct timespec ahora;
     clock_gettime(CLOCK_MONOTONIC, &ahora);
@@ -231,6 +287,11 @@ static void integrar(void) {
  * Con el hilo, el robot se mueve al ritmo del reloj, lea quien lea.
  */
 static void *hilo_mundo(void *arg) {
+    /*
+     * Hilo: cada 20 ms toma el candado y llama a integrar(). Asi el robot
+     * virtual se mueve al ritmo del reloj, lo consulte alguien o no.
+     */
+
     /* El argumento del hilo no se usa. */
     (void)arg;
     while (g_hilo_vivo) {
@@ -246,6 +307,12 @@ static void *hilo_mundo(void *arg) {
 /* Deja el robot quieto en el centro, mirando al norte, con los contadores
    en cero, y lanza el hilo del mundo si no estaba corriendo. */
 void mundo_init(void) {
+    /*
+     * Pone el robot quieto en el centro mirando al norte, contadores en 0, y
+     * lanza el hilo del mundo (una sola vez, desacoplado con pthread_detach:
+     * nadie lo espera).
+     */
+
     pthread_mutex_lock(&g_lock);
     /* Pose, ordenes y velocidades en cero. */
     g_x = g_y = g_rumbo = 0.0;
@@ -276,6 +343,11 @@ void mundo_init(void) {
 
 /* Recibe la orden de cada motor. */
 void mundo_set_motores(int vel_izq, int vel_der) {
+    /*
+     * Recibe las ordenes de los motores. Primero integra hasta ahora con las
+     * ordenes viejas, despues guarda las nuevas.
+     */
+
     pthread_mutex_lock(&g_lock);
     integrar();                  /* cerrar el tramo con la velocidad anterior */
     g_vel_izq = vel_izq;
@@ -288,6 +360,19 @@ void mundo_set_motores(int vel_izq, int vel_der) {
 static double rayo_caja(double x, double y, double dx, double dy,
                         double x0, double y0, double x1, double y1, int desde_adentro)
 {
+    /*
+     * A que distancia choca un rayo con un rectangulo? Usa el metodo de las
+     * "rebanadas":
+     *
+     * 1. Para las caras verticales, calcula en que t el rayo las cruza; igual
+     *    con las horizontales.
+     * 2. El rayo esta dentro de la caja entre el mayor de los "entra" y el
+     *    menor de los "sale".
+     * 3. Si ese intervalo esta vacio o detras del origen, no choca (-1).
+     * 4. Para las paredes de la sala (el rayo empieza adentro) devuelve la
+     *    salida; para un mueble, la entrada.
+     */
+
     /* Intervalo del parametro t en el que el rayo esta dentro de la caja. */
     double t_min = -INFINITY, t_max = INFINITY;
 
@@ -324,11 +409,29 @@ static double rayo_caja(double x, double y, double dx, double dy,
 
 /* Distancia desde el centro del robot. */
 double mundo_distancia(double rumbo_offset) {
+    /*
+     * Distancia desde el centro del robot en una direccion relativa. Llama a
+     * mundo_distancia_desde con 0 cm adelante.
+     */
+
     return mundo_distancia_desde(0.0, rumbo_offset);
 }
 
 /* Distancia al obstaculo mas cercano desde un punto adelantado. */
 double mundo_distancia_desde(double adelante_cm, double rumbo_offset) {
+    /*
+     * Lo que mediria un sensor ultrasonico perfecto.
+     *
+     * 1. Integra hasta ahora.
+     * 2. Direccion del rayo: rumbo del robot + el angulo pedido. Origen:
+     *    adelante_cm por delante del centro.
+     * 3. Distancia a las paredes (desde adentro) y a cada mueble (desde
+     *    afuera); gana la mas cercana.
+     * 4. Mas de 400 cm o nada -> -1 (sin eco).
+     *
+     * Es un rayo perfecto: no tiene el cono ni los rebotes del sensor real.
+     */
+
     pthread_mutex_lock(&g_lock);
     /* Pone el mundo al dia antes de medir. */
     integrar();
@@ -359,6 +462,11 @@ double mundo_distancia_desde(double adelante_cm, double rumbo_offset) {
 
 /* Devuelve la pose verdadera; el rumbo, en grados. */
 void mundo_pose(double *x_cm, double *y_cm, double *rumbo_grados) {
+    /*
+     * Devuelve la posicion y el rumbo verdaderos (en grados). La prueba los
+     * compara con lo que estimo la odometria.
+     */
+
     pthread_mutex_lock(&g_lock);
     integrar();
     if (x_cm)        *x_cm = g_x;
@@ -369,6 +477,8 @@ void mundo_pose(double *x_cm, double *y_cm, double *rumbo_grados) {
 
 /* Devuelve la velocidad real del cuerpo y la de giro. */
 void mundo_cinematica(double *v_cm_s, double *giro_dps) {
+    /* Devuelve la velocidad real del cuerpo y la de giro en  grados/s. */
+
     pthread_mutex_lock(&g_lock);
     integrar();
     if (v_cm_s)   *v_cm_s   = g_v_cuerpo;
@@ -378,6 +488,16 @@ void mundo_cinematica(double *v_cm_s, double *giro_dps) {
 
 /* Devuelve lo que mediria el MPU-6050. Ver mundo.h. */
 void mundo_imu(double *avance_cm_s2, double *lateral_cm_s2, double *giro_dps) {
+    /*
+     * Lo que mediria un MPU en el centro del robot.
+     *
+     * - Avance: (velocidad ahora - velocidad en la consulta anterior) / tiempo
+     *   entre consultas. Es la aceleracion media, como la entrega el filtro
+     *   del sensor.
+     * - Lateral: -v x omega, la aceleracion centripeta de las curvas.
+     * - Giro en  grados/s.
+     */
+
     pthread_mutex_lock(&g_lock);
     integrar();
 
@@ -402,6 +522,8 @@ void mundo_imu(double *avance_cm_s2, double *lateral_cm_s2, double *giro_dps) {
 
 /* 1 si el robot esta ahora pegado a algo. */
 int mundo_choco(void) {
+    /* 1 si el robot esta pegado a algo ahora. */
+
     pthread_mutex_lock(&g_lock);
     integrar();
     int c = g_choco;
@@ -411,6 +533,8 @@ int mundo_choco(void) {
 
 /* Choques contados desde mundo_init(). */
 int mundo_choques(void) {
+    /* Cuantos choques hubo desde mundo_init. */
+
     pthread_mutex_lock(&g_lock);
     int n = g_choques;
     pthread_mutex_unlock(&g_lock);
@@ -419,6 +543,8 @@ int mundo_choques(void) {
 
 /* Caidas contadas desde mundo_init(). */
 int mundo_caidas(void) {
+    /* Cuantas caidas hubo. */
+
     pthread_mutex_lock(&g_lock);
     int n = g_caidas;
     pthread_mutex_unlock(&g_lock);
@@ -427,6 +553,16 @@ int mundo_caidas(void) {
 
 /* 1 si no hay piso bajo un punto fijo al robot. Ver mundo.h. */
 int mundo_sin_piso(double adelante_cm, double izquierda_cm) {
+    /*
+     * Hay piso bajo un punto fijo al robot? Convierte "adelante" e "izquierda"
+     * del robot a coordenadas del mundo:
+     *
+     *     x = x_robot + adelante x sin(rumbo) - izquierda x cos(rumbo)
+     *     y = y_robot + adelante x cos(rumbo) + izquierda x sin(rumbo)
+     *
+     * y pregunta si ese punto cae en la grada.
+     */
+
     pthread_mutex_lock(&g_lock);
     integrar();
     /* Rumbo de brujula: adelante es (sin, cos); la izquierda, (-cos, sin). */
@@ -446,6 +582,16 @@ int mundo_sin_piso(double adelante_cm, double izquierda_cm) {
 
 /* Dibuja la sala en la terminal. */
 void mundo_dibujar(void) {
+    /*
+     * Dibuja la sala en la terminal con caracteres: # muebles, ~ grada, .
+     * recorrido y ^ > v < el robot segun su rumbo.
+     *
+     * Usa un "lienzo" de texto de 25 filas x 61 columnas y dos macros locales
+     * A_COL(x) y A_FIL(y) que convierten centimetros a columna y fila. La
+     * flecha del robot sale de "^>v<"[cuadrante]: un texto usado como arreglo,
+     * indexado por el cuadrante del rumbo (0 = norte, 1 = este...).
+     */
+
     /* Lienzo de texto, lleno de espacios, con un terminador por fila. */
     char lienzo[DIBUJO_FILS][DIBUJO_COLS + 1];
     memset(lienzo, ' ', sizeof(lienzo));
