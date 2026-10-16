@@ -782,7 +782,7 @@ margen de sobra en la Raspberry Pi 4.
 
 | Resultado | Evidencia |
 |---|---|
-| En el robot armado, en modo autónomo, se detiene ante una tabla que se le pone al frente, gira y sigue avanzando | [Video](Capturas/demo-evasion.mp4), ver [El robot funcionando](#el-robot-funcionando) |
+| En el robot armado, en modo autónomo, se detiene ante una tabla que se le pone al frente y gira sobre su eje para evadirla | [Video](Capturas/demo-evasion.mp4), ver [El robot funcionando](#el-robot-funcionando) |
 | La prueba de la biblioteca pasa sus 49 comprobaciones sobre el simulador | [`pruebas/02-librobot-simulador.md`](pruebas/02-librobot-simulador.md), [`sim/README.md`](sim/README.md) |
 | Compilada para ARM y ejecutada bajo `qemu-aarch64`, pasó las 47 comprobaciones que tenía entonces | [`docs/evidencias/ejecucion-cruzada-qemu.md`](docs/evidencias/ejecucion-cruzada-qemu.md), [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
 | Dos minutos en modo autónomo sobre el simulador: 18 evasiones y ningún choque | [`docs/navegacion-radar.md`](docs/navegacion-radar.md#6-evidencia-en-el-simulador) |
@@ -801,13 +801,13 @@ margen de sobra en la Raspberry Pi 4.
 
 ### El robot funcionando
 
-[![Cuatro cuadros del video: el robot avanza hacia la tabla, llega a ella, gira y se aleja hacia un mueble](Capturas/demo-evasion-secuencia.jpg)](Capturas/demo-evasion.mp4)
+[![El robot avanza hacia una tabla, se detiene antes de tocarla y gira sobre su eje](Capturas/demo-evasion.gif)](Capturas/demo-evasion.mp4)
 
-**[Video de la demostración](Capturas/demo-evasion.mp4)** (32 s, 14 de octubre de 2026). En
-modo autónomo, el robot avanza hacia una tabla que se le pone al frente, se detiene, gira
-hacia el lado libre y sigue avanzando hasta un mueble. Lleva el power bank encima y el
-HC-SR04 sobre el servo al frente. Los cuadros de arriba son de 0:03, 0:11, 0:19 y 0:28;
-la imagen enlaza al video.
+**[Video completo](Capturas/demo-evasion.mp4)** (32 s, 14 de octubre de 2026). En modo
+autónomo, el robot avanza hacia una tabla que se le pone al frente, se detiene antes de
+tocarla y gira sobre su eje para evadirla. Lleva el power bank encima y el HC-SR04 sobre
+el servo al frente. La animación es el tramo de 0:04 a 0:21, a triple velocidad y con la
+imagen estabilizada; enlaza al video completo.
 
 ![Primera versión del montaje](Capturas/montaje-primera-version.jpeg)
 
