@@ -54,4 +54,5 @@ aarch64-poky-linux-objdump -p <binario> | grep NEEDED
 ## Lo que todavía falta
 
 - [x] Capturas del binario **ejecutándose en la Raspberry Pi 4**: [`ejecucion-target.md`](ejecucion-target.md)
-- [ ] Imagen `.wic` completa — el build no llegó a terminar en el host disponible
+- [x] Imagen `.wic` completa: construida el 5 de octubre de 2026 y corriendo en la
+      Raspberry Pi 4, ver [`ejecucion-target.md`](ejecucion-target.md)
